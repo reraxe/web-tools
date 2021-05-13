@@ -5,9 +5,9 @@ version: "2.1"
 
 services:
 
-  heimdall:
+  reraxehtmldemo:
     image: reraxe/demo-html-editor:arm64v8
-    container_name: demo
+    container_name: reraxehtmldemo
     ports:
       - 8080:80
     restart: unless-stopped
