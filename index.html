@@ -52,7 +52,7 @@
       padding:14px 16px;border-bottom:1px solid var(--border);background:var(--panel);
       display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:10;
     }
-    header h1{margin:0;margin-right:auto;font-size:16px;font-weight:600;color:var(--muted);}
+    header h1{margin:0;margin-right:auto;font-size:16px;font-weight:700;color:var(--muted);}
     .toolbar{
       display:flex;flex-wrap:wrap;gap:6px;background:var(--panel);padding:8px;border-bottom:1px solid var(--border);
       position:sticky;top:54px;z-index:9;
@@ -74,7 +74,10 @@
       border-radius:8px;padding:8px 10px;cursor:pointer
     }
     .color-wrap{display:flex;align-items:center;gap:6px}
-    .hex-input{width:84px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-family:ui-monospace,monospace}
+    .hex-input{
+      width:90px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;
+      background:var(--panel);color:var(--text);font-family:ui-monospace,monospace
+    }
     input[type="color"].tool{
       -webkit-appearance:none;appearance:none;width:36px;height:36px;padding:0;
       border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer;
@@ -89,15 +92,16 @@
       display:grid;grid-template-columns:1fr 340px;gap:16px;
     }
     @media (max-width: 980px){.wrap{grid-template-columns:1fr}}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px;}
+    .card h3{margin:0 0 8px;font-size:14px;color:var(--muted)}
+
     .editor{
       min-height:60vh;background:var(--panel-2);border:1px solid var(--border);
       border-radius:10px;padding:18px;outline:none;overflow:auto;
     }
     .editor:focus{box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent)}
     .side{display:flex;flex-direction:column;gap:12px;}
-    .card{background:var(--panel);border:1px solid var(--border);
-      border-radius:12px;padding:14px;}
-    .card h3{margin:0 0 8px;font-size:14px;color:var(--muted)}
+
     textarea.code, textarea#notes{
       width:100%;min-height:220px;background:var(--panel-2);color:var(--code-text);
       border:1px dashed var(--border);border-radius:8px;padding:10px;
@@ -132,11 +136,20 @@
       padding:8px 12px; border-radius:8px; cursor:pointer;
     }
     dialog button:hover{ background:var(--btn-hover); border-color:var(--btn-hover-b); }
+
+    .toast{
+      position:fixed; top:14px; right:14px; z-index:9999;
+      background:var(--panel); border:1px solid var(--border); color:var(--text);
+      padding:8px 12px; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,.18);
+      opacity:0; transform:translateY(-6px); transition:opacity .15s, transform .15s;
+      pointer-events:none; font-size:13px;
+    }
+    .toast.show{opacity:1; transform:translateY(0)}
   </style>
 </head>
 <body>
   <header>
-    <h1>WYSIWYG Editor</h1>
+    <h1>WYSIWYG HTML Editor</h1>
     <button id="themeBtn" class="theme-toggle" title="Theme: System">
       <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h-0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM20.45 5.64l-1.41-1.41-1.79 1.79 1.4 1.4 1.8-1.78zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>
       <span id="themeLabel">System</span>
@@ -159,7 +172,7 @@
       <button class="tool tool--text" data-cmd="bold" aria-label="Bold (Ctrl/Cmd+B)"><span class="txt">B</span></button>
       <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl/Cmd+I)"><svg viewBox="0 0 24 24"><path d="M10 5v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V5z"/></svg></button>
       <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl/Cmd+U)"><svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 0 0 5-5V5h-3v7a2 2 0 0 1-4 0V5H7v7a5 5 0 0 0 5 5zm-7 2v2h14v-2H5z"/></svg></button>
-      <button class="tool" data-action="clearFormat" title="Clear format (remove styles, unlink)">
+      <button class="tool" id="clearFormatBtn" title="Clear format (remove styles, headings, links)">
         <svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm3 4h8v2H6v-2zm0 4h12v2H6v-2zm0 4h6v2H6v-2zM17 3l4 4-8 8-4 1 1-4 8-8z"/></svg>
       </button>
     </div>
@@ -180,6 +193,7 @@
 
     <div class="group">
       <button class="tool" id="linkBtn" aria-label="Insert Link"><svg viewBox="0 0 24 24"><path d="M3.9 12a5.1 5.1 0 0 1 5.1-5.1h3V9h-3a3 3 0 1 0 0 6h3v2.1h-3A5.1 5.1 0 0 1 3.9 12zm11.1-3V6.9h3A5.1 5.1 0 0 1 23.1 12 5.1 5.1 0 0 1 18 17.1h-3V15h3a3 3 0 1 0 0-6h-3zM10 11h4v2h-4z"/></svg></button>
+      <button class="tool" id="emailBtn" aria-label="Insert Email Link"><svg viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg></button>
       <button class="tool" id="imageBtn" aria-label="Insert Image"><svg viewBox="0 0 24 24"><path d="M19 4H5a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm1 13H4V7h16v10zM8 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 8l4-5 3 4 3-4 5 5H5z"/></svg></button>
       <input type="file" id="imageFile" accept="image/*" style="display:none">
       <button class="tool" data-cmd="undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M12 6a7 7 0 0 0-7 7H2l4 4 4-4H7a5 5 0 0 1 8.5-3.5l1.4-1.4A7 7 0 0 0 12 6z"/></svg></button>
@@ -209,14 +223,16 @@
 
   <div class="wrap">
     <div>
-      <div id="editor" class="editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true">
-        <h1>Welcome 👋</h1>
-        <p>This editor uses <code>&lt;p&gt;</code> tags for new lines. Type here and press Enter!</p>
-        <ul>
-          <li>Insert images via toolbar, paste, or drag &amp; drop.</li>
-          <li>Source (right) updates automatically — read-only.</li>
-          <li>Autosaves to your browser’s local storage.</li>
-        </ul>
+      <div class="card">
+        <div id="editor" class="editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true">
+          <h1>Welcome 👋</h1>
+          <p>This editor uses <code>&lt;p&gt;</code> tags for new lines. Type here and press Enter!</p>
+          <ul>
+            <li>Insert images via toolbar, paste, or drag &amp; drop.</li>
+            <li>Source (right) updates automatically — read-only.</li>
+            <li>Autosaves to your browser’s local storage.</li>
+          </ul>
+        </div>
       </div>
     </div>
 
@@ -237,28 +253,38 @@
   <dialog id="linkDialog">
     <form method="dialog">
       <h3>Insert Link</h3>
-
       <label>Text
         <input type="text" id="linkText" placeholder="Link text">
       </label>
-
-      <div class="row">
-        <label>URL
-          <input type="url" id="linkUrl" placeholder="https://example.com">
-        </label>
-        <label>Email
-          <input type="email" id="linkEmail" placeholder="name@example.com">
-        </label>
-      </div>
-
-      <label>Subject (for email links)
-        <input type="text" id="linkSubject" placeholder="Subject line">
+      <label>URL
+        <input type="url" id="linkUrl" placeholder="https://example.com">
       </label>
-
       <label><input type="checkbox" id="linkBlank" checked> Open in new tab</label>
       <menu style="display:flex;gap:8px;justify-content:flex-end">
         <button value="cancel">Cancel</button>
         <button id="linkApply" value="default">Insert</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Email Modal -->
+  <dialog id="emailDialog">
+    <form method="dialog">
+      <h3>Insert Email Link</h3>
+      <label>Text
+        <input type="text" id="emailText" placeholder="Email link text">
+      </label>
+      <div class="row">
+        <label>Email
+          <input type="email" id="emailAddr" placeholder="name@example.com">
+        </label>
+        <label>Subject
+          <input type="text" id="emailSubject" placeholder="Subject line">
+        </label>
+      </div>
+      <menu style="display:flex;gap:8px;justify-content:flex-end">
+        <button value="cancel">Cancel</button>
+        <button id="emailApply" value="default">Insert</button>
       </menu>
     </form>
   </dialog>
@@ -285,6 +311,8 @@
     </form>
   </dialog>
 
+  <div id="toast" class="toast" role="status" aria-live="polite">Copied!</div>
+
   <script>
     // Elements
     const root = document.documentElement;
@@ -300,10 +328,11 @@
     const foreHex = document.getElementById('foreHex');
     const backHex = document.getElementById('backHex');
     const notes = document.getElementById('notes');
+    const toast = document.getElementById('toast');
 
     document.execCommand('defaultParagraphSeparator', false, 'p');
 
-    // Normalize paragraphs
+    // Paragraph normalization
     const INLINE_OK = new Set(['BR','IMG','A','SPAN','STRONG','EM','B','I','U','S','SMALL','SUP','SUB','CODE','KBD','MARK','TIME']);
     function wrapTopTextInParagraph(container){
       [...container.childNodes].forEach(node=>{
@@ -323,6 +352,9 @@
           if (kids.length>1) last.remove();
         }
       }
+      if (editor.textContent.trim()===''){
+        editor.innerHTML = '<p></p>';
+      }
     }
     function normalizeDivsToParagraphs(rootEl){
       rootEl.querySelectorAll('div').forEach(div=>{
@@ -337,7 +369,7 @@
       removeTrailingEmptyParagraph(rootEl);
     }
 
-    // Source serializer (one element per line)
+    // Serializer (one element per line)
     const VOID = new Set(['AREA','BASE','BR','COL','EMBED','HR','IMG','INPUT','LINK','META','PARAM','SOURCE','TRACK','WBR']);
     function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
     function attrs(el){return Array.from(el.attributes).map(a=>` ${a.name}="${a.value.replace(/"/g,'&quot;')}"`).join('');}
@@ -367,8 +399,10 @@
         } else if(node.nodeType===3){ const t=node.nodeValue.trim(); if(t) lines.push(esc(t)); }
         else if(node.nodeType===8){ lines.push(`<!--${node.nodeValue}-->`); }
       }
+      if (rootEl.childNodes.length===0){ return '<p></p>'; }
       Array.from(rootEl.childNodes).forEach(visit);
-      return lines.join('\n');
+      const out = lines.join('\n').trim();
+      return out || '<p></p>';
     }
 
     function updateCodeFromEditor(){
@@ -393,23 +427,38 @@
       else exec('formatBlock','<'+tag+'>');
     }
 
-    // Clear format (selection)
+    // Clear format (remove inline + headings -> p)
+    function replaceTag(el, newTag){
+      const n=document.createElement(newTag);
+      while(el.firstChild) n.appendChild(el.firstChild);
+      el.replaceWith(n); return n;
+    }
+    function blocksInSelection(){
+      const sel=window.getSelection(); if(!sel.rangeCount) return [];
+      const range=sel.getRangeAt(0);
+      const container=range.commonAncestorContainer.nodeType===1?range.commonAncestorContainer:range.commonAncestorContainer.parentElement;
+      const blocks=[];
+      container.querySelectorAll('*').forEach(n=>{
+        if(range.intersectsNode(n) && /^(P|H1|H2|H3|H4|H5|H6|BLOCKQUOTE|PRE)$/.test(n.tagName)) blocks.push(n);
+      });
+      if (blocks.length===0){
+        const start=range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement;
+        const b=start.closest('p,h1,h2,h3,h4,h5,h6,blockquote,pre'); if (b) blocks.push(b);
+      }
+      return blocks;
+    }
     function clearFormat(){
-      // built-ins
-      document.execCommand('removeFormat'); // clears bold/italic/underline/strike, etc.
-      document.execCommand('unlink');       // remove links
-      // scrub leftover style/class spans throughout editor (simple + safe)
+      document.execCommand('removeFormat');
+      document.execCommand('unlink');
+      blocksInSelection().forEach(b=>{
+        if (/^H[1-6]$/.test(b.tagName) || b.tagName==='BLOCKQUOTE' || b.tagName==='PRE'){
+          replaceTag(b,'p');
+        }
+      });
       editor.querySelectorAll('[style]').forEach(n=> n.removeAttribute('style'));
-      editor.querySelectorAll('font').forEach(n=>{ const span=document.createElement('span'); span.innerHTML=n.innerHTML; n.replaceWith(span); });
-      // normalize <b>/<i>/<u>/<s> by letting removeFormat unwrap most; any leftovers are ok semantically
       normalizeDivsToParagraphs(editor);
       save(); updateCodeFromEditor();
     }
-
-    // Bindings
-    document.querySelectorAll('button.tool[data-cmd]').forEach(btn=> btn.addEventListener('click', ()=> exec(btn.dataset.cmd)));
-    document.querySelector('[data-action="clearFormat"]').addEventListener('click', clearFormat);
-    document.getElementById('blockFormat').addEventListener('change', e=> setBlock(e.target.value));
 
     // Colors + HEX sync
     function toHex(v){ v=v.trim(); if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) return v.length===4?('#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3]).toLowerCase():v.toLowerCase(); return null; }
@@ -418,41 +467,75 @@
     foreHex.addEventListener('change', e=>{ const v=toHex(e.target.value)||foreColor.value; foreHex.value=v; foreColor.value=v; exec('foreColor', v); });
     backHex.addEventListener('change', e=>{ const v=toHex(e.target.value)||backColor.value; backHex.value=v; backColor.value=v; exec('hiliteColor', v); });
 
-    // Link dialog (web or email)
+    // Selection save/restore for dialogs
+    let savedRange=null;
+    function saveSelection(){ const sel=window.getSelection(); if (sel.rangeCount) savedRange=sel.getRangeAt(0); }
+    function restoreSelection(){ if (!savedRange) return; const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
+
+    // ----- Insert Link -----
     const linkDialog=document.getElementById('linkDialog');
     document.getElementById('linkBtn').addEventListener('click', ()=>{
       saveSelection();
       const sel=window.getSelection();
       document.getElementById('linkText').value = sel && sel.toString()? sel.toString() : '';
       document.getElementById('linkUrl').value = '';
-      document.getElementById('linkEmail').value = '';
-      document.getElementById('linkSubject').value = '';
       document.getElementById('linkBlank').checked = true;
       linkDialog.showModal();
     });
-    document.getElementById('linkApply').addEventListener('click', ()=>{
+
+    function insertLinkOrWrap(href, text, blank){
       restoreSelection();
+      const sel=window.getSelection(); if(!sel.rangeCount) return;
+      const range=sel.getRangeAt(0);
+      const targetAttrs = (!href.startsWith('mailto:') && blank) ? ' target="_blank" rel="noopener noreferrer"' : '';
+      const safeHref = href.replace(/"/g,'&quot;');
+      const safeText = (text && text.length ? text : href).replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      if (sel.isCollapsed){
+        document.execCommand('insertHTML', false, `<a href="${safeHref}"${targetAttrs}>${safeText}</a>`);
+      } else {
+        try {
+          const a=document.createElement('a');
+          a.setAttribute('href', href);
+          if (targetAttrs){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); }
+          range.surroundContents(a);
+        } catch {
+          const frag = range.cloneContents();
+          const div = document.createElement('div'); div.appendChild(frag);
+          const inner = div.innerHTML;
+          document.execCommand('insertHTML', false, `<a href="${safeHref}"${targetAttrs}>${inner}</a>`);
+        }
+      }
+      normalizeDivsToParagraphs(editor); save(); updateCodeFromEditor();
+    }
+
+    document.getElementById('linkApply').addEventListener('click', ()=>{
       const text=document.getElementById('linkText').value.trim();
       const url=document.getElementById('linkUrl').value.trim();
-      const email=document.getElementById('linkEmail').value.trim();
-      const subject=document.getElementById('linkSubject').value.trim();
       const blank=document.getElementById('linkBlank').checked;
-
-      let href=url;
-      if (!href && email){
-        const params = subject ? `?subject=${encodeURIComponent(subject)}` : '';
-        href = `mailto:${email}${params}`;
-      }
-      if (!href){ linkDialog.close(); return; }
-
-      if (!window.getSelection().toString() && text){ document.execCommand('insertText', false, text); }
-      exec('createLink', href);
-      const anchor=window.getSelection().anchorNode;
-      let a=anchor ? (anchor.nodeType===1? anchor : anchor.parentElement) : null;
-      if (a){ if (a.tagName!=='A') a=a.closest('a');
-        if (a){ if (blank && !href.startsWith('mailto:')){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); }
-          a.setAttribute('href', href); } }
+      if (!url){ linkDialog.close(); return; }
+      insertLinkOrWrap(url, text, blank);
       linkDialog.close();
+    });
+
+    // ----- Insert Email -----
+    const emailDialog=document.getElementById('emailDialog');
+    document.getElementById('emailBtn').addEventListener('click', ()=>{
+      saveSelection();
+      const sel=window.getSelection();
+      document.getElementById('emailText').value = sel && sel.toString()? sel.toString() : '';
+      document.getElementById('emailAddr').value = '';
+      document.getElementById('emailSubject').value = '';
+      emailDialog.showModal();
+    });
+    document.getElementById('emailApply').addEventListener('click', ()=>{
+      const text=document.getElementById('emailText').value.trim();
+      const email=document.getElementById('emailAddr').value.trim();
+      const subject=document.getElementById('emailSubject').value.trim();
+      if (!email){ emailDialog.close(); return; }
+      const href=`mailto:${email}${subject?`?subject=${encodeURIComponent(subject)}`:''}`;
+      insertLinkOrWrap(href, text, false);
+      emailDialog.close();
     });
 
     // Image dialog
@@ -483,11 +566,6 @@
       if (imgs.length){ const img=imgs[imgs.length-1]; if (alt) img.setAttribute('alt', alt); img.style.maxWidth='100%'; img.style.height='auto'; }
     }
 
-    // Selection save/restore
-    let savedRange=null;
-    function saveSelection(){ const sel=window.getSelection(); if (sel.rangeCount) savedRange=sel.getRangeAt(0); }
-    function restoreSelection(){ if (!savedRange) return; const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
-
     // Paste plain text
     editor.addEventListener('paste', (e)=>{
       e.preventDefault();
@@ -496,7 +574,7 @@
       normalizeDivsToParagraphs(editor); save(); updateCodeFromEditor();
     });
 
-    // Drag & drop images
+    // DnD images
     ;['dragenter','dragover','dragleave','drop'].forEach(ev=>{
       editor.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); });
     });
@@ -522,6 +600,7 @@
       if (meta && e.key.toLowerCase()==='b'){ e.preventDefault(); exec('bold'); }
       if (meta && e.key.toLowerCase()==='i'){ e.preventDefault(); exec('italic'); }
       if (meta && e.key.toLowerCase()==='u'){ e.preventDefault(); exec('underline'); }
+      if (e.key==='Backspace'){ setTimeout(()=>{ if (editor.textContent.trim()==='') { editor.innerHTML='<p></p>'; updateCodeFromEditor(); save(); } }, 0); }
     });
 
     // Clean + sync
@@ -542,15 +621,13 @@
       save(); updateCodeFromEditor();
     });
 
+    // Toast
+    function showToast(msg='Copied!'){ toast.textContent=msg; toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'), 1200); }
+
     // Copy source
     document.getElementById('copyBtn').addEventListener('click', async ()=>{
-      try{
-        await navigator.clipboard.writeText(codeArea.value);
-        alert('HTML copied to clipboard.');
-      }catch{
-        codeArea.removeAttribute('readonly'); codeArea.select(); document.execCommand('copy'); codeArea.setAttribute('readonly','');
-        alert('HTML copied.');
-      }
+      try{ await navigator.clipboard.writeText(codeArea.value); showToast('HTML copied'); }
+      catch{ codeArea.removeAttribute('readonly'); codeArea.select(); document.execCommand('copy'); codeArea.setAttribute('readonly',''); showToast('HTML copied'); }
     });
 
     // Download
@@ -567,14 +644,12 @@
 
     // Clear
     document.getElementById('clearBtn').addEventListener('click', ()=>{
-      if (confirm('Start a new document? This will clear the editor.')){
-        editor.innerHTML = '<p><br></p>';
-        save(); updateCodeFromEditor();
-      }
+      editor.innerHTML = '<p></p>';
+      save(); updateCodeFromEditor();
     });
 
     // Autosave (doc + notes)
-    const LS_DOC='wysiwyg-doc-v8', LS_NOTES='wysiwyg-notes-v1';
+    const LS_DOC='wysiwyg-doc-v9', LS_NOTES='wysiwyg-notes-v1';
     function save(){ try{ localStorage.setItem(LS_DOC, editor.innerHTML); }catch{} }
     function load(){
       try{ const d=localStorage.getItem(LS_DOC); if (d) editor.innerHTML=d; }catch{}
