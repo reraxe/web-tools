@@ -2,13 +2,11 @@
 <html lang="en" data-theme="">
 <head>
   <meta charset="utf-8" />
-  <title>WYSIWYG HTML Editor (Main edit + One-line source)</title>
+  <title>WYSIWYG HTML Editor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark">
   <style>
-    /* ===== THEME VARIABLES ===== */
     :root{
-      /* Light (default) */
       --bg:#f6f8fb; --bg-2:#eef3f9; --panel:#ffffff; --panel-2:#f2f6fb; --border:#d8e1ee;
       --text:#0b1220; --muted:#5b6b81; --accent:#2b6cff; --accent-2:#16a34a; --danger:#dc2626; --code-text:#0b1220;
       --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
@@ -18,7 +16,6 @@
     }
     @media (prefers-color-scheme: dark){
       :root{
-        /* Dark defaults if not overridden */
         --bg:#0f1216; --bg-2:#0c1016; --panel:#151a21; --panel-2:#1b2230; --border:#2a3442;
         --text:#e9eef6; --muted:#9db0c9; --accent:#6ea8ff; --accent-2:#7bd389; --danger:#ff6b6b; --code-text:#cfe4ff;
         --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
@@ -44,12 +41,12 @@
       --btn-active-b: color-mix(in srgb, var(--border) 40%, var(--accent) 60%);
     }
 
-    /* ===== LAYOUT & UI ===== */
     *{box-sizing:border-box}
     body{
       margin:0; background:linear-gradient(180deg,var(--bg), var(--bg) 60%, var(--bg-2));
       color:var(--text);
       font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";
+      color-scheme: light dark;
     }
     header{
       padding:14px 16px;border-bottom:1px solid var(--border);background:var(--panel);
@@ -76,7 +73,8 @@
       background:var(--panel-2);color:var(--text);border:1px solid var(--border);
       border-radius:8px;padding:8px 10px;cursor:pointer
     }
-    /* Match the color pickers to buttons */
+    .color-wrap{display:flex;align-items:center;gap:6px}
+    .hex-input{width:84px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-family:ui-monospace,monospace}
     input[type="color"].tool{
       -webkit-appearance:none;appearance:none;width:36px;height:36px;padding:0;
       border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer;
@@ -100,8 +98,8 @@
     .card{background:var(--panel);border:1px solid var(--border);
       border-radius:12px;padding:14px;}
     .card h3{margin:0 0 8px;font-size:14px;color:var(--muted)}
-    textarea.code{
-      width:100%;min-height:260px;background:var(--panel-2);color:var(--code-text);
+    textarea.code, textarea#notes{
+      width:100%;min-height:220px;background:var(--panel-2);color:var(--code-text);
       border:1px dashed var(--border);border-radius:8px;padding:10px;
       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px
     }
@@ -109,36 +107,31 @@
     .pill{font-size:11px;padding:2px 8px;border:1px solid var(--border);
       background:var(--panel-2);color:var(--muted);border-radius:999px}
 
-    /* Theme toggle chip */
     .theme-toggle{
       display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);
       background:var(--panel-2);color:var(--text);padding:6px 10px;border-radius:999px;cursor:pointer;
     }
     .theme-toggle svg{width:16px;height:16px}
 
-    /* Themed dialogs */
     dialog{
       border:1px solid var(--border); border-radius:10px; padding:16px 16px 12px;
-      background:var(--panel); color:var(--text); max-width:480px;
+      background:var(--panel); color:var(--text); max-width:520px;
     }
     dialog::backdrop{ background: rgba(0,0,0,.4); }
     dialog form h3{ margin:0 0 10px; color:var(--text); }
-    dialog input, dialog button{
-      font:inherit; color:var(--text);
-    }
+    dialog label{display:block;margin-bottom:8px}
+    dialog input, dialog button{ font:inherit; color:var(--text); }
     dialog input{
       width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
       background:var(--panel-2); margin-top:4px;
     }
+    dialog .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     dialog menu{ margin:14px 0 0; padding:0; }
     dialog button{
       appearance:none; border:1px solid var(--border); background:var(--panel-2);
       padding:8px 12px; border-radius:8px; cursor:pointer;
     }
     dialog button:hover{ background:var(--btn-hover); border-color:var(--btn-hover-b); }
-    dialog button[type="submit"], dialog #imageApply, dialog #linkApply{
-      border-color: var(--accent); color: var(--text);
-    }
   </style>
 </head>
 <body>
@@ -148,6 +141,7 @@
       <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h-0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM20.45 5.64l-1.41-1.41-1.79 1.79 1.4 1.4 1.8-1.78zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>
       <span id="themeLabel">System</span>
     </button>
+    <span class="pill" id="mainCount">0 chars</span>
     <span class="pill" title="Autosaves locally">Autosave: On</span>
   </header>
 
@@ -165,40 +159,49 @@
       <button class="tool tool--text" data-cmd="bold" aria-label="Bold (Ctrl/Cmd+B)"><span class="txt">B</span></button>
       <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl/Cmd+I)"><svg viewBox="0 0 24 24"><path d="M10 5v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V5z"/></svg></button>
       <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl/Cmd+U)"><svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 0 0 5-5V5h-3v7a2 2 0 0 1-4 0V5H7v7a5 5 0 0 0 5 5zm-7 2v2h14v-2H5z"/></svg></button>
-      <button class="tool" data-cmd="strikeThrough" aria-label="Strikethrough"><svg viewBox="0 0 24 24"><path d="M4 10h16v2H4zm7.5 3.5h-3c-.5.4-.8 1-.8 1.7 0 1.3 1.1 2.3 2.8 2.3 1.3 0 2.4-.5 3.2-1.2l1.8 1.8c-1.2 1.1-2.9 1.9-5 1.9-3.3 0-5.6-1.8-5.6-4.4 0-1.4.7-2.6 1.8-3.1H4v-2h16v2h-5.1c.5.4.8 1 .8 1.7h-3.2c0-.7-.6-1.2-1.8-1.2zM8 8c0-2.4 2.1-3.4 4.6-3.4 1.4 0 2.8.5 3.6 1.1l-1.7 1.7c-.5-.4-1.2-.6-1.9-.6-1.1 0-2 .5-2 .9H8z"/></svg></button>
+      <button class="tool" data-action="clearFormat" title="Clear format (remove styles, unlink)">
+        <svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm3 4h8v2H6v-2zm0 4h12v2H6v-2zm0 4h6v2H6v-2zM17 3l4 4-8 8-4 1 1-4 8-8z"/></svg>
+      </button>
     </div>
 
     <div class="group">
-      <button class="tool" data-cmd="justifyLeft" aria-label="Align Left"><svg viewBox="0 0 24 24"><path d="M3 4h12v2H3V4zm0 4h18v2H3V8zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyCenter" aria-label="Align Center"><svg viewBox="0 0 24 24"><path d="M6 4h12v2H6V4zm-3 4h18v2H3V8zm3 4h12v2H6v-2zm-3 4h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyRight" aria-label="Align Right"><svg viewBox="0 0 24 24"><path d="M9 4h12v2H9V4zM3 8h18v2H3V8zm6 4h12v2H9v-2zM3 16h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyFull" aria-label="Justify"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3V4zm0 4h18v2H3V8zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
+      <button class="tool" data-cmd="justifyLeft" aria-label="Align Left"><svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h12v2H3zM3 13h18v2H3zM3 17h12v2H3z"/></svg></button>
+      <button class="tool" data-cmd="justifyCenter" aria-label="Align Center"><svg viewBox="0 0 24 24"><path d="M6 5h12v2H6zM3 9h18v2H3zM6 13h12v2H6zM3 17h18v2H3z"/></svg></button>
+      <button class="tool" data-cmd="justifyRight" aria-label="Align Right"><svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM9 9h12v2H9zM3 13h18v2H3zM9 17h12v2H9z"/></svg></button>
+      <button class="tool" data-cmd="justifyFull" aria-label="Justify"><svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h18v2H3zM3 13h18v2H3zM3 17h18v2H3z"/></svg></button>
     </div>
 
     <div class="group">
       <button class="tool" data-cmd="insertUnorderedList" aria-label="Bulleted List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 11h2v2H3zM7 17h14v2H7zM3 17h2v2H3z"/></svg></button>
       <button class="tool" data-cmd="insertOrderedList" aria-label="Numbered List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 10h2v4H3zM7 17h14v2H7zM3 16h3v2H3z"/></svg></button>
-      <button class="tool" data-cmd="outdent" aria-label="Outdent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM21 8v8l-6-4 6-4z"/></svg></button>
-      <button class="tool" data-cmd="indent" aria-label="Indent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM15 8v8l6-4-6-4z"/></svg></button>
+      <button class="tool" data-cmd="outdent" aria-label="Outdent"><svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h10v2H3zM3 13h18v2H3zM3 17h10v2H3zM11 8l-4 4 4 4V8z"/></svg></button>
+      <button class="tool" data-cmd="indent" aria-label="Indent"><svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h10v2H3zM3 13h18v2H3zM3 17h10v2H3zM13 8v8l4-4-4-4z"/></svg></button>
     </div>
 
     <div class="group">
-      <button class="tool" id="linkBtn" aria-label="Insert Link"><svg viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7-1h2v2h-2v-2zm4.1-4h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3V7z"/></svg></button>
-      <button class="tool" id="imageBtn" aria-label="Insert Image"><svg viewBox="0 0 24 24"><path d="M19 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 12H5V7h14v10zM8.5 13l2.5 3 3.5-4.5 4.5 6H6l2.5-4.5zM9 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg></button>
+      <button class="tool" id="linkBtn" aria-label="Insert Link"><svg viewBox="0 0 24 24"><path d="M3.9 12a5.1 5.1 0 0 1 5.1-5.1h3V9h-3a3 3 0 1 0 0 6h3v2.1h-3A5.1 5.1 0 0 1 3.9 12zm11.1-3V6.9h3A5.1 5.1 0 0 1 23.1 12 5.1 5.1 0 0 1 18 17.1h-3V15h3a3 3 0 1 0 0-6h-3zM10 11h4v2h-4z"/></svg></button>
+      <button class="tool" id="imageBtn" aria-label="Insert Image"><svg viewBox="0 0 24 24"><path d="M19 4H5a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h14a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm1 13H4V7h16v10zM8 9a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-3 8l4-5 3 4 3-4 5 5H5z"/></svg></button>
       <input type="file" id="imageFile" accept="image/*" style="display:none">
-      <button class="tool" data-cmd="undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 0-7 7H2l4 4 4-4H7a5 5 0 0 1 8.54-3.54l1.41-1.41A7 7 0 0 0 12 5z"/></svg></button>
-      <button class="tool" data-cmd="redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 1 7 7h3l-4 4-4-4h3a5 5 0 0 0-8.54-3.54L6.05 7.05A7 7 0 0 1 12 5z"/></svg></button>
+      <button class="tool" data-cmd="undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M12 6a7 7 0 0 0-7 7H2l4 4 4-4H7a5 5 0 0 1 8.5-3.5l1.4-1.4A7 7 0 0 0 12 6z"/></svg></button>
+      <button class="tool" data-cmd="redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M12 6a7 7 0 0 1 7 7h3l-4 4-4-4h3a5 5 0 0 0-8.5-3.5L6.1 8.1A7 7 0 0 1 12 6z"/></svg></button>
     </div>
 
     <div class="group">
-      <label class="status" for="foreColor">Text</label>
-      <input class="tool" id="foreColor" type="color" value="#0b1220" title="Text color">
-      <label class="status" for="backColor">Bg</label>
-      <input class="tool" id="backColor" type="color" value="#fff4a3" title="Highlight color">
+      <label class="status">Text</label>
+      <div class="color-wrap">
+        <input class="tool" id="foreColor" type="color" value="#0b1220" title="Text color">
+        <input id="foreHex" class="hex-input" value="#0b1220" aria-label="Text HEX">
+      </div>
+      <label class="status">Bg</label>
+      <div class="color-wrap">
+        <input class="tool" id="backColor" type="color" value="#fff4a3" title="Highlight color">
+        <input id="backHex" class="hex-input" value="#fff4a3" aria-label="Background HEX">
+      </div>
     </div>
 
     <div class="group">
       <button class="tool" id="cleanBtn" title="Clean unsafe HTML"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm2 4h14l-1.5 10h-11L5 10zm6-6h2v2h-2V4z"/></svg>Clean</button>
+      <button class="tool" id="copyBtn" title="Copy HTML source"><svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 18H8V7h11v16z"/></svg>Copy</button>
       <button class="tool" id="downloadBtn" title="Download HTML"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM11 4h2v8h3l-4 4-4-4h3z"/></svg>Download</button>
       <button class="tool" id="clearBtn" title="Clear document"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>New</button>
     </div>
@@ -219,9 +222,13 @@
 
     <aside class="side">
       <div class="card">
-        <h3>HTML Source (formatted: one element per line)</h3>
+        <h3>HTML Source (one element per line)</h3>
         <textarea id="code" class="code" aria-label="HTML source (read-only)" readonly></textarea>
         <div class="status" id="charCount">0 chars</div>
+      </div>
+      <div class="card">
+        <h3>Notepad (free text)</h3>
+        <textarea id="notes" placeholder="Write anything here… (not linked to the code)"></textarea>
       </div>
     </aside>
   </div>
@@ -230,8 +237,24 @@
   <dialog id="linkDialog">
     <form method="dialog">
       <h3>Insert Link</h3>
-      <label>Text<input type="text" id="linkText" placeholder="Link text"></label><br><br>
-      <label>URL<input type="url" id="linkUrl" placeholder="https://example.com"></label><br><br>
+
+      <label>Text
+        <input type="text" id="linkText" placeholder="Link text">
+      </label>
+
+      <div class="row">
+        <label>URL
+          <input type="url" id="linkUrl" placeholder="https://example.com">
+        </label>
+        <label>Email
+          <input type="email" id="linkEmail" placeholder="name@example.com">
+        </label>
+      </div>
+
+      <label>Subject (for email links)
+        <input type="text" id="linkSubject" placeholder="Subject line">
+      </label>
+
       <label><input type="checkbox" id="linkBlank" checked> Open in new tab</label>
       <menu style="display:flex;gap:8px;justify-content:flex-end">
         <button value="cancel">Cancel</button>
@@ -244,13 +267,17 @@
   <dialog id="imageDialog">
     <form method="dialog">
       <h3>Insert Image</h3>
-      <label>Image URL<input type="url" id="imageUrl" placeholder="https://..."></label>
+      <label>Image URL
+        <input type="url" id="imageUrl" placeholder="https://...">
+      </label>
       <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
         <span class="status">or</span>
         <button id="chooseFileBtn" type="button">Choose File…</button>
         <input type="file" id="imageFile2" accept="image/*" style="display:none">
       </div>
-      <label>Alt text<input type="text" id="imageAlt" placeholder="Describe the image"></label>
+      <label>Alt text
+        <input type="text" id="imageAlt" placeholder="Describe the image">
+      </label>
       <menu style="display:flex;gap:8px;justify-content:flex-end">
         <button value="cancel">Cancel</button>
         <button id="imageApply" value="default">Insert</button>
@@ -259,104 +286,99 @@
   </dialog>
 
   <script>
-    // === Elements ===
+    // Elements
     const root = document.documentElement;
     const editor = document.getElementById('editor');
     const codeArea = document.getElementById('code');
     const charCount = document.getElementById('charCount');
+    const mainCount = document.getElementById('mainCount');
     const themeBtn = document.getElementById('themeBtn');
     const themeLabel = document.getElementById('themeLabel');
     const themeIcon = document.getElementById('themeIcon');
+    const foreColor = document.getElementById('foreColor');
+    const backColor = document.getElementById('backColor');
+    const foreHex = document.getElementById('foreHex');
+    const backHex = document.getElementById('backHex');
+    const notes = document.getElementById('notes');
 
-    // Force <p> for Enter
     document.execCommand('defaultParagraphSeparator', false, 'p');
 
-    // --- Paragraph normalization & wrapping ---
+    // Normalize paragraphs
     const INLINE_OK = new Set(['BR','IMG','A','SPAN','STRONG','EM','B','I','U','S','SMALL','SUP','SUB','CODE','KBD','MARK','TIME']);
-    function wrapTopTextInParagraph(container) {
-      // Wrap stray top-level text nodes into <p>
-      [...container.childNodes].forEach(node => {
-        if (node.nodeType === 3 && node.nodeValue.trim()) {
-          const p = document.createElement('p');
-          p.textContent = node.nodeValue.trim();
+    function wrapTopTextInParagraph(container){
+      [...container.childNodes].forEach(node=>{
+        if (node.nodeType===3 && node.nodeValue.trim()){
+          const p=document.createElement('p');
+          p.textContent=node.nodeValue.trim();
           node.replaceWith(p);
         }
       });
     }
-    function normalizeDivsToParagraphs(rootEl) {
-      const divs = rootEl.querySelectorAll('div');
-      divs.forEach(div => {
-        const hasBlocks = [...div.children].some(c => c.nodeType === 1 && !INLINE_OK.has(c.tagName));
-        if (!hasBlocks) {
-          const p = document.createElement('p');
-          while (div.firstChild) p.appendChild(div.firstChild);
+    function removeTrailingEmptyParagraph(rootEl){
+      const kids=[...rootEl.children]; if(!kids.length) return;
+      const last=kids[kids.length-1];
+      if (last.tagName==='P'){
+        const html=last.innerHTML.replace(/\s+/g,'').toLowerCase();
+        if (html==='' || html==='<br>' || html==='<br/>' || html==='<br/>'){
+          if (kids.length>1) last.remove();
+        }
+      }
+    }
+    function normalizeDivsToParagraphs(rootEl){
+      rootEl.querySelectorAll('div').forEach(div=>{
+        const hasBlocks=[...div.children].some(c=>c.nodeType===1 && !INLINE_OK.has(c.tagName));
+        if(!hasBlocks){
+          const p=document.createElement('p');
+          while(div.firstChild) p.appendChild(div.firstChild);
           div.replaceWith(p);
         }
       });
       wrapTopTextInParagraph(rootEl);
+      removeTrailingEmptyParagraph(rootEl);
     }
 
-    // Escaper for text nodes
-    function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-    // One-element-per-line formatter (read-only preview)
+    // Source serializer (one element per line)
     const VOID = new Set(['AREA','BASE','BR','COL','EMBED','HR','IMG','INPUT','LINK','META','PARAM','SOURCE','TRACK','WBR']);
-    function attrs(el){
-      return Array.from(el.attributes).map(a => ` ${a.name}="${a.value.replace(/"/g,'&quot;')}"`).join('');
-    }
+    function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    function attrs(el){return Array.from(el.attributes).map(a=>` ${a.name}="${a.value.replace(/"/g,'&quot;')}"`).join('');}
     function serializeOneLine(rootEl){
       const lines=[];
       function visit(node){
-        if (node.nodeType===1){
+        if(node.nodeType===1){
           const el=node; const tag=el.tagName.toLowerCase();
-          if (VOID.has(el.tagName)){ // void/empty tag
-            lines.push(`<${tag}${attrs(el)}/>`);
+          if(VOID.has(el.tagName)){ lines.push(`<${tag}${attrs(el)}/>`);
             return;
           }
-          if (tag==='ul' || tag==='ol'){
-            lines.push(`<${tag}${attrs(el)}>`);
-            el.childNodes.forEach(n=>{
-              if (n.nodeType===1 && n.tagName==='LI'){
-                // inline innerHTML for li, collapsed
-                const contents = n.innerHTML.replace(/\n+/g,' ').trim();
-                lines.push(`<li>${contents}</li>`);
-              }
-            });
-            lines.push(`</${tag}>`);
-            return;
+          if(tag==='ul'||tag==='ol'){
+            lines.push(`<${tag}${attrs(el)}>`); Array.from(el.children).forEach(li=>{
+              if(li.tagName==='LI'){ lines.push(`<li>${li.innerHTML.trim()}</li>`); }
+            }); lines.push(`</${tag}>`); return;
           }
-          const elementChildren = Array.from(el.children);
-          if (elementChildren.length===0){
-            const text = el.textContent ?? '';
-            lines.push(`<${tag}${attrs(el)}>${esc(text)}</${tag}>`);
+          const children=Array.from(el.childNodes);
+          if(children.every(c=>c.nodeType!==1)){
+            const text=el.textContent??''; lines.push(`<${tag}${attrs(el)}>${esc(text)}</${tag}>`);
           } else {
-            // Container: put opening & closing on their own lines; children on their own lines
-            lines.push(`<${tag}${attrs(el)}>`); 
-            Array.from(el.childNodes).forEach(c=>{
-              if (c.nodeType===1) visit(c);
-              else if (c.nodeType===3){ const t=c.nodeValue.trim(); if (t) lines.push(esc(t)); }
-              else if (c.nodeType===8){ lines.push(`<!--${c.nodeValue}-->`); }
-            });
-            lines.push(`</${tag}>`);
+            lines.push(`<${tag}${attrs(el)}>`); children.forEach(c=>{
+              if(c.nodeType===1) visit(c);
+              else if(c.nodeType===3){ const t=c.nodeValue.trim(); if(t) lines.push(esc(t)); }
+              else if(c.nodeType===8){ lines.push(`<!--${c.nodeValue}-->`); }
+            }); lines.push(`</${tag}>`);
           }
-        } else if (node.nodeType===3){
-          const t=node.nodeValue.trim(); if (t) lines.push(esc(t));
-        } else if (node.nodeType===8){
-          lines.push(`<!--${node.nodeValue}-->`);
-        }
+        } else if(node.nodeType===3){ const t=node.nodeValue.trim(); if(t) lines.push(esc(t)); }
+        else if(node.nodeType===8){ lines.push(`<!--${node.nodeValue}-->`); }
       }
       Array.from(rootEl.childNodes).forEach(visit);
       return lines.join('\n');
     }
 
-    // Update source (read-only)
     function updateCodeFromEditor(){
-      const oneLine = serializeOneLine(editor);
-      codeArea.value = oneLine;
-      charCount.textContent = oneLine.length.toLocaleString() + ' chars';
+      const oneLine=serializeOneLine(editor);
+      codeArea.value=oneLine;
+      charCount.textContent=oneLine.length.toLocaleString()+' chars';
+      mainCount.textContent=(editor.innerText||'').length.toLocaleString()+' chars';
     }
 
-    // Exec helper
+    // Exec
     function exec(cmd,val=null){
       document.execCommand(cmd,false,val);
       editor.focus();
@@ -365,25 +387,46 @@
       updateCodeFromEditor();
     }
     function setBlock(tag){
-      if (tag==='p') exec('formatBlock','<p>');
-      else if (tag==='blockquote') exec('formatBlock','<blockquote>');
-      else if (tag==='pre') exec('formatBlock','<pre>');
+      if(tag==='p') exec('formatBlock','<p>');
+      else if(tag==='blockquote') exec('formatBlock','<blockquote>');
+      else if(tag==='pre') exec('formatBlock','<pre>');
       else exec('formatBlock','<'+tag+'>');
     }
 
-    // Toolbar bindings
-    document.querySelectorAll('button.tool[data-cmd]').forEach(btn=> btn.addEventListener('click', ()=> exec(btn.dataset.cmd)));
-    document.getElementById('blockFormat').addEventListener('change', e=> setBlock(e.target.value));
-    document.getElementById('foreColor').addEventListener('change', e=> exec('foreColor', e.target.value));
-    document.getElementById('backColor').addEventListener('change', e=> exec('hiliteColor', e.target.value));
+    // Clear format (selection)
+    function clearFormat(){
+      // built-ins
+      document.execCommand('removeFormat'); // clears bold/italic/underline/strike, etc.
+      document.execCommand('unlink');       // remove links
+      // scrub leftover style/class spans throughout editor (simple + safe)
+      editor.querySelectorAll('[style]').forEach(n=> n.removeAttribute('style'));
+      editor.querySelectorAll('font').forEach(n=>{ const span=document.createElement('span'); span.innerHTML=n.innerHTML; n.replaceWith(span); });
+      // normalize <b>/<i>/<u>/<s> by letting removeFormat unwrap most; any leftovers are ok semantically
+      normalizeDivsToParagraphs(editor);
+      save(); updateCodeFromEditor();
+    }
 
-    // Link dialog
+    // Bindings
+    document.querySelectorAll('button.tool[data-cmd]').forEach(btn=> btn.addEventListener('click', ()=> exec(btn.dataset.cmd)));
+    document.querySelector('[data-action="clearFormat"]').addEventListener('click', clearFormat);
+    document.getElementById('blockFormat').addEventListener('change', e=> setBlock(e.target.value));
+
+    // Colors + HEX sync
+    function toHex(v){ v=v.trim(); if(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) return v.length===4?('#'+v[1]+v[1]+v[2]+v[2]+v[3]+v[3]).toLowerCase():v.toLowerCase(); return null; }
+    foreColor.addEventListener('input', e=>{ const v=e.target.value; foreHex.value=v; exec('foreColor', v); });
+    backColor.addEventListener('input', e=>{ const v=e.target.value; backHex.value=v; exec('hiliteColor', v); });
+    foreHex.addEventListener('change', e=>{ const v=toHex(e.target.value)||foreColor.value; foreHex.value=v; foreColor.value=v; exec('foreColor', v); });
+    backHex.addEventListener('change', e=>{ const v=toHex(e.target.value)||backColor.value; backHex.value=v; backColor.value=v; exec('hiliteColor', v); });
+
+    // Link dialog (web or email)
     const linkDialog=document.getElementById('linkDialog');
     document.getElementById('linkBtn').addEventListener('click', ()=>{
       saveSelection();
       const sel=window.getSelection();
       document.getElementById('linkText').value = sel && sel.toString()? sel.toString() : '';
       document.getElementById('linkUrl').value = '';
+      document.getElementById('linkEmail').value = '';
+      document.getElementById('linkSubject').value = '';
       document.getElementById('linkBlank').checked = true;
       linkDialog.showModal();
     });
@@ -391,14 +434,24 @@
       restoreSelection();
       const text=document.getElementById('linkText').value.trim();
       const url=document.getElementById('linkUrl').value.trim();
+      const email=document.getElementById('linkEmail').value.trim();
+      const subject=document.getElementById('linkSubject').value.trim();
       const blank=document.getElementById('linkBlank').checked;
-      if (!url){ linkDialog.close(); return; }
+
+      let href=url;
+      if (!href && email){
+        const params = subject ? `?subject=${encodeURIComponent(subject)}` : '';
+        href = `mailto:${email}${params}`;
+      }
+      if (!href){ linkDialog.close(); return; }
+
       if (!window.getSelection().toString() && text){ document.execCommand('insertText', false, text); }
-      exec('createLink', url);
+      exec('createLink', href);
       const anchor=window.getSelection().anchorNode;
       let a=anchor ? (anchor.nodeType===1? anchor : anchor.parentElement) : null;
       if (a){ if (a.tagName!=='A') a=a.closest('a');
-        if (a){ if (blank){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); } a.setAttribute('href', url); } }
+        if (a){ if (blank && !href.startsWith('mailto:')){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); }
+          a.setAttribute('href', href); } }
       linkDialog.close();
     });
 
@@ -430,12 +483,12 @@
       if (imgs.length){ const img=imgs[imgs.length-1]; if (alt) img.setAttribute('alt', alt); img.style.maxWidth='100%'; img.style.height='auto'; }
     }
 
-    // Selection save/restore (dialogs)
+    // Selection save/restore
     let savedRange=null;
     function saveSelection(){ const sel=window.getSelection(); if (sel.rangeCount) savedRange=sel.getRangeAt(0); }
     function restoreSelection(){ if (!savedRange) return; const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
 
-    // Paste: plain text then normalize
+    // Paste plain text
     editor.addEventListener('paste', (e)=>{
       e.preventDefault();
       const text=(e.clipboardData||window.clipboardData).getData('text/plain');
@@ -463,7 +516,7 @@
       }
     });
 
-    // Keyboard shortcuts
+    // Shortcuts
     document.addEventListener('keydown', e=>{
       const meta=e.ctrlKey||e.metaKey;
       if (meta && e.key.toLowerCase()==='b'){ e.preventDefault(); exec('bold'); }
@@ -471,7 +524,7 @@
       if (meta && e.key.toLowerCase()==='u'){ e.preventDefault(); exec('underline'); }
     });
 
-    // Clean HTML + normalize + sync
+    // Clean + sync
     function cleanHTML(html){
       const tmp=document.createElement('div'); tmp.innerHTML=html;
       tmp.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(n=>n.remove());
@@ -489,7 +542,18 @@
       save(); updateCodeFromEditor();
     });
 
-    // Download HTML
+    // Copy source
+    document.getElementById('copyBtn').addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText(codeArea.value);
+        alert('HTML copied to clipboard.');
+      }catch{
+        codeArea.removeAttribute('readonly'); codeArea.select(); document.execCommand('copy'); codeArea.setAttribute('readonly','');
+        alert('HTML copied.');
+      }
+    });
+
+    // Download
     document.getElementById('downloadBtn').addEventListener('click', ()=>{
       const blob=new Blob([wrapAsDocument(editor.innerHTML)], {type:'text/html;charset=utf-8'});
       const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='document.html'; a.click();
@@ -501,25 +565,27 @@
 <body>${bodyHTML}</body></html>`;
     }
 
-    // Clear (start with a proper empty paragraph)
+    // Clear
     document.getElementById('clearBtn').addEventListener('click', ()=>{
       if (confirm('Start a new document? This will clear the editor.')){
         editor.innerHTML = '<p><br></p>';
-        save();
-        updateCodeFromEditor();
+        save(); updateCodeFromEditor();
       }
     });
 
-    // Autosave
-    const LS_KEY='wysiwyg-doc-v6';
-    function save(){ try{ localStorage.setItem(LS_KEY, editor.innerHTML); }catch{} }
+    // Autosave (doc + notes)
+    const LS_DOC='wysiwyg-doc-v8', LS_NOTES='wysiwyg-notes-v1';
+    function save(){ try{ localStorage.setItem(LS_DOC, editor.innerHTML); }catch{} }
     function load(){
-      try{ const data=localStorage.getItem(LS_KEY); if (data) editor.innerHTML=data; normalizeDivsToParagraphs(editor); }catch{}
+      try{ const d=localStorage.getItem(LS_DOC); if (d) editor.innerHTML=d; }catch{}
+      normalizeDivsToParagraphs(editor);
+      try{ const n=localStorage.getItem(LS_NOTES); if (n!=null) notes.value=n; }catch{}
     }
+    notes.addEventListener('input', ()=>{ try{ localStorage.setItem(LS_NOTES, notes.value); }catch{} });
 
     // Observe editor -> update source
-    const observer=new MutationObserver(()=>{ updateCodeFromEditor(); save(); });
-    observer.observe(editor, {subtree:true, childList:true, characterData:true});
+    const obs=new MutationObserver(()=>{ updateCodeFromEditor(); save(); });
+    obs.observe(editor, {subtree:true, childList:true, characterData:true});
 
     // Init
     load(); updateCodeFromEditor();
@@ -534,12 +600,12 @@
     }
     setInterval(refreshActiveStates, 300);
 
-    // ===== THEME LOGIC =====
-    const THEME_KEY='wysiwyg-theme-pref'; // 'system' | 'light' | 'dark'
+    // THEME
+    const THEME_KEY='wysiwyg-theme-pref';
     function applyTheme(mode){
-      if (mode==='light'){ root.setAttribute('data-theme','light'); themeLabel.textContent='Light'; themeBtn.title='Theme: Light'; setIcon('sun'); }
-      else if (mode==='dark'){ root.setAttribute('data-theme','dark'); themeLabel.textContent='Dark'; themeBtn.title='Theme: Dark'; setIcon('moon'); }
-      else { root.setAttribute('data-theme',''); themeLabel.textContent='System'; themeBtn.title='Theme: System'; setIcon('auto'); }
+      if (mode==='light'){ root.setAttribute('data-theme','light'); themeLabel.textContent='Light'; setIcon('sun'); }
+      else if (mode==='dark'){ root.setAttribute('data-theme','dark'); themeLabel.textContent='Dark'; setIcon('moon'); }
+      else { root.setAttribute('data-theme',''); themeLabel.textContent='System'; setIcon('auto'); }
       try{ localStorage.setItem(THEME_KEY, mode); }catch{}
     }
     function setIcon(kind){
