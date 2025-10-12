@@ -1,101 +1,264 @@
 <!DOCTYPE html>
-<html>
-<title>reraxe/demo-html-editor</title>
-<link rel="shortcut icon" href="https://raw.githubusercontent.com/reraxe/html-editor/master/Uploads/favicon.png" />
+<html lang="en">
 <head>
-<script src='https://cdnjs.cloudflare.com/ajax/libs/ace/1.4.12/ace.js'></script>
-
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>WYSIWYG HTML Editor — Light/Dark Mode</title>
 <style>
-html,body { margin:0; padding:0; height:100%; width:100%; overflow:hidden;}
-
-#editor {
-    height:100%;
-    width:50%;
-    display:inline-block;
-}
-
-#container {
-	height:100%;
-	width:auto;
-  white-space:nowrap; 
-  overflow:hidden;
-  position:relative;
-}
-
-#iframe {
-	height:100%;
-	display:inline-block;
-	width:50%;
-}
+  :root {
+    --bg:#0f1220;--panel:#161a2d;--panel-2:#1d2340;--text:#e8ecff;--muted:#9aa3c7;
+    --accent:#6a8dff;--danger:#ff6b6b;--border:#2a3157;--radius:12px;--shadow:0 8px 24px rgba(0,0,0,.25);
+    --transition: background-color .25s ease, color .25s ease, border-color .25s ease;
+  }
+  body.light {
+    --bg:#f5f7ff;--panel:#ffffff;--panel-2:#f1f3fb;--text:#12152b;--muted:#5e627d;
+    --accent:#3c6fff;--danger:#d94141;--border:#ccd3ee;--shadow:0 4px 18px rgba(0,0,0,.1);
+  }
+  *{box-sizing:border-box;transition:var(--transition);}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
+  }
+  header{
+    position:sticky; top:0; z-index:10; backdrop-filter:blur(8px);
+    background:var(--panel); border-bottom:1px solid var(--border);
+  }
+  .shell{max-width:1100px;margin:0 auto;padding:16px}
+  .titlebar{display:flex;align-items:center;gap:12px;justify-content:space-between}
+  .titlebar h1{font-size:16px;margin:0;color:var(--text);letter-spacing:.4px}
+  .toolbar{
+    margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+    background:var(--panel); padding:8px; border:1px solid var(--border); border-radius:10px;
+  }
+  .grp{display:flex;gap:6px; align-items:center; padding-right:6px; border-right:1px solid var(--border)}
+  .grp:last-child{border-right:none;padding-right:0}
+  button, select, input[type="color"]{
+    height:36px; border-radius:8px; border:1px solid var(--border);
+    background:var(--panel-2); color:var(--text); padding:0 10px;
+    cursor:pointer; transition:var(--transition); outline:none;
+  }
+  button:hover, select:hover{box-shadow:0 0 0 2px rgba(106,141,255,.25)}
+  button.active{background:var(--accent);border-color:transparent;color:#fff}
+  button.icon{width:36px;padding:0;display:grid;place-items:center}
+  .spacer{flex:1}
+  .editor-wrap{max-width:1100px;margin:16px auto; padding:0 16px 24px}
+  #editor{
+    min-height:55vh; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:var(--radius); padding:20px; box-shadow:var(--shadow);
+    outline:none; overflow:auto;
+  }
+  #editor:empty:before{content:"Start typing…"; color:var(--muted)}
+  #editor p{margin:0 0 .75em}
+  #editor p:last-child{margin-bottom:0}
+  .statusbar{
+    display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--muted);
+    margin-top:10px;font-size:12px
+  }
+  .modal{
+    position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.5);
+    z-index:20; padding:16px;
+  }
+  .modal.open{display:grid}
+  .card{
+    width:min(480px,100%); background:var(--panel); border:1px solid var(--border);
+    border-radius:12px; padding:16px; color:var(--text)
+  }
+  .row{display:flex; flex-direction:column; gap:6px; margin-bottom:12px}
+  .row input, .row select{height:40px; background:var(--panel-2); color:var(--text);}
+  .row .inline{display:flex; gap:8px}
+  .actions{display:flex; gap:8px; justify-content:flex-end}
+  .sr-only{position:absolute;left:-9999px}
+  .source{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
+    width:100%;min-height:55vh; display:none; background:var(--panel-2);
+    color:var(--text); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px; white-space:pre; overflow:auto;
+  }
+  .pill{
+    display:inline-flex;align-items:center;gap:8px;background:var(--panel-2);
+    border:1px solid var(--border); padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted)
+  }
+  .footer{opacity:.8;margin-top:6px}
 </style>
-
-</head>
-
-<body onload ='ready()'>
-
-    <div id='container'>
-
-        <div id="editor">
-        </div>
-      
-        <iframe id='iframe' frameBorder="0">
-        </iframe>
-      </div>
-
-<script>
-
-function update()
-{
-	var idoc = document.getElementById('iframe').contentWindow.document;
-
-	idoc.open();
-	idoc.write(editor.getValue());
-	idoc.close();
-}
-
-function setupEditor()
-{
-  window.editor = ace.edit("editor");
-  editor.setTheme("ace/theme/monokai");
-  editor.getSession().setMode("ace/mode/html");
-  editor.setValue(`<!DOCTYPE html>
-<html>
-<head>
-<title>Page Title</title>
 </head>
 <body>
+  <header>
+    <div class="shell">
+      <div class="titlebar">
+        <h1 contenteditable="true" id="docTitle">Untitled Document</h1>
+        <div class="pill" id="autosaveState">Autosave: enabled</div>
+      </div>
 
-<h1>This is a Heading</h1>
-<p>This is a paragraph.</p>
+      <div class="toolbar" role="toolbar">
+        <div class="grp">
+          <button class="icon" data-cmd="bold"><strong>B</strong></button>
+          <button class="icon" data-cmd="italic"><em>I</em></button>
+          <button class="icon" data-cmd="underline"><u>U</u></button>
+          <button class="icon" data-cmd="strikeThrough">S</button>
+        </div>
 
-</body>
-</html>`,1); //1 = moves cursor to end
+        <div class="grp">
+          <select id="blockFormat">
+            <option value="p">Paragraph</option>
+            <option value="h1">Heading 1</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
+            <option value="blockquote">Quote</option>
+            <option value="pre">Code Block</option>
+          </select>
+          <button class="icon" data-cmd="insertOrderedList">1.</button>
+          <button class="icon" data-cmd="insertUnorderedList">•</button>
+        </div>
 
-  editor.getSession().on('change', function() {
-    update();
+        <div class="grp">
+          <button class="icon" data-cmd="justifyLeft">⟸</button>
+          <button class="icon" data-cmd="justifyCenter">╋</button>
+          <button class="icon" data-cmd="justifyRight">⟹</button>
+          <button class="icon" data-cmd="justifyFull">≋</button>
+        </div>
+
+        <div class="grp">
+          <input type="color" id="foreColor" />
+          <input type="color" id="backColor" />
+        </div>
+
+        <div class="grp">
+          <button id="btnLink">🔗</button>
+          <button id="btnImage">🖼️</button>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="grp">
+          <button id="toggleTheme" title="Toggle light/dark mode">🌙</button>
+          <button id="toggleSource">&lt;/&gt;</button>
+          <button id="exportHtml">Export</button>
+          <input type="file" id="importFile" accept=".html,.htm,.txt" />
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="editor-wrap">
+    <div id="editor" contenteditable="true">
+      <h1>Hello world</h1>
+      <p>Light/Dark mode WYSIWYG editor.</p>
+      <p><br></p>
+    </div>
+    <textarea id="source" class="source"></textarea>
+    <div class="statusbar">
+      <div id="wordCount">Words: 0 · Characters: 0</div>
+      <div class="footer">Tip: Press Ctrl/Cmd + B/I/U for formatting</div>
+    </div>
+  </main>
+
+<script>
+(function(){
+  const editor = document.getElementById('editor');
+  const toggleTheme = document.getElementById('toggleTheme');
+  const source = document.getElementById('source');
+  const toggleSourceBtn = document.getElementById('toggleSource');
+  const foreColor = document.getElementById('foreColor');
+  const backColor = document.getElementById('backColor');
+  const wordCountEl = document.getElementById('wordCount');
+  const importFile = document.getElementById('importFile');
+  const titleEl = document.getElementById('docTitle');
+  const autosaveState = document.getElementById('autosaveState');
+  const saveKey='wysiwyg_doc_v2',titleKey='wysiwyg_title_v2',themeKey='wysiwyg_theme_v2';
+
+  // Default <p> paragraphs
+  document.execCommand('defaultParagraphSeparator', false, 'p');
+
+  // --- Theme toggle ---
+  const applyTheme = (mode)=>{
+    document.body.classList.toggle('light', mode==='light');
+    toggleTheme.textContent = mode==='light' ? '🌙' : '☀️';
+    localStorage.setItem(themeKey, mode);
+  };
+  let theme = localStorage.getItem(themeKey) || 'dark';
+  applyTheme(theme);
+  toggleTheme.addEventListener('click', ()=>{
+    theme = (theme==='dark') ? 'light' : 'dark';
+    applyTheme(theme);
   });
 
-  editor.focus();
-  
-  
-  editor.setOptions({
-    fontSize: "16pt",
-    showLineNumbers: false,
-    showGutter: false,
-    vScrollBarAlwaysVisible:false,
-    enableBasicAutocompletion: false, enableLiveAutocompletion: false
+  // --- Formatting buttons ---
+  document.querySelectorAll('[data-cmd]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.execCommand(btn.dataset.cmd,false,null);
+      editor.focus();
+      editor.dispatchEvent(new Event('input'));
+    });
   });
 
-  editor.setShowPrintMargin(false);
-  editor.setBehavioursEnabled(false);
-}
+  foreColor.addEventListener('input',()=>document.execCommand('foreColor',false,foreColor.value));
+  backColor.addEventListener('input',()=>document.execCommand('hiliteColor',false,backColor.value));
 
-function ready()
-{
-    setupEditor();
-    update();
-}
+  // --- Toggle source view ---
+  let showSource=false;
+  toggleSourceBtn.addEventListener('click',()=>{
+    showSource=!showSource;
+    if(showSource){
+      source.value=editor.innerHTML;
+      editor.style.display='none';
+      source.style.display='block';
+      toggleSourceBtn.classList.add('active');
+    }else{
+      editor.innerHTML=source.value;
+      editor.style.display='block';
+      source.style.display='none';
+      toggleSourceBtn.classList.remove('active');
+      editor.dispatchEvent(new Event('input'));
+    }
+  });
+
+  // --- Export / Import ---
+  document.getElementById('exportHtml').addEventListener('click',()=>{
+    const blob=new Blob(
+      [`<!DOCTYPE html><meta charset="utf-8"><title>${titleEl.textContent}</title>`+editor.innerHTML],
+      {type:'text/html'}
+    );
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=(titleEl.textContent.trim()||'document')+'.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  importFile.addEventListener('change',()=>{
+    const f=importFile.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{editor.innerHTML=r.result;editor.dispatchEvent(new Event('input'));};
+    r.readAsText(f);
+  });
+
+  // --- Word count & autosave ---
+  const updateWordCount=()=>{
+    const text=editor.innerText||'';
+    const words=(text.trim().match(/\S+/g)||[]).length;
+    const chars=text.replace(/\s/g,'').length;
+    wordCountEl.textContent=`Words: ${words} · Characters: ${chars}`;
+  };
+  let saveTimer;
+  const flashSave=()=>{autosaveState.textContent='Saved';setTimeout(()=>autosaveState.textContent='Autosave: enabled',1000);}
+  const autosave=()=>{
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>{
+      localStorage.setItem(saveKey,editor.innerHTML);
+      localStorage.setItem(titleKey,titleEl.textContent);
+      flashSave();
+    },400);
+  };
+  editor.addEventListener('input',()=>{updateWordCount();autosave();});
+  titleEl.addEventListener('input',autosave);
+
+  try{
+    const saved=localStorage.getItem(saveKey);
+    const savedTitle=localStorage.getItem(titleKey);
+    if(saved)editor.innerHTML=saved;
+    if(savedTitle)titleEl.textContent=savedTitle;
+  }catch(e){}
+  updateWordCount();
+})();
 </script>
 </body>
-
 </html>
