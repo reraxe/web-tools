@@ -2,23 +2,22 @@
 <html lang="en" data-theme="">
 <head>
   <meta charset="utf-8" />
-  <title>WYSIWYG HTML Editor (Main edit + One-line source)</title>
+  <title>WYSIWYG HTML Editor</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="light dark">
   <style>
     /* ===== THEME VARIABLES ===== */
     :root{
-      /* Light (default) */
       --bg:#f6f8fb; --bg-2:#eef3f9; --panel:#ffffff; --panel-2:#f2f6fb; --border:#d8e1ee;
       --text:#0b1220; --muted:#5b6b81; --accent:#2b6cff; --accent-2:#16a34a; --danger:#dc2626; --code-text:#0b1220;
       --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
       --btn-hover-b: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
       --btn-active: color-mix(in srgb, var(--panel-2) 65%, var(--accent) 35%);
       --btn-active-b: color-mix(in srgb, var(--border) 40%, var(--accent) 60%);
+      --color-scheme: light dark; /* controls native popups like color picker */
     }
     @media (prefers-color-scheme: dark){
       :root{
-        /* Dark defaults if not overridden */
         --bg:#0f1216; --bg-2:#0c1016; --panel:#151a21; --panel-2:#1b2230; --border:#2a3442;
         --text:#e9eef6; --muted:#9db0c9; --accent:#6ea8ff; --accent-2:#7bd389; --danger:#ff6b6b; --code-text:#cfe4ff;
         --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
@@ -27,22 +26,8 @@
         --btn-active-b: color-mix(in srgb, var(--border) 40%, var(--accent) 60%);
       }
     }
-    [data-theme="light"]{
-      --bg:#f6f8fb; --bg-2:#eef3f9; --panel:#ffffff; --panel-2:#f2f6fb; --border:#d8e1ee;
-      --text:#0b1220; --muted:#5b6b81; --accent:#2b6cff; --accent-2:#16a34a; --danger:#dc2626; --code-text:#0b1220;
-      --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
-      --btn-hover-b: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
-      --btn-active: color-mix(in srgb, var(--panel-2) 65%, var(--accent) 35%);
-      --btn-active-b: color-mix(in srgb, var(--border) 40%, var(--accent) 60%);
-    }
-    [data-theme="dark"]{
-      --bg:#0f1216; --bg-2:#0c1016; --panel:#151a21; --panel-2:#1b2230; --border:#2a3442;
-      --text:#e9eef6; --muted:#9db0c9; --accent:#6ea8ff; --accent-2:#7bd389; --danger:#ff6b6b; --code-text:#cfe4ff;
-      --btn-hover: color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);
-      --btn-hover-b: color-mix(in srgb, var(--border) 60%, var(--accent) 40%);
-      --btn-active: color-mix(in srgb, var(--panel-2) 65%, var(--accent) 35%);
-      --btn-active-b: color-mix(in srgb, var(--border) 40%, var(--accent) 60%);
-    }
+    [data-theme="light"]{ --color-scheme: light; }
+    [data-theme="dark"]{ --color-scheme: dark; }
 
     /* ===== LAYOUT & UI ===== */
     *{box-sizing:border-box}
@@ -64,7 +49,7 @@
     .group:last-child{border:none;padding-right:0}
     button.tool{
       appearance:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
-      padding:8px 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
       transition:background .15s,border-color .15s,transform .02s;user-select:none;
     }
     button.tool:hover{background:var(--btn-hover);border-color:var(--btn-hover-b)}
@@ -74,26 +59,31 @@
     .tool--text .txt{font-weight:900;font-size:18px;letter-spacing:.2px}
     select.tool, input.tool{
       background:var(--panel-2);color:var(--text);border:1px solid var(--border);
-      border-radius:8px;padding:8px 10px;cursor:pointer
+      border-radius:10px;padding:8px 10px;cursor:pointer
     }
-    /* Match the color pickers to buttons */
+    /* Color pickers match toolbar + follow theme; add HEX inputs */
+    .color-wrap{display:flex;align-items:center;gap:6px}
     input[type="color"].tool{
       -webkit-appearance:none;appearance:none;width:36px;height:36px;padding:0;
-      border:1px solid var(--border);border-radius:8px;background:var(--panel-2);cursor:pointer;
+      border:1px solid var(--border);border-radius:10px;background:var(--panel-2);cursor:pointer;
+      color-scheme: var(--color-scheme);
     }
     input[type="color"].tool::-webkit-color-swatch-wrapper{padding:0}
-    input[type="color"].tool::-webkit-color-swatch{border:none;border-radius:6px}
-    input[type="color"].tool::-moz-color-swatch{border:none;border-radius:6px}
-    input[type="color"].tool:hover{background:var(--btn-hover);border-color:var(--btn-hover-b)}
+    input[type="color"].tool::-webkit-color-swatch{border:none;border-radius:8px}
+    input[type="color"].tool::-moz-color-swatch{border:none;border-radius:8px}
+    input[type="text"].hex{
+      width:86px; padding:8px 10px; border:1px solid var(--border); border-radius:10px;
+      background:var(--panel-2); color:var(--text); font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
 
     .wrap{
       max-width:1100px;margin:18px auto;padding:0 14px 32px;
-      display:grid;grid-template-columns:1fr 340px;gap:16px;
+      display:grid;grid-template-columns:1fr 360px;gap:16px;
     }
     @media (max-width: 980px){.wrap{grid-template-columns:1fr}}
     .editor{
       min-height:60vh;background:var(--panel-2);border:1px solid var(--border);
-      border-radius:10px;padding:18px;outline:none;overflow:auto;
+      border-radius:12px;padding:18px;outline:none;overflow:auto;
     }
     .editor:focus{box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent)}
     .side{display:flex;flex-direction:column;gap:12px;}
@@ -101,8 +91,8 @@
       border-radius:12px;padding:14px;}
     .card h3{margin:0 0 8px;font-size:14px;color:var(--muted)}
     textarea.code{
-      width:100%;min-height:260px;background:var(--panel-2);color:var(--code-text);
-      border:1px dashed var(--border);border-radius:8px;padding:10px;
+      width:100%;min-height:220px;background:var(--panel-2);color:var(--code-text);
+      border:1px dashed var(--border);border-radius:10px;padding:10px;
       font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px
     }
     .status{font-size:12px;color:var(--muted)}
@@ -118,36 +108,34 @@
 
     /* Themed dialogs */
     dialog{
-      border:1px solid var(--border); border-radius:10px; padding:16px 16px 12px;
-      background:var(--panel); color:var(--text); max-width:480px;
+      border:1px solid var(--border); border-radius:12px; padding:16px 16px 12px;
+      background:var(--panel); color:var(--text); max-width:520px;
     }
-    dialog::backdrop{ background: rgba(0,0,0,.4); }
+    dialog::backdrop{ background: rgba(0,0,0,.45); }
     dialog form h3{ margin:0 0 10px; color:var(--text); }
-    dialog input, dialog button{
-      font:inherit; color:var(--text);
-    }
+    dialog label{display:block; margin-top:10px; font-size:13px; color:var(--muted)}
+    dialog input, dialog button{ font:inherit; color:var(--text); }
     dialog input{
-      width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--border);
+      width:100%; padding:8px 10px; border-radius:10px; border:1px solid var(--border);
       background:var(--panel-2); margin-top:4px;
     }
+    dialog .row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
     dialog menu{ margin:14px 0 0; padding:0; }
     dialog button{
       appearance:none; border:1px solid var(--border); background:var(--panel-2);
-      padding:8px 12px; border-radius:8px; cursor:pointer;
+      padding:8px 12px; border-radius:10px; cursor:pointer;
     }
     dialog button:hover{ background:var(--btn-hover); border-color:var(--btn-hover-b); }
-    dialog button[type="submit"], dialog #imageApply, dialog #linkApply{
-      border-color: var(--accent); color: var(--text);
-    }
   </style>
 </head>
 <body>
   <header>
     <h1>WYSIWYG Editor</h1>
     <button id="themeBtn" class="theme-toggle" title="Theme: System">
-      <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h-0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM20.45 5.64l-1.41-1.41-1.79 1.79 1.4 1.4 1.8-1.78zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>
+      <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 4v12a6 6 0 010-12z"/></svg>
       <span id="themeLabel">System</span>
     </button>
+    <span class="pill" id="bodyCount">0 chars</span>
     <span class="pill" title="Autosaves locally">Autosave: On</span>
   </header>
 
@@ -163,44 +151,90 @@
         <option value="pre">Code Block</option>
       </select>
       <button class="tool tool--text" data-cmd="bold" aria-label="Bold (Ctrl/Cmd+B)"><span class="txt">B</span></button>
-      <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl/Cmd+I)"><svg viewBox="0 0 24 24"><path d="M10 5v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V5z"/></svg></button>
-      <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl/Cmd+U)"><svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 0 0 5-5V5h-3v7a2 2 0 0 1-4 0V5H7v7a5 5 0 0 0 5 5zm-7 2v2h14v-2H5z"/></svg></button>
-      <button class="tool" data-cmd="strikeThrough" aria-label="Strikethrough"><svg viewBox="0 0 24 24"><path d="M4 10h16v2H4zm7.5 3.5h-3c-.5.4-.8 1-.8 1.7 0 1.3 1.1 2.3 2.8 2.3 1.3 0 2.4-.5 3.2-1.2l1.8 1.8c-1.2 1.1-2.9 1.9-5 1.9-3.3 0-5.6-1.8-5.6-4.4 0-1.4.7-2.6 1.8-3.1H4v-2h16v2h-5.1c.5.4.8 1 .8 1.7h-3.2c0-.7-.6-1.2-1.8-1.2zM8 8c0-2.4 2.1-3.4 4.6-3.4 1.4 0 2.8.5 3.6 1.1l-1.7 1.7c-.5-.4-1.2-.6-1.9-.6-1.1 0-2 .5-2 .9H8z"/></svg></button>
+      <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl/Cmd+I)">
+        <svg viewBox="0 0 24 24"><path d="M10 5v3h2.2l-3.4 8H6v3h8v-3h-2.2l3.4-8H18V5z"/></svg>
+      </button>
+      <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl/Cmd+U)">
+        <svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 005-5V5h-3v7a2 2 0 01-4 0V5H7v7a5 5 0 005 5zm-7 2v2h14v-2H5z"/></svg>
+      </button>
+      <!-- cleaner strike icon -->
+      <button class="tool" data-cmd="strikeThrough" aria-label="Strikethrough">
+        <svg viewBox="0 0 24 24"><path d="M4 11h16v2H4zM8 16c0 1.8 2 3 4 3 1.8 0 3.3-.6 4.4-1.6l-1.6-1.6c-.6.6-1.6 1-2.8 1-1.3 0-2-.5-2-.9 0-.3.1-.6.4-.9H8.3c-.2.3-.3.7-.3 1zM12 5c-2.2 0-3.8.9-4.6 2l1.8 1.8c.5-.7 1.5-1.3 2.8-1.3 1.3 0 2.2.5 2.2 1.1 0 .2 0 .3-.1.4h3.1c.1-.3.2-.6.2-1 0-2-2.1-4-5.4-4z"/></svg>
+      </button>
     </div>
 
     <div class="group">
-      <button class="tool" data-cmd="justifyLeft" aria-label="Align Left"><svg viewBox="0 0 24 24"><path d="M3 4h12v2H3V4zm0 4h18v2H3V8zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyCenter" aria-label="Align Center"><svg viewBox="0 0 24 24"><path d="M6 4h12v2H6V4zm-3 4h18v2H3V8zm3 4h12v2H6v-2zm-3 4h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyRight" aria-label="Align Right"><svg viewBox="0 0 24 24"><path d="M9 4h12v2H9V4zM3 8h18v2H3V8zm6 4h12v2H9v-2zM3 16h18v2H3v-2z"/></svg></button>
-      <button class="tool" data-cmd="justifyFull" aria-label="Justify"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3V4zm0 4h18v2H3V8zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
+      <button class="tool" data-cmd="justifyLeft" aria-label="Align Left">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h12v2H3zM3 13h18v2H3zM3 17h12v2H3z"/></svg>
+      </button>
+      <button class="tool" data-cmd="justifyCenter" aria-label="Align Center">
+        <svg viewBox="0 0 24 24"><path d="M6 5h12v2H6zM3 9h18v2H3zM6 13h12v2H6zM3 17h18v2H3z"/></svg>
+      </button>
+      <button class="tool" data-cmd="justifyRight" aria-label="Align Right">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM9 9h12v2H9zM3 13h18v2H3zM9 17h12v2H9z"/></svg>
+      </button>
+      <button class="tool" data-cmd="justifyFull" aria-label="Justify">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h18v2H3zM3 13h18v2H3zM3 17h18v2H3z"/></svg>
+      </button>
     </div>
 
     <div class="group">
-      <button class="tool" data-cmd="insertUnorderedList" aria-label="Bulleted List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 11h2v2H3zM7 17h14v2H7zM3 17h2v2H3z"/></svg></button>
-      <button class="tool" data-cmd="insertOrderedList" aria-label="Numbered List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 10h2v4H3zM7 17h14v2H7zM3 16h3v2H3z"/></svg></button>
-      <button class="tool" data-cmd="outdent" aria-label="Outdent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM21 8v8l-6-4 6-4z"/></svg></button>
-      <button class="tool" data-cmd="indent" aria-label="Indent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM15 8v8l6-4-6-4z"/></svg></button>
+      <button class="tool" data-cmd="insertUnorderedList" aria-label="Bulleted List">
+        <svg viewBox="0 0 24 24"><path d="M7 6h14v2H7zM3 5h2v2H3zM7 12h14v2H7zM3 11h2v2H3zM7 18h14v2H7zM3 17h2v2H3z"/></svg>
+      </button>
+      <button class="tool" data-cmd="insertOrderedList" aria-label="Numbered List">
+        <svg viewBox="0 0 24 24"><path d="M7 6h14v2H7zM4 5h2v2H4zM7 12h14v2H7zM3.5 11H6v4H4v-2H3.5zM7 18h14v2H7zM3.5 17H6v2H3.5z"/></svg>
+      </button>
+      <!-- cleaner outdent/indent -->
+      <button class="tool" data-cmd="outdent" aria-label="Outdent">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h10v2H3zM3 13h18v2H3zM3 17h10v2H3zM14 8l-4 4 4 4V8z"/></svg>
+      </button>
+      <button class="tool" data-cmd="indent" aria-label="Indent">
+        <svg viewBox="0 0 24 24"><path d="M3 5h18v2H3zM3 9h10v2H3zM3 13h18v2H3zM3 17h10v2H3zM10 8l4 4-4 4V8z"/></svg>
+      </button>
     </div>
 
     <div class="group">
-      <button class="tool" id="linkBtn" aria-label="Insert Link"><svg viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7-1h2v2h-2v-2zm4.1-4h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3V7z"/></svg></button>
-      <button class="tool" id="imageBtn" aria-label="Insert Image"><svg viewBox="0 0 24 24"><path d="M19 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 12H5V7h14v10zM8.5 13l2.5 3 3.5-4.5 4.5 6H6l2.5-4.5zM9 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg></button>
+      <!-- updated link icon -->
+      <button class="tool" id="linkBtn" aria-label="Insert Link">
+        <svg viewBox="0 0 24 24"><path d="M7.5 12a3.5 3.5 0 013.5-3.5h3V6h-3a6 6 0 100 12h3v-2.5h-3A3.5 3.5 0 017.5 12zM13 11h-2v2h2v-2zm3.5-5h-3v2.5h3a3.5 3.5 0 010 7h-3V18h3a6 6 0 000-12z"/></svg>
+      </button>
+      <!-- updated image icon -->
+      <button class="tool" id="imageBtn" aria-label="Insert Image">
+        <svg viewBox="0 0 24 24"><path d="M20 5H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V7a2 2 0 00-2-2zm0 12H4V7h16v10zM7 13l3 4 3.5-4.5L19 17H5l2-4zM9 9a1.5 1.5 0 110 3 1.5 1.5 0 010-3z"/></svg>
+      </button>
       <input type="file" id="imageFile" accept="image/*" style="display:none">
-      <button class="tool" data-cmd="undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 0-7 7H2l4 4 4-4H7a5 5 0 0 1 8.54-3.54l1.41-1.41A7 7 0 0 0 12 5z"/></svg></button>
-      <button class="tool" data-cmd="redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 1 7 7h3l-4 4-4-4h3a5 5 0 0 0-8.54-3.54L6.05 7.05A7 7 0 0 1 12 5z"/></svg></button>
+      <button class="tool" data-cmd="undo" aria-label="Undo">
+        <svg viewBox="0 0 24 24"><path d="M13 6a7 7 0 00-7 7H4l4 4 4-4H9a4 4 0 116.8-2.8l1.4-1.4A7 7 0 0013 6z"/></svg>
+      </button>
+      <button class="tool" data-cmd="redo" aria-label="Redo">
+        <svg viewBox="0 0 24 24"><path d="M11 6a7 7 0 017 7h2l-4 4-4-4h3a4 4 0 10-6.8-2.8L6.8 8.8A7 7 0 0111 6z"/></svg>
+      </button>
     </div>
 
     <div class="group">
       <label class="status" for="foreColor">Text</label>
-      <input class="tool" id="foreColor" type="color" value="#0b1220" title="Text color">
+      <div class="color-wrap">
+        <input class="tool" id="foreColor" type="color" value="#0b1220" title="Text color">
+        <input class="hex" id="foreHex" type="text" value="#0B1220" spellcheck="false">
+      </div>
       <label class="status" for="backColor">Bg</label>
-      <input class="tool" id="backColor" type="color" value="#fff4a3" title="Highlight color">
+      <div class="color-wrap">
+        <input class="tool" id="backColor" type="color" value="#fff4a3" title="Highlight color">
+        <input class="hex" id="backHex" type="text" value="#FFF4A3" spellcheck="false">
+      </div>
     </div>
 
     <div class="group">
-      <button class="tool" id="cleanBtn" title="Clean unsafe HTML"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm2 4h14l-1.5 10h-11L5 10zm6-6h2v2h-2V4z"/></svg>Clean</button>
-      <button class="tool" id="downloadBtn" title="Download HTML"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM11 4h2v8h3l-4 4-4-4h3z"/></svg>Download</button>
-      <button class="tool" id="clearBtn" title="Clear document"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>New</button>
+      <button class="tool" id="cleanBtn" title="Clean unsafe HTML">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM6 10h12l-1.2 9H7.2L6 10zm5-6h2v2h-2z"/></svg>Clean
+      </button>
+      <button class="tool" id="downloadBtn" title="Download HTML">
+        <svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM11 4h2v8h3l-4 4-4-4h3z"/></svg>Download
+      </button>
+      <button class="tool" id="clearBtn" title="Clear document">
+        <svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 002 2h8a2 2 0 002-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>New
+      </button>
     </div>
   </div>
 
@@ -219,9 +253,16 @@
 
     <aside class="side">
       <div class="card">
-        <h3>HTML Source (formatted: one element per line)</h3>
+        <h3>HTML Source (one element per line)</h3>
         <textarea id="code" class="code" aria-label="HTML source (read-only)" readonly></textarea>
         <div class="status" id="charCount">0 chars</div>
+        <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap">
+          <button class="tool" id="copyBtn" title="Copy source"><svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v16h13a2 2 0 002-2V7a2 2 0 00-2-2zm0 18H8V7h11v16z"/></svg>Copy</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Notepad</h3>
+        <textarea id="notes" class="code" placeholder="Jot anything here… (not tied to the HTML)"></textarea>
       </div>
     </aside>
   </div>
@@ -230,9 +271,36 @@
   <dialog id="linkDialog">
     <form method="dialog">
       <h3>Insert Link</h3>
-      <label>Text<input type="text" id="linkText" placeholder="Link text"></label><br><br>
-      <label>URL<input type="url" id="linkUrl" placeholder="https://example.com"></label><br><br>
-      <label><input type="checkbox" id="linkBlank" checked> Open in new tab</label>
+      <div class="row">
+        <label>Mode
+          <select id="linkMode" style="width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text)">
+            <option value="url" selected>URL</option>
+            <option value="email">Email (mailto:)</option>
+          </select>
+        </label>
+        <label>Text
+          <input type="text" id="linkText" placeholder="Link text">
+        </label>
+      </div>
+      <div id="urlFields">
+        <label>URL
+          <input type="url" id="linkUrl" placeholder="https://example.com">
+        </label>
+        <label><input type="checkbox" id="linkBlank" checked> Open in new tab</label>
+      </div>
+      <div id="emailFields" style="display:none">
+        <label>Email
+          <input type="email" id="mailTo" placeholder="name@example.com">
+        </label>
+        <div class="row">
+          <label>Subject
+            <input type="text" id="mailSubj" placeholder="Subject">
+          </label>
+          <label>Body (optional)
+            <input type="text" id="mailBody" placeholder="Message">
+          </label>
+        </div>
+      </div>
       <menu style="display:flex;gap:8px;justify-content:flex-end">
         <button value="cancel">Cancel</button>
         <button id="linkApply" value="default">Insert</button>
@@ -264,24 +332,44 @@
     const editor = document.getElementById('editor');
     const codeArea = document.getElementById('code');
     const charCount = document.getElementById('charCount');
+    const copyBtn = document.getElementById('copyBtn');
     const themeBtn = document.getElementById('themeBtn');
     const themeLabel = document.getElementById('themeLabel');
     const themeIcon = document.getElementById('themeIcon');
+    const bodyCount = document.getElementById('bodyCount');
+    const foreColor = document.getElementById('foreColor');
+    const backColor = document.getElementById('backColor');
+    const foreHex = document.getElementById('foreHex');
+    const backHex = document.getElementById('backHex');
 
     // Force <p> for Enter
     document.execCommand('defaultParagraphSeparator', false, 'p');
 
-    // --- Paragraph normalization & wrapping ---
+    // --- Paragraph normalization & cleanup ---
     const INLINE_OK = new Set(['BR','IMG','A','SPAN','STRONG','EM','B','I','U','S','SMALL','SUP','SUB','CODE','KBD','MARK','TIME']);
     function wrapTopTextInParagraph(container) {
-      // Wrap stray top-level text nodes into <p>
-      [...container.childNodes].forEach(node => {
+      const nodes = Array.from(container.childNodes);
+      nodes.forEach(node => {
         if (node.nodeType === 3 && node.nodeValue.trim()) {
           const p = document.createElement('p');
           p.textContent = node.nodeValue.trim();
           node.replaceWith(p);
         }
       });
+    }
+    function removeTrailingEmptyParas(container){
+      const paras = Array.from(container.querySelectorAll('p'));
+      paras.forEach(p=>{
+        const onlyBr = p.childNodes.length===1 && p.firstChild.nodeName==='BR';
+        const empty = p.textContent.replace(/\u200B/g,'').trim()==='';
+        if ((onlyBr || empty) && (container.children.length>1 || p.previousElementSibling || p.nextElementSibling)){
+          p.remove();
+        }
+      });
+      // if totally empty, ensure one empty <p><br></p> so caret works
+      if (!container.children.length){
+        const p=document.createElement('p'); p.appendChild(document.createElement('br')); container.appendChild(p);
+      }
     }
     function normalizeDivsToParagraphs(rootEl) {
       const divs = rootEl.querySelectorAll('div');
@@ -294,12 +382,13 @@
         }
       });
       wrapTopTextInParagraph(rootEl);
+      removeTrailingEmptyParas(rootEl);
     }
 
-    // Escaper for text nodes
+    // Helpers
     function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-    // One-element-per-line formatter (read-only preview)
+    // One-element-per-line formatter
     const VOID = new Set(['AREA','BASE','BR','COL','EMBED','HR','IMG','INPUT','LINK','META','PARAM','SOURCE','TRACK','WBR']);
     function attrs(el){
       return Array.from(el.attributes).map(a => ` ${a.name}="${a.value.replace(/"/g,'&quot;')}"`).join('');
@@ -309,28 +398,17 @@
       function visit(node){
         if (node.nodeType===1){
           const el=node; const tag=el.tagName.toLowerCase();
-          if (VOID.has(el.tagName)){ // void/empty tag
-            lines.push(`<${tag}${attrs(el)}/>`);
-            return;
-          }
+          if (VOID.has(el.tagName)){ lines.push(`<${tag}${attrs(el)}/>'); return; }
           if (tag==='ul' || tag==='ol'){
-            lines.push(`<${tag}${attrs(el)}>`);
-            el.childNodes.forEach(n=>{
-              if (n.nodeType===1 && n.tagName==='LI'){
-                // inline innerHTML for li, collapsed
-                const contents = n.innerHTML.replace(/\n+/g,' ').trim();
-                lines.push(`<li>${contents}</li>`);
-              }
-            });
-            lines.push(`</${tag}>`);
-            return;
+            lines.push(`<${tag}${attrs(el)}>`); 
+            el.childNodes.forEach(n=>{ if (n.nodeType===1 && n.tagName==='LI'){ lines.push(`<li>${n.innerHTML.replace(/\n+/g,' ').trim()}</li>`); } });
+            lines.push(`</${tag}>`); return;
           }
-          const elementChildren = Array.from(el.children);
-          if (elementChildren.length===0){
+          const hasElements = el.children.length>0;
+          if (!hasElements){
             const text = el.textContent ?? '';
             lines.push(`<${tag}${attrs(el)}>${esc(text)}</${tag}>`);
           } else {
-            // Container: put opening & closing on their own lines; children on their own lines
             lines.push(`<${tag}${attrs(el)}>`); 
             Array.from(el.childNodes).forEach(c=>{
               if (c.nodeType===1) visit(c);
@@ -349,11 +427,16 @@
       return lines.join('\n');
     }
 
-    // Update source (read-only)
+    // Update source + counts
+    function updateCounts(){
+      const len = editor.innerText.replace(/\n/g,'').length;
+      bodyCount.textContent = `${len.toLocaleString()} chars`;
+    }
     function updateCodeFromEditor(){
       const oneLine = serializeOneLine(editor);
       codeArea.value = oneLine;
       charCount.textContent = oneLine.length.toLocaleString() + ' chars';
+      updateCounts();
     }
 
     // Exec helper
@@ -374,31 +457,65 @@
     // Toolbar bindings
     document.querySelectorAll('button.tool[data-cmd]').forEach(btn=> btn.addEventListener('click', ()=> exec(btn.dataset.cmd)));
     document.getElementById('blockFormat').addEventListener('change', e=> setBlock(e.target.value));
-    document.getElementById('foreColor').addEventListener('change', e=> exec('foreColor', e.target.value));
-    document.getElementById('backColor').addEventListener('change', e=> exec('hiliteColor', e.target.value));
 
-    // Link dialog
+    // Color controls + HEX sync
+    const toHex = (v)=> v.toUpperCase();
+    const normHex = (h)=> {
+      if (!h) return null;
+      h = h.trim().replace(/^#?/,'');
+      if (h.length===3) h = h.split('').map(c=>c+c).join('');
+      if (/^[0-9a-fA-F]{6}$/.test(h)) return '#'+h.toUpperCase();
+      return null;
+    };
+    function applyFore(val){ exec('foreColor', val); foreColor.value = val; foreHex.value = toHex(val); }
+    function applyBack(val){ exec('hiliteColor', val); backColor.value = val; backHex.value = toHex(val); }
+    foreColor.addEventListener('change', e=> applyFore(e.target.value));
+    backColor.addEventListener('change', e=> applyBack(e.target.value));
+    foreHex.addEventListener('input', e=> { const v=normHex(e.target.value); if (v){ e.target.value=v; applyFore(v); }});
+    backHex.addEventListener('input', e=> { const v=normHex(e.target.value); if (v){ e.target.value=v; applyBack(v); }});
+
+    // Link dialog (URL / mailto)
     const linkDialog=document.getElementById('linkDialog');
+    const linkMode = document.getElementById('linkMode');
+    const urlFields = document.getElementById('urlFields');
+    const emailFields = document.getElementById('emailFields');
     document.getElementById('linkBtn').addEventListener('click', ()=>{
       saveSelection();
       const sel=window.getSelection();
       document.getElementById('linkText').value = sel && sel.toString()? sel.toString() : '';
       document.getElementById('linkUrl').value = '';
       document.getElementById('linkBlank').checked = true;
+      document.getElementById('mailTo').value=''; document.getElementById('mailSubj').value=''; document.getElementById('mailBody').value='';
+      linkMode.value='url'; urlFields.style.display='block'; emailFields.style.display='none';
       linkDialog.showModal();
+    });
+    linkMode.addEventListener('change', ()=>{
+      const email = linkMode.value==='email';
+      urlFields.style.display = email ? 'none':'block';
+      emailFields.style.display = email ? 'block':'none';
     });
     document.getElementById('linkApply').addEventListener('click', ()=>{
       restoreSelection();
-      const text=document.getElementById('linkText').value.trim();
-      const url=document.getElementById('linkUrl').value.trim();
-      const blank=document.getElementById('linkBlank').checked;
-      if (!url){ linkDialog.close(); return; }
+      const text = document.getElementById('linkText').value.trim();
+      let href = '#', blank=true;
+      if (linkMode.value==='url'){
+        href = document.getElementById('linkUrl').value.trim() || '#';
+        blank = document.getElementById('linkBlank').checked;
+      } else {
+        const to = document.getElementById('mailTo').value.trim();
+        const subj = document.getElementById('mailSubj').value.trim();
+        const body = document.getElementById('mailBody').value.trim();
+        const qp = [];
+        if (subj) qp.push('subject='+encodeURIComponent(subj));
+        if (body) qp.push('body='+encodeURIComponent(body));
+        href = `mailto:${encodeURIComponent(to)}${qp.length?('?'+qp.join('&')):''}`;
+        blank = false; // mailto in same window
+      }
       if (!window.getSelection().toString() && text){ document.execCommand('insertText', false, text); }
-      exec('createLink', url);
-      const anchor=window.getSelection().anchorNode;
-      let a=anchor ? (anchor.nodeType===1? anchor : anchor.parentElement) : null;
-      if (a){ if (a.tagName!=='A') a=a.closest('a');
-        if (a){ if (blank){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); } a.setAttribute('href', url); } }
+      exec('createLink', href);
+      const anchor = window.getSelection().anchorNode;
+      let a = anchor ? (anchor.nodeType===1? anchor : anchor.parentElement) : null;
+      if (a){ if (a.tagName!=='A') a=a.closest('a'); if (a){ if (blank){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); } a.setAttribute('href', href); } }
       linkDialog.close();
     });
 
@@ -510,15 +627,28 @@
       }
     });
 
-    // Autosave
-    const LS_KEY='wysiwyg-doc-v6';
+    // Copy source
+    copyBtn.addEventListener('click', async ()=>{
+      try{
+        await navigator.clipboard.writeText(codeArea.value);
+        copyBtn.textContent='Copied!'; setTimeout(()=> copyBtn.innerHTML='<svg viewBox="0 0 24 24"><path d="M16 1H4a2 2 0 00-2 2v14h2V3h12V1zm3 4H8a2 2 0 00-2 2v16h13a2 2 0 002-2V7a2 2 0 00-2-2zm0 18H8V7h11v16z"/></svg>Copy', 1200);
+      }catch{ alert('Copy failed'); }
+    });
+
+    // Autosave (content + notes)
+    const LS_KEY='wysiwyg-doc-v7';
+    const NOTES_KEY='wysiwyg-notes';
     function save(){ try{ localStorage.setItem(LS_KEY, editor.innerHTML); }catch{} }
     function load(){
       try{ const data=localStorage.getItem(LS_KEY); if (data) editor.innerHTML=data; normalizeDivsToParagraphs(editor); }catch{}
+      try{ const notes=localStorage.getItem(NOTES_KEY); if (notes!==null) document.getElementById('notes').value=notes; }catch{}
     }
+    document.getElementById('notes').addEventListener('input', e=>{
+      try{ localStorage.setItem(NOTES_KEY, e.target.value); }catch{}
+    });
 
     // Observe editor -> update source
-    const observer=new MutationObserver(()=>{ updateCodeFromEditor(); save(); });
+    const observer=new MutationObserver(()=>{ updateCodeFromEditor(); });
     observer.observe(editor, {subtree:true, childList:true, characterData:true});
 
     // Init
