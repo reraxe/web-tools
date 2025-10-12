@@ -1,264 +1,528 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor — Light/Dark Mode</title>
-<style>
-  :root {
-    --bg:#0f1220;--panel:#161a2d;--panel-2:#1d2340;--text:#e8ecff;--muted:#9aa3c7;
-    --accent:#6a8dff;--danger:#ff6b6b;--border:#2a3157;--radius:12px;--shadow:0 8px 24px rgba(0,0,0,.25);
-    --transition: background-color .25s ease, color .25s ease, border-color .25s ease;
-  }
-  body.light {
-    --bg:#f5f7ff;--panel:#ffffff;--panel-2:#f1f3fb;--text:#12152b;--muted:#5e627d;
-    --accent:#3c6fff;--danger:#d94141;--border:#ccd3ee;--shadow:0 4px 18px rgba(0,0,0,.1);
-  }
-  *{box-sizing:border-box;transition:var(--transition);}
-  body{
-    margin:0; background:var(--bg); color:var(--text);
-    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
-  }
-  header{
-    position:sticky; top:0; z-index:10; backdrop-filter:blur(8px);
-    background:var(--panel); border-bottom:1px solid var(--border);
-  }
-  .shell{max-width:1100px;margin:0 auto;padding:16px}
-  .titlebar{display:flex;align-items:center;gap:12px;justify-content:space-between}
-  .titlebar h1{font-size:16px;margin:0;color:var(--text);letter-spacing:.4px}
-  .toolbar{
-    margin-top:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;
-    background:var(--panel); padding:8px; border:1px solid var(--border); border-radius:10px;
-  }
-  .grp{display:flex;gap:6px; align-items:center; padding-right:6px; border-right:1px solid var(--border)}
-  .grp:last-child{border-right:none;padding-right:0}
-  button, select, input[type="color"]{
-    height:36px; border-radius:8px; border:1px solid var(--border);
-    background:var(--panel-2); color:var(--text); padding:0 10px;
-    cursor:pointer; transition:var(--transition); outline:none;
-  }
-  button:hover, select:hover{box-shadow:0 0 0 2px rgba(106,141,255,.25)}
-  button.active{background:var(--accent);border-color:transparent;color:#fff}
-  button.icon{width:36px;padding:0;display:grid;place-items:center}
-  .spacer{flex:1}
-  .editor-wrap{max-width:1100px;margin:16px auto; padding:0 16px 24px}
-  #editor{
-    min-height:55vh; background:var(--panel-2); border:1px solid var(--border);
-    border-radius:var(--radius); padding:20px; box-shadow:var(--shadow);
-    outline:none; overflow:auto;
-  }
-  #editor:empty:before{content:"Start typing…"; color:var(--muted)}
-  #editor p{margin:0 0 .75em}
-  #editor p:last-child{margin-bottom:0}
-  .statusbar{
-    display:flex;gap:12px;align-items:center;justify-content:space-between;color:var(--muted);
-    margin-top:10px;font-size:12px
-  }
-  .modal{
-    position:fixed; inset:0; display:none; place-items:center; background:rgba(0,0,0,.5);
-    z-index:20; padding:16px;
-  }
-  .modal.open{display:grid}
-  .card{
-    width:min(480px,100%); background:var(--panel); border:1px solid var(--border);
-    border-radius:12px; padding:16px; color:var(--text)
-  }
-  .row{display:flex; flex-direction:column; gap:6px; margin-bottom:12px}
-  .row input, .row select{height:40px; background:var(--panel-2); color:var(--text);}
-  .row .inline{display:flex; gap:8px}
-  .actions{display:flex; gap:8px; justify-content:flex-end}
-  .sr-only{position:absolute;left:-9999px}
-  .source{
-    font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;
-    width:100%;min-height:55vh; display:none; background:var(--panel-2);
-    color:var(--text); border:1px solid var(--border); border-radius:var(--radius);
-    padding:16px; white-space:pre; overflow:auto;
-  }
-  .pill{
-    display:inline-flex;align-items:center;gap:8px;background:var(--panel-2);
-    border:1px solid var(--border); padding:6px 10px;border-radius:999px;font-size:12px;color:var(--muted)
-  }
-  .footer{opacity:.8;margin-top:6px}
-</style>
+  <meta charset="utf-8" />
+  <title>WYSIWYG HTML Editor (Light/Dark + Live Source)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark">
+  <style>
+    /* ===== THEME VARIABLES ===== */
+    :root{
+      /* Light (default) */
+      --bg:#f6f8fb;
+      --bg-2:#eef3f9;
+      --panel:#ffffff;
+      --panel-2:#f2f6fb;
+      --border:#d8e1ee;
+      --text:#0b1220;
+      --muted:#5b6b81;
+      --accent:#2b6cff;
+      --accent-2:#16a34a;
+      --danger:#dc2626;
+      --code-text:#0b1220;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        /* Dark defaults if user hasn’t overridden */
+        --bg:#0f1216;
+        --bg-2:#0c1016;
+        --panel:#151a21;
+        --panel-2:#1b2230;
+        --border:#2a3442;
+        --text:#e9eef6;
+        --muted:#9db0c9;
+        --accent:#6ea8ff;
+        --accent-2:#7bd389;
+        --danger:#ff6b6b;
+        --code-text:#cfe4ff;
+      }
+    }
+    /* Explicit overrides via data-theme (these beat the media query) */
+    [data-theme="light"]{
+      --bg:#f6f8fb; --bg-2:#eef3f9; --panel:#ffffff; --panel-2:#f2f6fb; --border:#d8e1ee;
+      --text:#0b1220; --muted:#5b6b81; --accent:#2b6cff; --accent-2:#16a34a; --danger:#dc2626; --code-text:#0b1220;
+    }
+    [data-theme="dark"]{
+      --bg:#0f1216; --bg-2:#0c1016; --panel:#151a21; --panel-2:#1b2230; --border:#2a3442;
+      --text:#e9eef6; --muted:#9db0c9; --accent:#6ea8ff; --accent-2:#7bd389; --danger:#ff6b6b; --code-text:#cfe4ff;
+    }
+
+    /* ===== LAYOUT & UI ===== */
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:linear-gradient(180deg,var(--bg), var(--bg) 60%, var(--bg-2));
+      color:var(--text);
+      font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji";
+    }
+    header{
+      padding:14px 16px;border-bottom:1px solid var(--border);background:var(--panel);
+      display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:10;
+    }
+    header h1{margin:0;margin-right:auto;font-size:16px;font-weight:600;color:var(--muted);}
+    .toolbar{
+      display:flex;flex-wrap:wrap;gap:6px;background:var(--panel);padding:8px;border-bottom:1px solid var(--border);
+      position:sticky;top:54px;z-index:9;
+    }
+    .group{display:flex;gap:6px;padding-right:8px;border-right:1px solid var(--border)}
+    .group:last-child{border:none;padding-right:0}
+    button.tool{
+      appearance:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+      padding:8px 10px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+      transition:background .15s,border-color .15s,transform .02s;user-select:none;
+    }
+    button.tool:hover{background:color-mix(in srgb, var(--panel-2) 85%, var(--accent) 15%);border-color:color-mix(in srgb, var(--border) 60%, var(--accent) 40%)}
+    button.tool:active{transform:translateY(1px)}
+    button.tool[aria-pressed="true"]{background:color-mix(in srgb, var(--panel-2) 65%, var(--accent) 35%);border-color:color-mix(in srgb, var(--border) 40%, var(--accent) 60%)}
+    button.tool svg{width:18px;height:18px;fill:currentColor}
+    .tool--text .txt{font-weight:900;font-size:18px;letter-spacing:.2px}
+    select.tool, input.tool{
+      background:var(--panel-2);color:var(--text);border:1px solid var(--border);
+      border-radius:8px;padding:8px 10px;cursor:pointer
+    }
+    input[type="color"].tool{padding:0;width:36px;height:36px}
+    .wrap{
+      max-width:1100px;margin:18px auto;padding:0 14px 32px;
+      display:grid;grid-template-columns:1fr 340px;gap:16px;
+    }
+    @media (max-width: 980px){.wrap{grid-template-columns:1fr}}
+    .editor{
+      min-height:60vh;background:var(--panel-2);border:1px solid var(--border);
+      border-radius:10px;padding:18px;outline:none;overflow:auto;
+    }
+    .editor:focus{box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent), 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent)}
+    .side{display:flex;flex-direction:column;gap:12px;}
+    .card{background:var(--panel);border:1px solid var(--border);
+      border-radius:12px;padding:14px;}
+    .card h3{margin:0 0 8px;font-size:14px;color:var(--muted)}
+    textarea.code{
+      width:100%;min-height:260px;background:var(--panel-2);color:var(--code-text);
+      border:1px dashed var(--border);border-radius:8px;padding:10px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px
+    }
+    .status{font-size:12px;color:var(--muted)}
+    .pill{font-size:11px;padding:2px 8px;border:1px solid var(--border);
+      background:var(--panel-2);color:var(--muted);border-radius:999px}
+
+    /* Theme toggle chip */
+    .theme-toggle{
+      display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);
+      background:var(--panel-2);color:var(--text);padding:6px 10px;border-radius:999px;cursor:pointer;
+    }
+    .theme-toggle svg{width:16px;height:16px}
+  </style>
 </head>
 <body>
   <header>
-    <div class="shell">
-      <div class="titlebar">
-        <h1 contenteditable="true" id="docTitle">Untitled Document</h1>
-        <div class="pill" id="autosaveState">Autosave: enabled</div>
-      </div>
-
-      <div class="toolbar" role="toolbar">
-        <div class="grp">
-          <button class="icon" data-cmd="bold"><strong>B</strong></button>
-          <button class="icon" data-cmd="italic"><em>I</em></button>
-          <button class="icon" data-cmd="underline"><u>U</u></button>
-          <button class="icon" data-cmd="strikeThrough">S</button>
-        </div>
-
-        <div class="grp">
-          <select id="blockFormat">
-            <option value="p">Paragraph</option>
-            <option value="h1">Heading 1</option>
-            <option value="h2">Heading 2</option>
-            <option value="h3">Heading 3</option>
-            <option value="blockquote">Quote</option>
-            <option value="pre">Code Block</option>
-          </select>
-          <button class="icon" data-cmd="insertOrderedList">1.</button>
-          <button class="icon" data-cmd="insertUnorderedList">•</button>
-        </div>
-
-        <div class="grp">
-          <button class="icon" data-cmd="justifyLeft">⟸</button>
-          <button class="icon" data-cmd="justifyCenter">╋</button>
-          <button class="icon" data-cmd="justifyRight">⟹</button>
-          <button class="icon" data-cmd="justifyFull">≋</button>
-        </div>
-
-        <div class="grp">
-          <input type="color" id="foreColor" />
-          <input type="color" id="backColor" />
-        </div>
-
-        <div class="grp">
-          <button id="btnLink">🔗</button>
-          <button id="btnImage">🖼️</button>
-        </div>
-
-        <div class="spacer"></div>
-
-        <div class="grp">
-          <button id="toggleTheme" title="Toggle light/dark mode">🌙</button>
-          <button id="toggleSource">&lt;/&gt;</button>
-          <button id="exportHtml">Export</button>
-          <input type="file" id="importFile" accept=".html,.htm,.txt" />
-        </div>
-      </div>
-    </div>
+    <h1>WYSIWYG Editor</h1>
+    <button id="themeBtn" class="theme-toggle" title="Theme: System">
+      <svg id="themeIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zm10.48 14.32l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM12 4V1h-0v3h0zm0 19v-3h0v3h0zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM20.45 5.64l-1.41-1.41-1.79 1.79 1.4 1.4 1.8-1.78zM12 7a5 5 0 100 10 5 5 0 000-10z"/></svg>
+      <span id="themeLabel">System</span>
+    </button>
+    <span class="pill" title="Autosaves locally">Autosave: On</span>
   </header>
 
-  <main class="editor-wrap">
-    <div id="editor" contenteditable="true">
-      <h1>Hello world</h1>
-      <p>Light/Dark mode WYSIWYG editor.</p>
-      <p><br></p>
+  <!-- TOOLBAR -->
+  <div class="toolbar" role="toolbar" aria-label="Editor toolbar">
+    <div class="group">
+      <select id="blockFormat" class="tool" title="Paragraph / Heading">
+        <option value="p" selected>Paragraph</option>
+        <option value="h1">Heading 1</option>
+        <option value="h2">Heading 2</option>
+        <option value="h3">Heading 3</option>
+        <option value="blockquote">Blockquote</option>
+        <option value="pre">Code Block</option>
+      </select>
+      <button class="tool tool--text" data-cmd="bold" aria-label="Bold (Ctrl/Cmd+B)"><span class="txt">B</span></button>
+      <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl/Cmd+I)"><svg viewBox="0 0 24 24"><path d="M10 5v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V5z"/></svg></button>
+      <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl/Cmd+U)"><svg viewBox="0 0 24 24"><path d="M12 17a5 5 0 0 0 5-5V5h-3v7a2 2 0 0 1-4 0V5H7v7a5 5 0 0 0 5 5zm-7 2v2h14v-2H5z"/></svg></button>
+      <button class="tool" data-cmd="strikeThrough" aria-label="Strikethrough"><svg viewBox="0 0 24 24"><path d="M4 10h16v2H4zm7.5 3.5h-3c-.5.4-.8 1-.8 1.7 0 1.3 1.1 2.3 2.8 2.3 1.3 0 2.4-.5 3.2-1.2l1.8 1.8c-1.2 1.1-2.9 1.9-5 1.9-3.3 0-5.6-1.8-5.6-4.4 0-1.4.7-2.6 1.8-3.1H4v-2h16v2h-5.1c.5.4.8 1 .8 1.7h-3.2c0-.7-.6-1.2-1.8-1.2zM8 8c0-2.4 2.1-3.4 4.6-3.4 1.4 0 2.8.5 3.6 1.1l-1.7 1.7c-.5-.4-1.2-.6-1.9-.6-1.1 0-2 .5-2 .9H8z"/></svg></button>
     </div>
-    <textarea id="source" class="source"></textarea>
-    <div class="statusbar">
-      <div id="wordCount">Words: 0 · Characters: 0</div>
-      <div class="footer">Tip: Press Ctrl/Cmd + B/I/U for formatting</div>
+
+    <div class="group">
+      <button class="tool" data-cmd="justifyLeft" aria-label="Align Left"><svg viewBox="0 0 24 24"><path d="M3 4h12v2H3V4zm0 4h18v2H3V8zm0 4h12v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
+      <button class="tool" data-cmd="justifyCenter" aria-label="Align Center"><svg viewBox="0 0 24 24"><path d="M6 4h12v2H6V4zm-3 4h18v2H3V8zm3 4h12v2H6v-2zm-3 4h18v2H3v-2z"/></svg></button>
+      <button class="tool" data-cmd="justifyRight" aria-label="Align Right"><svg viewBox="0 0 24 24"><path d="M9 4h12v2H9V4zM3 8h18v2H3V8zm6 4h12v2H9v-2zM3 16h18v2H3v-2z"/></svg></button>
+      <button class="tool" data-cmd="justifyFull" aria-label="Justify"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3V4zm0 4h18v2H3V8zm0 4h18v2H3v-2zm0 4h18v2H3v-2z"/></svg></button>
     </div>
-  </main>
 
-<script>
-(function(){
-  const editor = document.getElementById('editor');
-  const toggleTheme = document.getElementById('toggleTheme');
-  const source = document.getElementById('source');
-  const toggleSourceBtn = document.getElementById('toggleSource');
-  const foreColor = document.getElementById('foreColor');
-  const backColor = document.getElementById('backColor');
-  const wordCountEl = document.getElementById('wordCount');
-  const importFile = document.getElementById('importFile');
-  const titleEl = document.getElementById('docTitle');
-  const autosaveState = document.getElementById('autosaveState');
-  const saveKey='wysiwyg_doc_v2',titleKey='wysiwyg_title_v2',themeKey='wysiwyg_theme_v2';
+    <div class="group">
+      <button class="tool" data-cmd="insertUnorderedList" aria-label="Bulleted List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 11h2v2H3zM7 17h14v2H7zM3 17h2v2H3z"/></svg></button>
+      <button class="tool" data-cmd="insertOrderedList" aria-label="Numbered List"><svg viewBox="0 0 24 24"><path d="M7 5h14v2H7zM3 5h2v2H3zM7 11h14v2H7zM3 10h2v4H3zM7 17h14v2H7zM3 16h3v2H3z"/></svg></button>
+      <button class="tool" data-cmd="outdent" aria-label="Outdent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM21 8v8l-6-4 6-4z"/></svg></button>
+      <button class="tool" data-cmd="indent" aria-label="Indent"><svg viewBox="0 0 24 24"><path d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM15 8v8l6-4-6-4z"/></svg></button>
+    </div>
 
-  // Default <p> paragraphs
-  document.execCommand('defaultParagraphSeparator', false, 'p');
+    <div class="group">
+      <button class="tool" id="linkBtn" aria-label="Insert Link"><svg viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7-1h2v2h-2v-2zm4.1-4h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3V7z"/></svg></button>
+      <button class="tool" id="imageBtn" aria-label="Insert Image"><svg viewBox="0 0 24 24"><path d="M19 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 12H5V7h14v10zM8.5 13l2.5 3 3.5-4.5 4.5 6H6l2.5-4.5zM9 9a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg></button>
+      <input type="file" id="imageFile" accept="image/*" style="display:none">
+      <button class="tool" data-cmd="undo" aria-label="Undo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 0-7 7H2l4 4 4-4H7a5 5 0 0 1 8.54-3.54l1.41-1.41A7 7 0 0 0 12 5z"/></svg></button>
+      <button class="tool" data-cmd="redo" aria-label="Redo"><svg viewBox="0 0 24 24"><path d="M12 5a7 7 0 0 1 7 7h3l-4 4-4-4h3a5 5 0 0 0-8.54-3.54L6.05 7.05A7 7 0 0 1 12 5z"/></svg></button>
+    </div>
 
-  // --- Theme toggle ---
-  const applyTheme = (mode)=>{
-    document.body.classList.toggle('light', mode==='light');
-    toggleTheme.textContent = mode==='light' ? '🌙' : '☀️';
-    localStorage.setItem(themeKey, mode);
-  };
-  let theme = localStorage.getItem(themeKey) || 'dark';
-  applyTheme(theme);
-  toggleTheme.addEventListener('click', ()=>{
-    theme = (theme==='dark') ? 'light' : 'dark';
-    applyTheme(theme);
-  });
+    <div class="group">
+      <label class="status" for="foreColor">Text</label>
+      <input class="tool" id="foreColor" type="color" value="#0b1220" title="Text color">
+      <label class="status" for="backColor">Bg</label>
+      <input class="tool" id="backColor" type="color" value="#fff4a3" title="Highlight color">
+    </div>
 
-  // --- Formatting buttons ---
-  document.querySelectorAll('[data-cmd]').forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      document.execCommand(btn.dataset.cmd,false,null);
-      editor.focus();
-      editor.dispatchEvent(new Event('input'));
-    });
-  });
+    <div class="group">
+      <button class="tool" id="cleanBtn" title="Clean unsafe HTML"><svg viewBox="0 0 24 24"><path d="M3 6h18v2H3V6zm2 4h14l-1.5 10h-11L5 10zm6-6h2v2h-2V4z"/></svg>Clean</button>
+      <button class="tool" id="downloadBtn" title="Download HTML"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5v2zM11 4h2v8h3l-4 4-4-4h3z"/></svg>Download</button>
+      <button class="tool" id="clearBtn" title="Clear document"><svg viewBox="0 0 24 24"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>New</button>
+    </div>
+  </div>
 
-  foreColor.addEventListener('input',()=>document.execCommand('foreColor',false,foreColor.value));
-  backColor.addEventListener('input',()=>document.execCommand('hiliteColor',false,backColor.value));
+  <div class="wrap">
+    <div>
+      <div id="editor" class="editor" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true">
+        <h1>Welcome 👋</h1>
+        <p>This editor uses <code>&lt;p&gt;</code> tags for new lines. Type here and press Enter!</p>
+        <ul>
+          <li>Insert images via toolbar, paste, or drag &amp; drop.</li>
+          <li>Edit the HTML Source on the right — it updates live.</li>
+          <li>Autosaves to your browser’s local storage.</li>
+        </ul>
+      </div>
+    </div>
 
-  // --- Toggle source view ---
-  let showSource=false;
-  toggleSourceBtn.addEventListener('click',()=>{
-    showSource=!showSource;
-    if(showSource){
-      source.value=editor.innerHTML;
-      editor.style.display='none';
-      source.style.display='block';
-      toggleSourceBtn.classList.add('active');
-    }else{
-      editor.innerHTML=source.value;
-      editor.style.display='block';
-      source.style.display='none';
-      toggleSourceBtn.classList.remove('active');
-      editor.dispatchEvent(new Event('input'));
+    <aside class="side">
+      <div class="card">
+        <h3>HTML Source (live)</h3>
+        <textarea id="code" class="code" aria-label="Live HTML source"></textarea>
+        <div class="status" id="charCount">0 chars</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Link Modal -->
+  <dialog id="linkDialog">
+    <form method="dialog" style="min-width:320px">
+      <h3>Insert Link</h3>
+      <label>Text<br><input type="text" id="linkText" style="width:100%"></label><br><br>
+      <label>URL<br><input type="url" id="linkUrl" placeholder="https://example.com" style="width:100%"></label><br><br>
+      <label><input type="checkbox" id="linkBlank" checked> Open in new tab</label>
+      <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button value="cancel">Cancel</button>
+        <button id="linkApply" value="default">Insert</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <!-- Image Modal -->
+  <dialog id="imageDialog">
+    <form method="dialog" style="min-width:320px">
+      <h3>Insert Image</h3>
+      <label>Image URL<br><input type="url" id="imageUrl" placeholder="https://..." style="width:100%"></label>
+      <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+        <span class="status">or</span>
+        <button id="chooseFileBtn" type="button">Choose File…</button>
+        <input type="file" id="imageFile2" accept="image/*" style="display:none">
+      </div>
+      <label>Alt text<br><input type="text" id="imageAlt" placeholder="Describe the image" style="width:100%"></label>
+      <menu style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button value="cancel">Cancel</button>
+        <button id="imageApply" value="default">Insert</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script>
+    // === Elements ===
+    const root = document.documentElement;
+    const editor = document.getElementById('editor');
+    const codeArea = document.getElementById('code');
+    const charCount = document.getElementById('charCount');
+    const themeBtn = document.getElementById('themeBtn');
+    const themeLabel = document.getElementById('themeLabel');
+    const themeIcon = document.getElementById('themeIcon');
+
+    // Force <p> for new lines
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+
+    // --- Paragraph normalization ---
+    const BLOCK_TAGS = new Set(['ADDRESS','ARTICLE','ASIDE','BLOCKQUOTE','DIV','DL','FIELDSET','FIGURE','FIGCAPTION','FOOTER','FORM','H1','H2','H3','H4','H5','H6','HEADER','HR','MAIN','NAV','OL','P','PRE','SECTION','TABLE','UL','LI']);
+    const INLINE_OK = new Set(['BR','IMG','A','SPAN','STRONG','EM','B','I','U','S','SMALL','SUP','SUB','CODE','KBD','MARK','TIME']);
+    function hasBlockChild(el){ for (const n of el.children){ if (BLOCK_TAGS.has(n.tagName) && n.tagName!=='BR' && n.tagName!=='IMG') return true; } return false; }
+    function replaceElTag(el,newTag){ const n=document.createElement(newTag); for (const a of el.attributes) n.setAttribute(a.name,a.value); while(el.firstChild) n.appendChild(el.firstChild); el.replaceWith(n); return n; }
+    function normalizeDivsToParagraphs(rootEl){
+      const divs = rootEl.querySelectorAll('div');
+      divs.forEach(div=>{
+        if (!hasBlockChild(div)){
+          const isLikelyParagraph = [...div.childNodes].every(n=>{
+            if (n.nodeType===3) return true;
+            if (n.nodeType===1) return INLINE_OK.has(n.tagName);
+            return false;
+          });
+          if (isLikelyParagraph) replaceElTag(div,'p');
+        }
+      });
     }
-  });
 
-  // --- Export / Import ---
-  document.getElementById('exportHtml').addEventListener('click',()=>{
-    const blob=new Blob(
-      [`<!DOCTYPE html><meta charset="utf-8"><title>${titleEl.textContent}</title>`+editor.innerHTML],
-      {type:'text/html'}
-    );
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download=(titleEl.textContent.trim()||'document')+'.html';
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-  importFile.addEventListener('change',()=>{
-    const f=importFile.files[0]; if(!f)return;
-    const r=new FileReader();
-    r.onload=()=>{editor.innerHTML=r.result;editor.dispatchEvent(new Event('input'));};
-    r.readAsText(f);
-  });
+    // Beautifier (readability only)
+    function beautifyHTML(html){
+      try{
+        const node=document.createElement('div'); node.innerHTML=html;
+        let out='', indent=0; const pad=()=> '  '.repeat(indent);
+        const walk=(el)=>{
+          for (const child of Array.from(el.childNodes)){
+            if (child.nodeType===1){
+              out += pad()+'<'+child.nodeName.toLowerCase();
+              for (const attr of Array.from(child.attributes)){ out += ` ${attr.name}="${attr.value.replace(/"/g,'&quot;')}"`; }
+              if (child.childNodes.length===0){ out+='/>\n'; }
+              else { out += '>\n'; indent++; walk(child); indent--; out += pad()+`</${child.nodeName.toLowerCase()}>\n`; }
+            } else if (child.nodeType===3){
+              const text=child.nodeValue.trim(); if (text) out += pad()+text+'\n';
+            } else if (child.nodeType===8){
+              out += pad()+`<!--${child.nodeValue}-->\n`;
+            }
+          }
+        };
+        walk(node); return out.trim();
+      }catch(e){ return html; }
+    }
 
-  // --- Word count & autosave ---
-  const updateWordCount=()=>{
-    const text=editor.innerText||'';
-    const words=(text.trim().match(/\S+/g)||[]).length;
-    const chars=text.replace(/\s/g,'').length;
-    wordCountEl.textContent=`Words: ${words} · Characters: ${chars}`;
-  };
-  let saveTimer;
-  const flashSave=()=>{autosaveState.textContent='Saved';setTimeout(()=>autosaveState.textContent='Autosave: enabled',1000);}
-  const autosave=()=>{
-    clearTimeout(saveTimer);
-    saveTimer=setTimeout(()=>{
-      localStorage.setItem(saveKey,editor.innerHTML);
-      localStorage.setItem(titleKey,titleEl.textContent);
-      flashSave();
-    },400);
-  };
-  editor.addEventListener('input',()=>{updateWordCount();autosave();});
-  titleEl.addEventListener('input',autosave);
+    // URL helpers
+    function isProbablyUrl(u){ try{ new URL(u); return true; } catch{ return false; } }
+    function sanitizeUrl(u){ try{ const url=new URL(u,window.location.href); if (url.protocol==='javascript:') return '#'; return url.toString(); }catch{return '#'} }
 
-  try{
-    const saved=localStorage.getItem(saveKey);
-    const savedTitle=localStorage.getItem(titleKey);
-    if(saved)editor.innerHTML=saved;
-    if(savedTitle)titleEl.textContent=savedTitle;
-  }catch(e){}
-  updateWordCount();
-})();
-</script>
+    // Live code <-> WYSIWYG sync
+    let suppressCodeUpdate=false;
+    function updateCodeFromEditor(){
+      if (suppressCodeUpdate) return;
+      const pretty = beautifyHTML(editor.innerHTML);
+      codeArea.value = pretty;
+      charCount.textContent = pretty.length.toLocaleString()+' chars';
+    }
+    let codeTypingTimer;
+    codeArea.addEventListener('input', ()=>{
+      suppressCodeUpdate=true;
+      clearTimeout(codeTypingTimer);
+      codeTypingTimer=setTimeout(()=>{
+        editor.innerHTML = codeArea.value;
+        normalizeDivsToParagraphs(editor);
+        save();
+        suppressCodeUpdate=false;
+      }, 180);
+    });
+
+    // Exec helper
+    function exec(cmd,val=null){
+      document.execCommand(cmd,false,val);
+      editor.focus();
+      normalizeDivsToParagraphs(editor);
+      save();
+      updateCodeFromEditor();
+    }
+    function setBlock(tag){
+      if (tag==='p') exec('formatBlock','<p>');
+      else if (tag==='blockquote') exec('formatBlock','<blockquote>');
+      else if (tag==='pre') exec('formatBlock','<pre>');
+      else exec('formatBlock','<'+tag+'>');
+    }
+
+    // Toolbar bindings
+    document.querySelectorAll('button.tool[data-cmd]').forEach(btn=> btn.addEventListener('click', ()=> exec(btn.dataset.cmd)));
+    document.getElementById('blockFormat').addEventListener('change', e=> setBlock(e.target.value));
+    document.getElementById('foreColor').addEventListener('change', e=> exec('foreColor', e.target.value));
+    document.getElementById('backColor').addEventListener('change', e=> exec('hiliteColor', e.target.value));
+
+    // Link dialog
+    const linkDialog=document.getElementById('linkDialog');
+    document.getElementById('linkBtn').addEventListener('click', ()=>{
+      saveSelection();
+      const sel=window.getSelection();
+      document.getElementById('linkText').value = sel && sel.toString()? sel.toString() : '';
+      document.getElementById('linkUrl').value = '';
+      document.getElementById('linkBlank').checked = true;
+      linkDialog.showModal();
+    });
+    document.getElementById('linkApply').addEventListener('click', ()=>{
+      restoreSelection();
+      const text=document.getElementById('linkText').value.trim();
+      const url=document.getElementById('linkUrl').value.trim();
+      const blank=document.getElementById('linkBlank').checked;
+      if (!url){ linkDialog.close(); return; }
+      if (!window.getSelection().toString() && text){ document.execCommand('insertText', false, text); }
+      exec('createLink', sanitizeUrl(url));
+      const anchor=window.getSelection().anchorNode;
+      let a=anchor ? (anchor.nodeType===1? anchor : anchor.parentElement) : null;
+      if (a){ if (a.tagName!=='A') a=a.closest('a');
+        if (a){ if (blank){ a.setAttribute('target','_blank'); a.setAttribute('rel','noopener noreferrer'); }
+          a.setAttribute('href', sanitizeUrl(url)); } }
+      linkDialog.close();
+    });
+
+    // Image dialog
+    const imageDialog=document.getElementById('imageDialog');
+    document.getElementById('imageBtn').addEventListener('click', ()=>{
+      saveSelection();
+      document.getElementById('imageUrl').value=''; document.getElementById('imageAlt').value='';
+      imageDialog.showModal();
+    });
+    document.getElementById('chooseFileBtn').addEventListener('click', ()=> document.getElementById('imageFile2').click());
+    document.getElementById('imageFile2').addEventListener('change', handleImageFile);
+    document.getElementById('imageFile').addEventListener('change', handleImageFile);
+    document.getElementById('imageApply').addEventListener('click', ()=>{
+      restoreSelection();
+      const url=document.getElementById('imageUrl').value.trim();
+      const alt=document.getElementById('imageAlt').value.trim();
+      if (url){ exec('insertImage', sanitizeUrl(url)); setAltOnLatestImg(alt); }
+      imageDialog.close();
+    });
+    function handleImageFile(e){
+      const file=e.target.files[0]; if (!file) return;
+      const reader=new FileReader();
+      reader.onload=()=>{ restoreSelection(); exec('insertImage', reader.result); setAltOnLatestImg(file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g,' ')); };
+      reader.readAsDataURL(file); imageDialog.close(); e.target.value='';
+    }
+    function setAltOnLatestImg(alt){
+      const imgs=editor.querySelectorAll('img');
+      if (imgs.length){ const img=imgs[imgs.length-1]; if (alt) img.setAttribute('alt', alt); img.style.maxWidth='100%'; img.style.height='auto'; }
+    }
+
+    // Selection save/restore (dialogs)
+    let savedRange=null;
+    function saveSelection(){ const sel=window.getSelection(); if (sel.rangeCount) savedRange=sel.getRangeAt(0); }
+    function restoreSelection(){
+      if (!savedRange) return; const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange);
+    }
+
+    // Paste: plain text then normalize
+    editor.addEventListener('paste', (e)=>{
+      e.preventDefault();
+      const text=(e.clipboardData||window.clipboardData).getData('text/plain');
+      document.execCommand('insertText', false, text);
+      normalizeDivsToParagraphs(editor); save(); updateCodeFromEditor();
+    });
+
+    // Drag & drop images
+    ;['dragenter','dragover','dragleave','drop'].forEach(ev=>{
+      editor.addEventListener(ev, e=>{ e.preventDefault(); e.stopPropagation(); });
+    });
+    editor.addEventListener('drop', e=>{
+      const files=e.dataTransfer.files;
+      if (files && files.length){
+        [...files].forEach(f=>{
+          if (f.type.startsWith('image/')){
+            const reader=new FileReader();
+            reader.onload=()=>{ exec('insertImage', reader.result); setAltOnLatestImg(f.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g,' ')); };
+            reader.readAsDataURL(f);
+          }
+        });
+      } else {
+        const url=e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+        if (url && isProbablyUrl(url)) exec('insertImage', sanitizeUrl(url));
+      }
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e=>{
+      const meta=e.ctrlKey||e.metaKey;
+      if (meta && e.key.toLowerCase()==='b'){ e.preventDefault(); exec('bold'); }
+      if (meta && e.key.toLowerCase()==='i'){ e.preventDefault(); exec('italic'); }
+      if (meta && e.key.toLowerCase()==='u'){ e.preventDefault(); exec('underline'); }
+    });
+
+    // Clean HTML + normalize + sync
+    function cleanHTML(html){
+      const tmp=document.createElement('div'); tmp.innerHTML=html;
+      tmp.querySelectorAll('script, style, iframe, object, embed, link, meta').forEach(n=>n.remove());
+      tmp.querySelectorAll('*').forEach(el=>{
+        [...el.attributes].forEach(a=>{
+          if (/^on/i.test(a.name)) el.removeAttribute(a.name);
+          if ((a.name==='href'||a.name==='src') && /^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+        });
+      });
+      normalizeDivsToParagraphs(tmp);
+      return tmp.innerHTML;
+    }
+    document.getElementById('cleanBtn').addEventListener('click', ()=>{
+      editor.innerHTML = cleanHTML(editor.innerHTML);
+      save(); updateCodeFromEditor();
+    });
+
+    // Download HTML
+    document.getElementById('downloadBtn').addEventListener('click', ()=>{
+      const blob=new Blob([wrapAsDocument(editor.innerHTML)], {type:'text/html;charset=utf-8'});
+      const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='document.html'; a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    function wrapAsDocument(bodyHTML){
+      return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Exported</title></head>
+<body>${bodyHTML}</body></html>`;
+    }
+
+    // Clear
+    document.getElementById('clearBtn').addEventListener('click', ()=>{
+      if (confirm('Start a new document? This will clear the editor.')){
+        editor.innerHTML = '<p></p>'; save(); updateCodeFromEditor();
+      }
+    });
+
+    // Autosave
+    const LS_KEY='wysiwyg-doc-v3';
+    function save(){ try{ localStorage.setItem(LS_KEY, editor.innerHTML); }catch{} }
+    function load(){
+      try{ const data=localStorage.getItem(LS_KEY); if (data) editor.innerHTML=data; normalizeDivsToParagraphs(editor); }catch{}
+    }
+
+    // Observe editor -> update code
+    const observer=new MutationObserver(()=>{ updateCodeFromEditor(); save(); });
+    observer.observe(editor, {subtree:true, childList:true, characterData:true});
+
+    // Init content
+    load(); updateCodeFromEditor();
+
+    // Button active states
+    function refreshActiveStates(){
+      const map={bold:'bold', italic:'italic', underline:'underline', strikeThrough:'strikeThrough'};
+      document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
+        const cmd=btn.dataset.cmd;
+        if (map[cmd]) btn.setAttribute('aria-pressed', document.queryCommandState(cmd)?'true':'false');
+      });
+    }
+    setInterval(refreshActiveStates, 300);
+
+    // ===== THEME LOGIC =====
+    const THEME_KEY='wysiwyg-theme-pref'; // 'system' | 'light' | 'dark'
+    function applyTheme(mode){
+      // mode: 'system' | 'light' | 'dark'
+      if (mode==='light'){ root.setAttribute('data-theme','light'); themeLabel.textContent='Light'; themeBtn.title='Theme: Light'; setIcon('sun'); }
+      else if (mode==='dark'){ root.setAttribute('data-theme','dark'); themeLabel.textContent='Dark'; themeBtn.title='Theme: Dark'; setIcon('moon'); }
+      else {
+        root.setAttribute('data-theme',''); themeLabel.textContent='System'; themeBtn.title='Theme: System'; setIcon('auto');
+      }
+      try{ localStorage.setItem(THEME_KEY, mode); }catch{}
+    }
+    function setIcon(kind){
+      // Simple icons: sun/moon/auto (sun with rays)
+      if (kind==='moon'){
+        themeIcon.innerHTML='<path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>';
+      } else if (kind==='sun'){
+        themeIcon.innerHTML='<path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.8 1.42-1.42zM12 4V1h0v3h0zm5.24.84l1.79-1.8 1.41 1.41-1.8 1.79-1.4-1.4zM4 12H1v0h3v0zm19 0h-3v0h3v0zM6.76 19.16l-1.42 1.42-1.79-1.8 1.41-1.41 1.8 1.79zM20.45 18.36l1.41 1.41-1.79 1.79-1.4-1.4 1.78-1.8zM12 23v-3h0v3h0zM12 7a5 5 0 100 10 5 5 0 000-10z"/>';
+      } else {
+        // auto icon: half sun/moon
+        themeIcon.innerHTML='<path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 4v12a6 6 0 010-12z"/>';
+      }
+    }
+    function nextTheme(mode){ return mode==='system' ? 'light' : mode==='light' ? 'dark' : 'system'; }
+    function initTheme(){
+      let saved='system';
+      try{ saved=localStorage.getItem(THEME_KEY)||'system'; }catch{}
+      applyTheme(saved);
+      // react to system changes if on system mode
+      const mq=window.matchMedia('(prefers-color-scheme: dark)');
+      mq.addEventListener?.('change', ()=>{ if ((localStorage.getItem(THEME_KEY)||'system')==='system'){ applyTheme('system'); }});
+    }
+    themeBtn.addEventListener('click', ()=>{
+      const current = localStorage.getItem(THEME_KEY) || 'system';
+      applyTheme(nextTheme(current));
+    });
+    initTheme();
+  </script>
 </body>
 </html>
