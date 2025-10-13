@@ -200,7 +200,7 @@
   const byId = id => document.getElementById(id);
   const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
   const blockSelect = byId('blockFormat');
-  const autosaveKey = 'wysi_doc_v8', notesKey = 'wysi_notes_v1';
+  const autosaveKey = 'wysi_doc_v9', notesKey = 'wysi_notes_v1';
 
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
@@ -232,19 +232,6 @@
 
   // Superscript button
   byId('supBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('superscript', false, null); queueSave(); });
-
-  // Clear formatting button (also unwrap links)
-  byId('clearBtn').addEventListener('click', ()=>{
-    content.focus();
-    document.execCommand('removeFormat', false, null);
-    content.querySelectorAll('a').forEach(a=>{ const span=document.createElement('span'); span.innerHTML=a.innerHTML; a.replaceWith(span); });
-    queueSave();
-  });
-
-  // Toolbar "Copy HTML" button
-  byId('copyHtmlToolbarBtn').addEventListener('click', async()=>{
-    await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML');
-  });
 
   // ===== Paragraph/Heading (DOM-based) =====
   blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
@@ -362,6 +349,90 @@
     closeModal('imageModal'); queueSave();
   });
 
+  // ===== Clear formatting (robust: unwraps inline, strips attrs, Hx->p) =====
+  byId('clearBtn').addEventListener('click', () => {
+    content.focus();
+    clearFormatting();
+    queueSave();
+  });
+
+  function clearFormatting() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+
+    if (sel.isCollapsed) {
+      const block = currentBlock();
+      if (!block || block === content) return;
+      const cleaned = cleanElementDeep(block, /*forceParagraph*/ true);
+      block.replaceWith(cleaned);
+      placeCaretInside(cleaned, true);
+      return;
+    }
+
+    const srcFrag = range.cloneContents();
+    const container = document.createElement('div');
+    container.appendChild(srcFrag);
+
+    const cleanedContainer = document.createElement('div');
+    moveCleanedChildren(container, cleanedContainer);
+
+    const outFrag = document.createDocumentFragment();
+    while (cleanedContainer.firstChild) outFrag.appendChild(cleanedContainer.firstChild);
+
+    range.deleteContents();
+    range.insertNode(outFrag);
+  }
+
+  function cleanNode(node, forceParagraph = false) {
+    if (node.nodeType === 3) return document.createTextNode(node.textContent);
+    if (node.nodeType !== 1) return document.createTextNode('');
+
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br' || tag === 'img') return node.cloneNode(true);
+
+    const UNWRAP = new Set(['a','b','strong','i','em','u','s','strike','span','font','mark','sup','sub','code']);
+    if (UNWRAP.has(tag)) {
+      const frag = document.createDocumentFragment();
+      node.childNodes.forEach(ch => {
+        const cleaned = cleanNode(ch, forceParagraph);
+        if (cleaned.nodeType === 11) while (cleaned.firstChild) frag.appendChild(cleaned.firstChild);
+        else frag.appendChild(cleaned);
+      });
+      return frag;
+    }
+
+    let outTag = tag;
+    if (/^h[1-6]$/.test(tag) || (forceParagraph && (tag === 'div' || tag === 'blockquote'))) outTag = 'p';
+
+    const el = document.createElement(outTag);
+    node.childNodes.forEach(ch => {
+      const cleaned = cleanNode(ch, forceParagraph);
+      if (cleaned.nodeType === 11) while (cleaned.firstChild) el.appendChild(cleaned.firstChild);
+      else el.appendChild(cleaned);
+    });
+    return el;
+  }
+
+  function cleanElementDeep(element, forceParagraph = false) {
+    const cleaned = cleanNode(element, forceParagraph);
+    if (cleaned.nodeType === 11) {
+      const p = document.createElement('p');
+      while (cleaned.firstChild) p.appendChild(cleaned.firstChild);
+      return p;
+    }
+    return cleaned;
+  }
+
+  function moveCleanedChildren(src, dst) {
+    src.childNodes.forEach(ch => {
+      const cleaned = cleanNode(ch);
+      if (!cleaned) return;
+      if (cleaned.nodeType === 11) { while (cleaned.firstChild) dst.appendChild(cleaned.firstChild); }
+      else dst.appendChild(cleaned);
+    });
+  }
+
   // ===== Helpers =====
   function selectInserted(chars){
     const sel=window.getSelection(); if (!sel.rangeCount) return;
@@ -444,6 +515,7 @@
   });
   async function copy(text){ try{ await navigator.clipboard.writeText(text); }catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } }
   byId('copyHtmlBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
+  byId('copyHtmlToolbarBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
   byId('importBtn').addEventListener('click', ()=>{
     const inp=document.createElement('input'); inp.type='file'; inp.accept='.html,.htm,text/html';
     inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); };
