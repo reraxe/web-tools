@@ -1,11 +1,13 @@
 <!doctype html>
+<!-- editor-dev.html | Active development branch | based on v1.2.1-dev (full toolbar) -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>WYSIWYG HTML Editor (DEV)</title>
+
 <style>
-  /* Light = default; Dark overrides below via [data-theme="dark"] */
+  /* ===== THEME VARS ===== */
   :root{
     --bg:#f6f7fb; --panel:#ffffff; --panel-2:#f1f3f9; --text:#101321; --muted:#5a6279;
     --accent:#2563eb; --border:#dfe3ee; --danger:#dc2626;
@@ -15,6 +17,7 @@
     --accent:#6ea8fe; --border:#2a2f45; --danger:#ff6b6b;
   }
 
+  /* ===== LAYOUT ===== */
   *{box-sizing:border-box}
   body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial;background:var(--bg);color:var(--text)}
   .wrap{max-width:1100px;margin:32px auto;padding:16px}
@@ -33,7 +36,6 @@
     background:linear-gradient(180deg,rgba(0,0,0,.02),transparent);position:sticky;top:0;z-index:5
   }
   [data-theme="dark"] .toolbar{background:linear-gradient(180deg,rgba(255,255,255,.04),transparent)}
-
   .group{display:flex;gap:6px;padding-right:8px;border-right:1px solid var(--border)}
   .group:last-child{border-right:none;padding-right:0}
   button.tool{
@@ -51,12 +53,6 @@
   .content{min-height:380px;padding:18px 20px;outline:none;line-height:1.6}
   .content:empty:before{content:attr(data-placeholder);color:var(--muted)}
   .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
-  .content blockquote{border-left:3px solid var(--accent);margin:1em 0;padding:.5em 1em;background:color-mix(in srgb, var(--accent) 10%, transparent);border-radius:8px}
-  [data-theme="dark"] .content blockquote{background:#11162a}
-  .content pre{background:color-mix(in srgb, var(--accent) 10%, transparent);color:inherit;padding:12px;border-radius:8px;overflow:auto}
-  [data-theme="dark"] .content pre{background:#0b0f1d;color:#cfe3ff}
-  .content code{font-family:ui-monospace,Menlo,Consolas,monospace;background:color-mix(in srgb, var(--accent) 15%, transparent);padding:2px 6px;border-radius:6px}
-  [data-theme="dark"] .content code{background:#0c1122}
   .content img{max-width:100%;border-radius:8px}
 
   .source{width:100%;min-height:380px;display:none;border:0;outline:none;background:color-mix(in srgb, var(--bg) 95%, #fff);
@@ -73,6 +69,7 @@
   [data-theme="dark"] .btn-accent{color:#0b1020}
   .btn-danger{background:linear-gradient(180deg,#ff8383,var(--danger));color:#1a0d0d}
 
+  /* NOTES */
   .notes{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;display:flex;flex-direction:column;gap:10px;height:min(560px,70vh)}
   .notes h2{font-size:16px;margin:0;opacity:.9}
   .notes textarea{flex:1;resize:vertical;min-height:200px;border:1px dashed var(--border);background:color-mix(in srgb, var(--bg) 95%, #fff);color:inherit;border-radius:8px;padding:10px;font-family:Inter,system-ui,Arial}
@@ -94,20 +91,19 @@
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 contenteditable="true" aria-label="Document title">Untitled Document (DEV)</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV)</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
   <div class="layout">
-    <!-- Editor -->
     <div class="editor" id="editor">
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
-          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h6a4 4 0 0 1 0 8H7zm0 8h7a4 4 0 1 1 0 8H7z"/></svg></button>
-          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 5h9v3h-3.76l-3.48 8H19v3H5v-3h3.76l3.48-8H10z"/></svg></button>
-          <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h3v7a3 3 0 0 0 6 0V4h3v7a6 6 0 0 1-12 0zM5 20h14v2H5z"/></svg></button>
-          <button class="tool" data-cmd="strikeThrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0 1.1-1.79 2-3.5-2S8.5 18.1 8.5 17z"/></svg></button>
-          <button class="tool" id="supBtn" title="Superscript"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 5h3.2l3 4.6L14.2 5H17l-4.3 6.2L17 17h-2.8l-3-4.6L8 17H5l4.4-5.8zM21 7h-3V5h5v1l-3 3h3v2h-5V10l3-3z"/></svg></button>
+          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">B</button>
+          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">I</button>
+          <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">U</button>
+          <button class="tool" data-cmd="strikeThrough" title="Strikethrough">S</button>
+          <button class="tool" id="supBtn" title="Superscript">x²</button>
         </div>
 
         <div class="group">
@@ -122,26 +118,26 @@
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg></button>
-          <button class="tool" data-cmd="insertOrderedList" title="Numbered list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 6h2V4H2v6h3V8H3zM2 14h3v-2H2v2zm0 6h3v-2H2v2z"/></svg></button>
-          <button class="tool" data-cmd="outdent" title="Outdent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm10 4l-4-3v6z"/></svg></button>
-          <button class="tool" data-cmd="indent" title="Indent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm6 2l4 3-4 3z"/></svg></button>
+          <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list">• List</button>
+          <button class="tool" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+          <button class="tool" data-cmd="outdent" title="Outdent">⟸</button>
+          <button class="tool" data-cmd="indent" title="Indent">⟹</button>
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="justifyLeft" title="Align left"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg></button>
-          <button class="tool" data-cmd="justifyCenter" title="Align center"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM7 8h10v2H7zM3 12h18v2H3zM7 16h10v2H7zM3 20h18v2H3z"/></svg></button>
-          <button class="tool" data-cmd="justifyRight" title="Align right"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM11 8h10v2H11zM3 12h18v2H3zM11 16h10v2H11zM3 20h18v2H3z"/></svg></button>
-          <button class="tool" data-cmd="justifyFull" title="Justify"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h18v2H3zM3 12h18v2H3zM3 16h18v2H3zM3 20h18v2H3z"/></svg></button>
+          <button class="tool" data-cmd="justifyLeft" title="Align left">⟵</button>
+          <button class="tool" data-cmd="justifyCenter" title="Align center">≡</button>
+          <button class="tool" data-cmd="justifyRight" title="Align right">⟶</button>
+          <button class="tool" data-cmd="justifyFull" title="Justify">≣</button>
         </div>
 
         <div class="group">
-          <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
-          <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
-          <button class="tool" id="imageModalBtn" title="Insert image"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 5v14H3V5zm-2 2H5v10h14zM7 15l3-4 2 3 3-4 4 5zM7.5 9A1.5 1.5 0 1 0 7.5 12 1.5 1.5 0 0 0 7.5 9z"/></svg> Image</button>
-          <button class="tool" id="clearBtn" title="Clear formatting"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h14v2H6l3 8h8v2H8.6l-1.1 3H5.3l1.3-3.7L3 4z"/></svg></button>
-          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12zM8 5h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 2v14h12V7z"/></svg></button>
-          <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 7l-5 5 5 5 1.5-1.5L5.9 12l3.6-3.5zM16 17l5-5-5-5-1.5 1.5 3.6 3.5-3.6 3.5z"/></svg></button>
+          <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">Link</button>
+          <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link">Mailto</button>
+          <button class="tool" id="imageModalBtn" title="Insert image">Image</button>
+          <button class="tool" id="clearBtn" title="Clear formatting">Clear</button>
+          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">Copy</button>
+          <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">⟷</button>
           <button class="tool" data-cmd="undo" title="Undo">⟲</button>
           <button class="tool" data-cmd="redo" title="Redo">⟳</button>
         </div>
@@ -152,7 +148,7 @@
 
       <div class="footerbar">
         <div class="chips">
-          <span class="chip">DEV build</span>
+          <span class="chip">DEV (based on v1.2.1)</span>
           <span class="chip">Autosave: on</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
@@ -169,7 +165,7 @@
               <option value="auto" selected>Auto (System)</option>
             </select>
           </label>
-          <span class="chip">Shortcuts: Ctrl/Cmd + B I U K</span>
+          <span class="chip">Tip: Ctrl/Cmd + click a link to open</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML">Copy HTML</button>
@@ -234,55 +230,33 @@
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const content = $('content'), source = $('source'), status = $('status'), titleEl = document.querySelector('.titlebar h1');
+  const content = $('content'), source = $('source'), status = $('status'), titleEl = $('docTitle');
   const blockSelect = $('blockFormat');
   const DOC_KEY = 'wysi_doc_dev', NOTES_KEY = 'wysi_notes_dev', THEME_MODE_KEY = 'wysi_theme_mode_dev';
 
-  // ===== Theme (Light / Dark / Auto) =====
+  // ===== Theme (Light / Dark / Auto default) =====
   const themeSelect = $('themeMode');
-  const mql = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-  let themeMode = 'auto'; // default is now auto
-
-  function applyTheme(mode){
-    document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
-  }
-  function applySystemTheme(){
-    applyTheme(mql && mql.matches ? 'dark' : 'light');
-  }
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  let themeMode = 'auto';
+  function applyTheme(mode){ document.documentElement.setAttribute('data-theme', mode==='dark'?'dark':'light'); }
+  function applySystemTheme(){ applyTheme(mql.matches ? 'dark' : 'light'); }
+  function onSystemThemeChange(){ if (themeMode==='auto') applySystemTheme(); }
   function setThemeMode(mode){
     themeMode = mode;
     try { localStorage.setItem(THEME_MODE_KEY, mode); } catch {}
-    if (mode === 'auto'){
-      applySystemTheme();
-      if (mql && mql.addEventListener){
-        mql.addEventListener('change', onSystemThemeChange);
-      } else if (mql && mql.addListener){
-        mql.addListener(onSystemThemeChange);
-      }
-    } else {
-      if (mql && mql.removeEventListener){
-        mql.removeEventListener('change', onSystemThemeChange);
-      } else if (mql && mql.removeListener){
-        mql.removeListener(onSystemThemeChange);
-      }
-      applyTheme(mode);
-    }
+    if (mode === 'auto'){ applySystemTheme(); mql.addEventListener('change', onSystemThemeChange); }
+    else { mql.removeEventListener('change', onSystemThemeChange); applyTheme(mode); }
   }
-  function onSystemThemeChange(){ if (themeMode === 'auto') applySystemTheme(); }
-
-  // Init theme from storage (default to auto)
   (function initTheme(){
-    let saved = 'auto';
-    try { saved = localStorage.getItem(THEME_MODE_KEY) || 'auto'; } catch {}
-    themeSelect.value = saved;
-    setThemeMode(saved);
+    const saved = (localStorage.getItem(THEME_MODE_KEY) || 'auto');
+    themeSelect.value = saved; setThemeMode(saved);
   })();
   themeSelect.addEventListener('change', e => setThemeMode(e.target.value));
 
-  // default paragraph separator
+  // Default paragraph separator = <p>
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
-  // ===== selection save/restore for modals =====
+  // ===== Selection save/restore for modals =====
   let savedRange = null;
   function selectionInsideContent(){
     const sel = window.getSelection();
@@ -290,18 +264,15 @@
   }
   function saveSelection(){
     const sel = window.getSelection();
-    if (sel && sel.rangeCount && content.contains(sel.anchorNode)) {
-      savedRange = sel.getRangeAt(0).cloneRange();
-    }
+    if (sel && sel.rangeCount && content.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
   }
   function restoreSelection(){
     if (!savedRange) return;
-    const sel = window.getSelection();
-    sel.removeAllRanges(); sel.addRange(savedRange);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange);
   }
   document.addEventListener('selectionchange', () => { if (selectionInsideContent()) saveSelection(); });
 
-  // ===== execCommand basics =====
+  // ===== Toolbar execCommand basics =====
   document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
     btn.addEventListener('click', ()=> { content.focus(); document.execCommand(btn.dataset.cmd, false, null); queueSave(); });
   });
@@ -312,8 +283,7 @@
   // ===== Paragraph/Heading (DOM-based) =====
   blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
   function setBlockTag(tag){
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
     let block = currentBlock();
     if (!block || block === content){
@@ -326,8 +296,7 @@
     const newEl = document.createElement(tag);
     while (block.firstChild) newEl.appendChild(block.firstChild);
     block.replaceWith(newEl);
-    placeCaretInside(newEl);
-    queueSave();
+    placeCaretInside(newEl); queueSave();
   }
   function currentBlock(){
     const sel = window.getSelection(); if (!sel || !sel.rangeCount) return null;
@@ -356,7 +325,7 @@
   });
 
   // ===== Modals infra =====
-  function showModal(id){ saveSelection(); const el=$(id); el.style.display='flex'; setTimeout(()=>{const f=el.querySelector('input,textarea,select,button:not([data-close])'); if(f) f.focus();},0); }
+  function showModal(id){ saveSelection(); const el=$(id); el.style.display='flex'; setTimeout(()=>{const f=el.querySelector('input,textarea,select'); if(f) f.focus();},0); }
   function closeModal(id){ $(id).style.display='none'; content.focus(); }
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.getAttribute('data-close'))));
   ;['linkModal','mailtoModal','imageModal'].forEach(id=>$(id).addEventListener('click',e=>{ if (e.target.id===id) closeModal(id); }));
@@ -368,7 +337,7 @@
     return null;
   }
 
-  // ===== Link (standard; editable) =====
+  // ===== Link modal (standard; editable) =====
   let currentLinkEl = null;
   $('linkModalBtn').addEventListener('click', ()=>{
     const sel = window.getSelection();
@@ -414,7 +383,7 @@
     closeModal('linkModal'); queueSave();
   });
 
-  // ===== Mailto (prefill + editable) =====
+  // ===== Mailto modal (editable) =====
   let currentMailtoEl = null;
   $('mailtoModalBtn').addEventListener('click', ()=>{
     const sel = window.getSelection();
@@ -469,7 +438,7 @@
     return `mailto:${encodeURIComponent(to||'')}${parts.length?('?'+parts.join('&')):''}`;
   }
 
-  // ===== Image (avoid duplicates) =====
+  // ===== Image modal (avoid duplicates) =====
   let uploadedDataURL=null, insertingImage=false;
   $('imageModalBtn').addEventListener('click', ()=>{ $('imgUrl').value=''; $('imgAlt').value=''; $('imgWidth').value=''; uploadedDataURL=null; $('imgFile').value=''; showModal('imageModal'); });
   $('imgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>uploadedDataURL=r.result; r.readAsDataURL(f); });
@@ -488,21 +457,14 @@
   // ===== Clear formatting =====
   $('clearBtn').addEventListener('click', () => { content.focus(); clearFormatting(); queueSave(); });
   function clearFormatting() {
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
-
     if (sel.isCollapsed) {
-      const block = currentBlock();
-      if (!block || block === content) return;
-      const cleaned = cleanElementDeep(block, true);
-      block.replaceWith(cleaned);
-      placeCaretInside(cleaned, true);
-      return;
+      const block = currentBlock(); if (!block || block === content) return;
+      const cleaned = cleanElementDeep(block, true); block.replaceWith(cleaned); placeCaretInside(cleaned, true); return;
     }
     const srcFrag = range.cloneContents();
-    const container = document.createElement('div');
-    container.appendChild(srcFrag);
+    const container = document.createElement('div'); container.appendChild(srcFrag);
     const cleanedContainer = document.createElement('div');
     moveCleanedChildren(container, cleanedContainer);
     const outFrag = document.createDocumentFragment();
@@ -596,18 +558,10 @@
       const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
       const open = `<${tag}${attrs}>`; const close = `</${tag}>`;
       const hasBlockChild = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
-      if (BLOCKS.has(tag)){
-        if (hasBlockChild){
-          out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
-        } else {
-          out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
-        }
+      if (hasBlockChild){
+        out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
       } else {
-        if (hasBlockChild){
-          out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
-        } else {
-          out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
-        }
+        out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
       }
     });
     return out;
@@ -631,7 +585,7 @@
   $('copyHtmlToolbarBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
   $('importBtn').addEventListener('click', ()=>{
     const inp=document.createElement('input'); inp.type='file'; inp.accept='.html,.htm,text/html';
-    inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); };
+    inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); enforceLinkTargets(content); queueSave(); };
     inp.click();
   });
   $('resetBtn').addEventListener('click', ()=>{ if(!confirm('Start a new document?')) return; titleEl.textContent='Untitled Document (DEV)'; content.innerHTML=''; saveNow(); });
@@ -651,29 +605,57 @@
       e.preventDefault();
       const cleaned = cleanWordHtmlStrictKeepLinksAndHeaders(html);
       document.execCommand('insertHTML', false, cleaned);
+      enforceLinkTargets(content);
       queueSave();
     } else {
       e.preventDefault();
-      document.execCommand('insertText', false, text);
+      const linkedHTML = linkifyTextToHTML(text);
+      document.execCommand('insertHTML', false, linkedHTML);
+      enforceLinkTargets(content);
       queueSave();
     }
   });
 
-  // Keeps: <h1>, <h2>, <h3>, <p>, <b>, <em>, <ul>, <ol>, <li>, <a>
-  // Converts: <div> -> <p>
-  // Strips: styles/classes/lang/id, mso-*, line-height, <a name="...">, spans/fonts.
+  // Enforce link targets (http/https => _blank; mailto => no target), remove inline rel/style
+  function enforceLinkTargets(root){
+    root.querySelectorAll('a[href]').forEach(a=>{
+      const href = (a.getAttribute('href')||'').trim();
+      if (/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
+  }
+
+  // Ctrl/Cmd-click opens link in new tab (so you can test links in editor)
+  content.addEventListener('click', (e)=>{
+    const a = e.target.closest('a');
+    if (!a || !content.contains(a)) return;
+    if (e.metaKey || e.ctrlKey){
+      e.preventDefault(); window.open(a.href, '_blank');
+    }
+  });
+
+  // Plain-text linkify
+  function linkifyTextToHTML(t) {
+    const esc = s => s.replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+    const urlRe = /\bhttps?:\/\/[^\s<>"']+/gi;
+    const mailRe = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+    let out = esc(t);
+    out = out.replace(urlRe, m => `<a href="${m}" target="_blank">${esc(m)}</a>`);
+    out = out.replace(mailRe, m => `<a href="mailto:${m}">${esc(m)}</a>`);
+    return out.replace(/\n/g, '<br>');
+  }
+
+  // Word sanitizer (keeps: h1,h2,h3,p,b,em,ul,ol,li,a; converts div->p; strips junk; auto target _blank for web links)
   function cleanWordHtmlStrictKeepLinksAndHeaders(inputHtml) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
     const body = doc.body;
 
     // Remove comments
-    (function removeComments(root){
-      const walker = doc.createTreeWalker(root, NodeFilter.SHOW_COMMENT, null);
-      const toRemove = [];
-      while (walker.nextNode()) toRemove.push(walker.currentNode);
-      toRemove.forEach(n => n.remove());
-    })(body);
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
+    const toRemove = [];
+    while (walker.nextNode()) toRemove.push(walker.currentNode);
+    toRemove.forEach(n => n.remove());
 
     // Strip MSO classes/styles, lang/id; drop named anchors
     body.querySelectorAll('*').forEach(el => {
@@ -688,29 +670,30 @@
       el.removeAttribute('lang');
       el.removeAttribute('id');
       if (el.tagName === 'A' && el.hasAttribute('name') && !el.hasAttribute('href')) {
-        unwrap(el);
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove();
       }
     });
 
     // Normalize: spans/fonts -> unwrap; strong->b; i->em; div -> p
     [...body.querySelectorAll('*')].forEach(el => {
       const tag = el.tagName.toLowerCase();
-      if (tag === 'span' || tag === 'font') { unwrap(el); return; }
-      if (tag === 'strong') replaceTag(el, 'b');
-      if (tag === 'i') replaceTag(el, 'em');
-      if (tag === 'div') replaceTag(el, 'p');
+      if (tag === 'span' || tag === 'font') { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+      if (tag === 'strong') { const neo = doc.createElement('b'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
+      if (tag === 'i') { const neo = doc.createElement('em'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
+      if (tag === 'div') { const neo = doc.createElement('p'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
     });
 
-    // Whitelist
+    // Whitelist and clean attributes
     const ALLOWED = new Set(['h1','h2','h3','p','b','em','ul','ol','li','a']);
     [...body.querySelectorAll('*')].forEach(el => {
       const tag = el.tagName.toLowerCase();
-      if (!ALLOWED.has(tag)) { unwrap(el); return; }
+      if (!ALLOWED.has(tag)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
 
       if (tag === 'a') {
         const href = (el.getAttribute('href') || '').trim();
-        if (!/^https?:|^mailto:/i.test(href)) { unwrap(el); return; }
+        if (!/^https?:|^mailto:/i.test(href)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
         [...el.attributes].forEach(a => { if (a.name !== 'href') el.removeAttribute(a.name); });
+        if (/^https?:/i.test(href)) el.setAttribute('target', '_blank');
       } else {
         [...el.attributes].forEach(a => el.removeAttribute(a.name));
       }
@@ -721,35 +704,46 @@
       if (!p.textContent.trim() && p.children.length === 0) p.remove();
     });
 
-    return body.innerHTML.trim();
+    // Final pass to ensure link targets/styles
+    body.querySelectorAll('a[href]').forEach(a=>{
+      const href = (a.getAttribute('href')||'').trim();
+      if (/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
 
-    function unwrap(el){ while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
-    function replaceTag(el, newTag){
-      const neo = doc.createElement(newTag);
-      while (el.firstChild) neo.appendChild(el.firstChild);
-      el.replaceWith(neo);
-    }
+    return body.innerHTML.trim();
   }
 
   // ===== Autosave =====
-  let saveTimer=null, savePending=false;
-  function queueSave(force=false){ savePending=true; clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveNow(), force?0:400); status.textContent='Saving…'; }
+  let saveTimer=null;
+  function queueSave(){ clearTimeout(saveTimer); status.textContent='Saving…'; saveTimer=setTimeout(saveNow, 400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV)', html:content.innerHTML, ts:Date.now()})); }
-    catch(e){ console.warn('Autosave failed', e); status.textContent='Autosave error'; return; }
-    savePending=false; status.textContent='Saved';
+    try{
+      localStorage.setItem(DOC_KEY, JSON.stringify({
+        title: titleEl.textContent || 'Untitled Document (DEV)',
+        html: content.innerHTML,
+        ts: Date.now()
+      }));
+      status.textContent='Saved';
+    }catch(e){ status.textContent='Autosave error'; }
   }
 
-  // ===== Restore + Welcome content =====
-  try{
-    const raw=localStorage.getItem(DOC_KEY);
-    if (raw){
-      const data=JSON.parse(raw); titleEl.textContent=data.title||'Untitled Document (DEV)'; content.innerHTML=data.html||'';
-    } else {
-      content.innerHTML = `<h1>Welcome 👋</h1>
+  // Restore + Welcome
+  (function restoreDoc(){
+    try{
+      const raw = localStorage.getItem(DOC_KEY);
+      if (raw){
+        const data = JSON.parse(raw);
+        titleEl.textContent = data.title || 'Untitled Document (DEV)';
+        content.innerHTML = data.html || '';
+      } else {
+        content.innerHTML = `<h1>Welcome 👋</h1>
 <p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>`;
-    }
-  } catch {}
+      }
+    }catch{}
+  })();
+  content.addEventListener('input', queueSave);
+  titleEl.addEventListener('input', queueSave);
 
   // Notes autosave
   const notesArea = $('notesArea'); try{ notesArea.value = localStorage.getItem(NOTES_KEY)||''; }catch{}
