@@ -1,134 +1,10 @@
 <!doctype html>
-<!--
-=========================================================
- WYSIWYG HTML Editor - Developer Branch
- File: editor-dev.html
- Build: v1.3-dev (Full Toolbar + v1.2.1 Base)
-=========================================================
-📦 CHANGE SUMMARY
-- Full toolbar restored (headings, lists, colors, alignments, etc.)
-- Word sanitizer + auto-linkify + auto _blank for web links
-- Light/Dark/Auto theme (default Auto)
-- Paste modes: Plain / Word sanitized
-- Re-editable Link, Mailto, Image modals
-- Superscript, Clear Formatting, Source toggle
-- Copy / Import / Export / Autosave / Notes
-- Welcome message when empty
-- Branch: DEV | Version: 1.3-dev
-=========================================================
--->
+<!-- editor-dev.html | Active development branch | based on v1.2.1-dev (full toolbar) -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.3)</title>
-
-<style>
-  /* ===== THEME VARS ===== */
-  :root{
-    --bg:#f6f7fb; --panel:#ffffff; --panel-2:#f1f3f9; --text:#101321; --muted:#5a6279;
-    --accent:#2563eb; --border:#dfe3ee; --danger:#dc2626;
-  }
-  [data-theme="dark"]{
-    --bg:#0f1220; --panel:#171a2a; --panel-2:#1f2336; --text:#e7e9f3; --muted:#a8afc4;
-    --accent:#6ea8fe; --border:#2a2f45; --danger:#ff6b6b;
-  }
-
-  /* ===== LAYOUT ===== */
-  *{box-sizing:border-box}
-  body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial;background:var(--bg);color:var(--text)}
-  .wrap{max-width:1100px;margin:32px auto;padding:16px}
-  .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-  .titlebar h1{font-size:18px;margin:0;opacity:.9}
-  .status{margin-left:auto;font-size:12px;color:var(--muted)}
-  .layout{display:grid;grid-template-columns:1fr 320px;gap:16px}
-  @media(max-width:1024px){.layout{grid-template-columns:1fr}}
-
-  .editor{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel);
-    box-shadow:0 8px 36px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.4)}
-  [data-theme="dark"] .editor{box-shadow:0 8px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03)}
-
-  .toolbar{
-    display:flex;gap:6px;flex-wrap:wrap;padding:10px;border-bottom:1px solid var(--border);
-    background:linear-gradient(180deg,rgba(0,0,0,.02),transparent);position:sticky;top:0;z-index:5
-  }
-  [data-theme="dark"] .toolbar{background:linear-gradient(180deg,rgba(255,255,255,.04),transparent)}
-  .group{display:flex;gap:6px;padding-right:8px;border-right:1px solid var(--border)}
-  .group:last-child{border-right:none;padding-right:0}
-  button.tool{
-    appearance:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
-    height:36px;padding:0 10px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13px;
-  }
-  button.tool:hover{filter:brightness(0.97)}
-  [data-theme="dark"] button.tool:hover{background:#252a42;filter:none}
-  .tool svg{width:16px;height:16px;opacity:.9}
-  select.tool, input[type="color"].tool{
-    height:36px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
-    border-radius:9px;padding:0 8px;font-size:13px;cursor:pointer;
-  }
-
-  .content{min-height:380px;padding:18px 20px;outline:none;line-height:1.6}
-  .content:empty:before{content:attr(data-placeholder);color:var(--muted)}
-  .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
-  .content img{max-width:100%;border-radius:8px}
-
-  .source{width:100%;min-height:380px;display:none;border:0;outline:none;background:color-mix(in srgb, var(--bg) 95%, #fff);
-    color:inherit;padding:18px 20px;font-family:ui-monospace,Menlo,Consolas,monospace}
-  [data-theme="dark"] .source{background:#0a0d1a;color:#dbe1ff}
-
-  .footerbar{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-top:1px solid var(--border);
-    background:linear-gradient(0deg,rgba(0,0,0,.02),transparent);color:var(--muted);font-size:12px}
-  [data-theme="dark"] .footerbar{background:linear-gradient(0deg,rgba(255,255,255,.03),transparent)}
-  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .chip{border:1px dashed var(--border);padding:6px 8px;border-radius:8px;display:inline-flex;gap:6px;align-items:center}
-  .btn-flat{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;height:32px;padding:0 10px;cursor:pointer}
-  .btn-accent{background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 60%, #000));border:0;color:#ffffff;font-weight:600;border-radius:9px;height:36px;padding:0 12px;cursor:pointer}
-  [data-theme="dark"] .btn-accent{color:#0b1020}
-  .btn-danger{background:linear-gradient(180deg,#ff8383,var(--danger));color:#1a0d0d}
-
-  /* NOTES */
-  .notes{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;display:flex;flex-direction:column;gap:10px;height:min(560px,70vh)}
-  .notes h2{font-size:16px;margin:0;opacity:.9}
-  .notes textarea{flex:1;resize:vertical;min-height:200px;border:1px dashed var(--border);background:color-mix(in srgb, var(--bg) 95%, #fff);color:inherit;border-radius:8px;padding:10px;font-family:Inter,system-ui,Arial}
-  [data-theme="dark"] .notes textarea{background:#0b0f1d;color:#cfe3ff}
-
-  /* Modals */
-  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
-  .modal{width:min(560px,92vw);background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:16px}
-  .modal header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .modal h3{margin:0;font-size:16px}
-  .modal .fields{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center}
-  .modal .row{display:contents}
-  .modal footer{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
-  .modal input,.modal textarea,.modal select{width:100%;height:36px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:0 10px;font-size:14px}
-  .modal textarea{height:90px;padding:10px;resize:vertical}
-  .close-x{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
-</style>
-</head>
-<!doctype html>
-<!--
-=========================================================
- WYSIWYG HTML Editor - Developer Branch
- File: editor-dev.html
- Build: v1.3-dev (Full Toolbar + v1.2.1 Base)
-=========================================================
-📦 CHANGE SUMMARY
-- Full toolbar restored (headings, lists, colors, alignments, etc.)
-- Word sanitizer + auto-linkify + auto _blank for web links
-- Light/Dark/Auto theme (default Auto)
-- Paste modes: Plain / Word sanitized
-- Re-editable Link, Mailto, Image modals
-- Superscript, Clear Formatting, Source toggle
-- Copy / Import / Export / Autosave / Notes
-- Welcome message when empty
-- Branch: DEV | Version: 1.3-dev
-=========================================================
--->
-<html lang="en" data-theme="light">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.3)</title>
+<title>WYSIWYG HTML Editor (DEV)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -223,21 +99,11 @@
     <div class="editor" id="editor">
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
-          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
-          </button>
-          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
-          </button>
-          <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
-          </button>
-          <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
-          </button>
-          <button class="tool" id="supBtn" title="Superscript">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 4h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6zM18.5 10H22v1.5h-3v1H22V14h-4v-1.5h2.5v-1H18V10z"/></svg>
-          </button>
+          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">B</button>
+          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">I</button>
+          <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">U</button>
+          <button class="tool" data-cmd="strikeThrough" title="Strikethrough">S</button>
+          <button class="tool" id="supBtn" title="Superscript">x²</button>
         </div>
 
         <div class="group">
@@ -252,60 +118,28 @@
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="insertOrderedList" title="Numbered list">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5h14v2H8zM8 11h14v2H8zM8 17h14v2H8zM3 6h2V4H2v1h1v1zm1 5v1H3v1h1v1H2v1h3v-4zM2 17v1h1v3h1v-4z"/></svg>
-          </button>
-          <button class="tool" data-cmd="outdent" title="Outdent">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 4h20v2H2zM2 18h20v2H2zM10 9v6l-4-3zM2 11h8v2H2zM14 8h8v8h-8z"/></svg>
-          </button>
-          <button class="tool" data-cmd="indent" title="Indent">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 4h20v2H2zM2 18h20v2H2zM14 9v6l4-3zM2 11h8v2H2zM14 8h8v8h-8z"/></svg>
-          </button>
+          <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list">• List</button>
+          <button class="tool" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+          <button class="tool" data-cmd="outdent" title="Outdent">⟸</button>
+          <button class="tool" data-cmd="indent" title="Indent">⟹</button>
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="justifyLeft" title="Align left">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyCenter" title="Align center">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM7 8h10v2H7zM3 12h18v2H3zM7 16h10v2H7zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyRight" title="Align right">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM11 8h10v2H11zM3 12h18v2H3zM11 16h10v2H11zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyFull" title="Justify">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h18v2H3zM3 12h18v2H3zM3 16h18v2H3zM3 20h18v2H3z"/></svg>
-          </button>
+          <button class="tool" data-cmd="justifyLeft" title="Align left">⟵</button>
+          <button class="tool" data-cmd="justifyCenter" title="Align center">≡</button>
+          <button class="tool" data-cmd="justifyRight" title="Align right">⟶</button>
+          <button class="tool" data-cmd="justifyFull" title="Justify">≣</button>
         </div>
 
         <div class="group">
-          <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10.59 13.41a1.995 1.995 0 0 0 0 2.83 2 2 0 0 0 2.83 0l3.54-3.54a4.998 4.998 0 0 0-7.07-7.07l-1.77 1.77 1.42 1.42 1.77-1.77a3 3 0 0 1 4.24 4.24l-3.54 3.54zM13.41 10.59a1.995 1.995 0 0 0 0-2.83 2 2 0 0 0-2.83 0L7.04 11.3a4.998 4.998 0 0 0 7.07 7.07l1.77-1.77-1.42-1.42-1.77 1.77a3 3 0 0 1-4.24-4.24z"/></svg>
-          </button>
-          <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/></svg>
-          </button>
-          <button class="tool" id="imageModalBtn" title="Insert image">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/></svg>
-          </button>
-          <button class="tool" id="clearBtn" title="Clear formatting">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h7v2H6v14H4V6a2 2 0 0 1 2-2zm13.5 9L21 15l-9 9-3-3 6-6-2-2-6 6-3-3 9-9 3 3 1.5-1.5z"/></svg>
-          </button>
-          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
-          </button>
-          <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
-          </button>
-          <button class="tool" data-cmd="undo" title="Undo">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
-          </button>
-          <button class="tool" data-cmd="redo" title="Redo">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6a6 6 0 0 0 6 6c2.67 0 5.16-1.64 5.82-4h1.92c-.72 4.12-4.29 7-8.74 7-4.97 0-9-4.03-9-9s4.03-9 9-9z"/></svg>
-          </button>
+          <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">Link</button>
+          <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link">Mailto</button>
+          <button class="tool" id="imageModalBtn" title="Insert image">Image</button>
+          <button class="tool" id="clearBtn" title="Clear formatting">Clear</button>
+          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">Copy</button>
+          <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">⟷</button>
+          <button class="tool" data-cmd="undo" title="Undo">⟲</button>
+          <button class="tool" data-cmd="redo" title="Redo">⟳</button>
         </div>
       </div>
 
@@ -314,15 +148,17 @@
 
       <div class="footerbar">
         <div class="chips">
-          <span class="chip">DEV (v1.3)</span>
-          <span class="chip">Autosave on</span>
-          <label class="chip">Paste mode:
+          <span class="chip">DEV (based on v1.2.1)</span>
+          <span class="chip">Autosave: on</span>
+          <label class="chip" title="Choose how pasted content is handled">
+            Paste mode:
             <select id="pasteMode">
               <option value="plain" selected>Plain text</option>
               <option value="word">Word sanitized</option>
             </select>
           </label>
-          <label class="chip">Theme:
+          <label class="chip" title="Switch theme">
+            Theme:
             <select id="themeMode">
               <option value="light">Light</option>
               <option value="dark">Dark</option>
@@ -340,6 +176,7 @@
       </div>
     </div>
 
+    <!-- Notes (not exported) -->
     <aside class="notes">
       <h2>Notes (not exported)</h2>
       <textarea id="notesArea" placeholder="Your dev notes…"></textarea>
@@ -380,175 +217,546 @@
 <div class="modal-backdrop" id="imageModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
     <header><h3 id="imageTitle">Insert image</h3><button class="close-x" data-close="imageModal">✕</button></header>
-    <script>
+    <div class="fields">
+      <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…"/></div>
+      <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description"/></div>
+      <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*"/></div>
+      <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)"/></div>
+    </div>
+    <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
+  </div>
+</div>
+
+<script>
 (() => {
   const $ = id => document.getElementById(id);
-  const content = $('content'),
-        source = $('source'),
-        status = $('status'),
-        titleEl = $('docTitle'),
-        blockSelect = $('blockFormat');
-  const DOC_KEY='wysi_doc_dev', NOTES_KEY='wysi_notes_dev', THEME_MODE_KEY='wysi_theme_mode_dev';
+  const content = $('content'), source = $('source'), status = $('status'), titleEl = $('docTitle');
+  const blockSelect = $('blockFormat');
+  const DOC_KEY = 'wysi_doc_dev', NOTES_KEY = 'wysi_notes_dev', THEME_MODE_KEY = 'wysi_theme_mode_dev';
 
-  /* ---------- Theme handling ---------- */
-  const themeSelect=$('themeMode');
-  const mql=window.matchMedia('(prefers-color-scheme: dark)');
-  let themeMode='auto';
-  function applyTheme(mode){document.documentElement.setAttribute('data-theme',mode==='dark'?'dark':'light');}
-  function applySystemTheme(){applyTheme(mql.matches?'dark':'light');}
+  // ===== Theme (Light / Dark / Auto default) =====
+  const themeSelect = $('themeMode');
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  let themeMode = 'auto';
+  function applyTheme(mode){ document.documentElement.setAttribute('data-theme', mode==='dark'?'dark':'light'); }
+  function applySystemTheme(){ applyTheme(mql.matches ? 'dark' : 'light'); }
+  function onSystemThemeChange(){ if (themeMode==='auto') applySystemTheme(); }
   function setThemeMode(mode){
-    themeMode=mode;
-    try{localStorage.setItem(THEME_MODE_KEY,mode);}catch{}
-    if(mode==='auto'){applySystemTheme();mql.addEventListener('change',()=>themeMode==='auto'&&applySystemTheme());}
-    else{applyTheme(mode);}
+    themeMode = mode;
+    try { localStorage.setItem(THEME_MODE_KEY, mode); } catch {}
+    if (mode === 'auto'){ applySystemTheme(); mql.addEventListener('change', onSystemThemeChange); }
+    else { mql.removeEventListener('change', onSystemThemeChange); applyTheme(mode); }
   }
-  (()=>{
-    const saved=localStorage.getItem(THEME_MODE_KEY)||'auto';
-    themeSelect.value=saved;setThemeMode(saved);
+  (function initTheme(){
+    const saved = (localStorage.getItem(THEME_MODE_KEY) || 'auto');
+    themeSelect.value = saved; setThemeMode(saved);
   })();
-  themeSelect.addEventListener('change',e=>setThemeMode(e.target.value));
+  themeSelect.addEventListener('change', e => setThemeMode(e.target.value));
 
-  try{document.execCommand('defaultParagraphSeparator',false,'p');}catch{}
+  // Default paragraph separator = <p>
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
-  /* ---------- Toolbar commands ---------- */
-  document.querySelectorAll('button.tool[data-cmd]').forEach(b=>{
-    b.onclick=()=>{content.focus();document.execCommand(b.dataset.cmd,false,null);queueSave();};
+  // ===== Selection save/restore for modals =====
+  let savedRange = null;
+  function selectionInsideContent(){
+    const sel = window.getSelection();
+    return sel && sel.rangeCount && content.contains(sel.anchorNode);
+  }
+  function saveSelection(){
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && content.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+  }
+  function restoreSelection(){
+    if (!savedRange) return;
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(savedRange);
+  }
+  document.addEventListener('selectionchange', () => { if (selectionInsideContent()) saveSelection(); });
+
+  // ===== Toolbar execCommand basics =====
+  document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
+    btn.addEventListener('click', ()=> { content.focus(); document.execCommand(btn.dataset.cmd, false, null); queueSave(); });
   });
-  $('foreColor').oninput=e=>{content.focus();document.execCommand('foreColor',false,e.target.value);queueSave();};
-  $('backColor').oninput=e=>{content.focus();document.execCommand('hiliteColor',false,e.target.value);queueSave();};
-  $('supBtn').onclick=()=>{content.focus();document.execCommand('superscript',false,null);queueSave();};
+  $('foreColor').addEventListener('input', e=>{ content.focus(); document.execCommand('foreColor', false, e.target.value); queueSave(); });
+  $('backColor').addEventListener('input', e=>{ content.focus(); document.execCommand('hiliteColor', false, e.target.value); queueSave(); });
+  $('supBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('superscript', false, null); queueSave(); });
 
-  /* ---------- Block format ---------- */
-  blockSelect.onchange=e=>setBlockTag(e.target.value);
+  // ===== Paragraph/Heading (DOM-based) =====
+  blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
   function setBlockTag(tag){
-    const sel=window.getSelection();if(!sel.rangeCount)return;
-    const r=sel.getRangeAt(0), el=document.createElement(tag);
-    el.appendChild(r.extractContents());r.insertNode(el);queueSave();
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    let block = currentBlock();
+    if (!block || block === content){
+      const el = document.createElement(tag);
+      el.innerHTML = sel.isCollapsed ? '<br>' : '';
+      if (!sel.isCollapsed) el.appendChild(range.extractContents());
+      range.insertNode(el); placeCaretInside(el); queueSave(); return;
+    }
+    if (block.tagName.toLowerCase() === tag) { placeCaretInside(block); return; }
+    const newEl = document.createElement(tag);
+    while (block.firstChild) newEl.appendChild(block.firstChild);
+    block.replaceWith(newEl);
+    placeCaretInside(newEl); queueSave();
   }
-
-  /* ---------- Modals ---------- */
-  const modals=['linkModal','mailtoModal','imageModal'];
-  function showModal(id){$(id).style.display='flex';}
-  function closeModal(id){$(id).style.display='none';content.focus();}
-  document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeModal(b.dataset.close));
-  modals.forEach(id=>$(id).addEventListener('click',e=>{if(e.target.id===id)closeModal(id);}));
-
-  /* ---------- Link ---------- */
-  let currentLink=null;
-  $('linkModalBtn').onclick=()=>{
-    const sel=window.getSelection();currentLink=sel.anchorNode?.parentElement.closest('a');
-    $('linkText').value=currentLink?currentLink.textContent:sel.toString()||'link';
-    $('linkUrl').value=currentLink?currentLink.href:'https://';
-    $('linkTarget').value=currentLink?.target||'_blank';showModal('linkModal');
-  };
-  $('linkInsertBtn').onclick=()=>{
-    content.focus();const t=$('linkText').value,u=$('linkUrl').value,trg=$('linkTarget').value;
-    if(currentLink){currentLink.href=u;currentLink.target=trg;}
-    else{document.execCommand('createLink',false,u);
-      const a=window.getSelection().anchorNode.parentElement.closest('a');if(a)a.target=trg;}
-    closeModal('linkModal');queueSave();
-  };
-
-  /* ---------- Mailto ---------- */
-  $('mailtoModalBtn').onclick=()=>{
-    $('mailTo').value='';$('mailSubject').value='';$('mailBody').value='';$('mailText').value='Email us';
-    showModal('mailtoModal');
-  };
-  $('mailtoInsertBtn').onclick=()=>{
-    const to=$('mailTo').value,sub=$('mailSubject').value,b=$('mailBody').value,txt=$('mailText').value||to;
-    const href=`mailto:${to}?${new URLSearchParams({subject:sub,body:b})}`;
-    document.execCommand('createLink',false,href);
-    const a=window.getSelection().anchorNode.parentElement.closest('a');if(a)a.removeAttribute('target');
-    closeModal('mailtoModal');queueSave();
-  };
-
-  /* ---------- Image ---------- */
-  $('imageModalBtn').onclick=()=>showModal('imageModal');
-  $('imageInsertBtn').onclick=()=>{
-    const src=$('imgUrl').value.trim(),alt=$('imgAlt')?.value||'',img=document.createElement('img');
-    img.src=src;img.alt=alt;img.style.maxWidth='100%';
-    const sel=window.getSelection();const r=sel.getRangeAt(0);r.insertNode(img);
-    closeModal('imageModal');queueSave();
-  };
-
-  /* ---------- Clear format ---------- */
-  $('clearBtn').onclick=()=>{document.execCommand('removeFormat',false,null);queueSave();};
-
-  /* ---------- Copy / Import / Export ---------- */
-  async function copy(text){try{await navigator.clipboard.writeText(text);}catch{const t=document.createElement('textarea');t.value=text;document.body.append(t);t.select();document.execCommand('copy');t.remove();}}
-  $('copyHtmlBtn').onclick=()=>copy(content.innerHTML);
-  $('copyHtmlToolbarBtn').onclick=()=>copy(content.innerHTML);
-  $('importBtn').onclick=()=>{
-    const i=document.createElement('input');i.type='file';i.accept='.html';
-    i.onchange=async()=>{content.innerHTML=await i.files[0].text();queueSave();};i.click();
-  };
-  $('exportBtn').onclick=()=>{
-    const html='<!doctype html><html><body>'+content.innerHTML+'</body></html>';
-    const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'text/html'}));
-    a.download='document.html';a.click();
-  };
-  $('resetBtn').onclick=()=>{if(confirm('New document?')){content.innerHTML='';titleEl.textContent='Untitled';queueSave();}};
-
-  /* ---------- Paste & Sanitizer ---------- */
-  const pasteModeEl=$('pasteMode');let pasteMode='plain';
-  pasteModeEl.onchange=e=>pasteMode=e.target.value;
-  content.addEventListener('paste',e=>{
-    const html=e.clipboardData.getData('text/html');const text=e.clipboardData.getData('text/plain');
-    e.preventDefault();
-    if(pasteMode==='word'&&html){document.execCommand('insertHTML',false,cleanWordHtml(html));}
-    else{document.execCommand('insertHTML',false,linkify(text));}
-    enforceLinks(content);queueSave();
+  function currentBlock(){
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return null;
+    let n = sel.anchorNode; if (n && n.nodeType===3) n = n.parentNode;
+    while (n && n !== content){
+      if (/^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)) return n;
+      n = n.parentNode;
+    }
+    return content;
+  }
+  function placeCaretInside(el, atEnd=true){
+    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  document.addEventListener('selectionchange', ()=>{
+    const sel = window.getSelection(); let val='p';
+    if (sel && sel.rangeCount){
+      let n = sel.anchorNode; if (n && n.nodeType===3) n=n.parentNode;
+      while (n && n !== content){
+        const t=(n.tagName||'').toLowerCase();
+        if (t==='p'||t==='h1'||t==='h2'||t==='h3'){ val=t; break; }
+        n=n.parentNode;
+      }
+    }
+    blockSelect.value = val;
   });
-  function cleanWordHtml(h){
-    const doc=new DOMParser().parseFromString(h,'text/html');
-    doc.querySelectorAll('*').forEach(el=>{
-      el.removeAttribute('style');el.removeAttribute('class');el.removeAttribute('id');el.removeAttribute('lang');
-      if(el.tagName==='DIV'){const p=doc.createElement('p');p.innerHTML=el.innerHTML;el.replaceWith(p);}
-    });
-    doc.querySelectorAll('a[href]').forEach(a=>{
-      const href=a.getAttribute('href');if(/^https?:/i.test(href))a.target='_blank';
-    });
-    return doc.body.innerHTML;
+
+  // ===== Modals infra =====
+  function showModal(id){ saveSelection(); const el=$(id); el.style.display='flex'; setTimeout(()=>{const f=el.querySelector('input,textarea,select'); if(f) f.focus();},0); }
+  function closeModal(id){ $(id).style.display='none'; content.focus(); }
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.getAttribute('data-close'))));
+  ;['linkModal','mailtoModal','imageModal'].forEach(id=>$(id).addEventListener('click',e=>{ if (e.target.id===id) closeModal(id); }));
+
+  function findClosest(tag){
+    const sel=window.getSelection(); if (!sel || !sel.rangeCount) return null;
+    let n=sel.anchorNode;
+    while (n && n!==content){ if (n.nodeType===1 && n.tagName===tag) return n; n=n.parentNode; }
+    return null;
   }
-  function linkify(t){
-    const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-    return esc(t)
-      .replace(/\bhttps?:\/\/[^\s<>"']+/gi,m=>`<a href="${m}" target="_blank">${esc(m)}</a>`)
-      .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,m=>`<a href="mailto:${m}">${esc(m)}</a>`)
-      .replace(/\n/g,'<br>');
+
+  // ===== Link modal (standard; editable) =====
+  let currentLinkEl = null;
+  $('linkModalBtn').addEventListener('click', ()=>{
+    const sel = window.getSelection();
+    currentLinkEl = findClosest('A');
+    if (currentLinkEl && currentLinkEl.href.toLowerCase().startsWith('mailto:')) currentLinkEl = null;
+    if (currentLinkEl){
+      $('linkText').value = currentLinkEl.textContent || '';
+      $('linkUrl').value = currentLinkEl.getAttribute('href') || '';
+      const tgt = (currentLinkEl.getAttribute('target') || '_blank');
+      $('linkTarget').value = tgt === '_self' ? '_self' : '_blank';
+    } else {
+      $('linkText').value = (sel && sel.rangeCount ? sel.toString() : '') || 'link';
+      $('linkUrl').value = 'https://';
+      $('linkTarget').value = '_blank';
+    }
+    showModal('linkModal');
+  });
+  $('linkInsertBtn').addEventListener('click', ()=>{
+    restoreSelection(); content.focus();
+    const text=($('linkText').value || 'link').trim();
+    const url=($('linkUrl').value || '#').trim();
+    const target=$('linkTarget').value;
+
+    if (currentLinkEl && document.body.contains(currentLinkEl)){
+      currentLinkEl.setAttribute('href', url);
+      if (target === '_blank') currentLinkEl.setAttribute('target','_blank'); else currentLinkEl.removeAttribute('target');
+      currentLinkEl.removeAttribute('style'); currentLinkEl.removeAttribute('rel');
+      if (text !== currentLinkEl.textContent) currentLinkEl.textContent = text;
+    } else {
+      const sel=window.getSelection();
+      if (!sel.rangeCount || sel.toString().length===0){
+        document.execCommand('insertText', false, text);
+        selectInserted(text.length);
+      }
+      document.execCommand('createLink', false, url);
+      const a = findClosest('A');
+      if (a){
+        if (target === '_blank') a.setAttribute('target','_blank'); else a.removeAttribute('target');
+        a.removeAttribute('style'); a.removeAttribute('rel');
+      }
+    }
+    currentLinkEl = null;
+    closeModal('linkModal'); queueSave();
+  });
+
+  // ===== Mailto modal (editable) =====
+  let currentMailtoEl = null;
+  $('mailtoModalBtn').addEventListener('click', ()=>{
+    const sel = window.getSelection();
+    currentMailtoEl = findClosest('A');
+    if (currentMailtoEl && currentMailtoEl.href.toLowerCase().startsWith('mailto:')) {
+      const {to, subject, body} = parseMailto(currentMailtoEl.getAttribute('href') || '');
+      $('mailTo').value = to || '';
+      $('mailSubject').value = subject || '';
+      $('mailBody').value = body || '';
+      $('mailText').value = currentMailtoEl.textContent || 'Email us';
+    } else {
+      currentMailtoEl = null;
+      $('mailTo').value = ''; $('mailSubject').value = ''; $('mailBody').value = '';
+      $('mailText').value = (sel && sel.rangeCount ? sel.toString() : '') || 'Email us';
+    }
+    showModal('mailtoModal');
+  });
+  $('mailtoInsertBtn').addEventListener('click', ()=>{
+    restoreSelection(); content.focus();
+    const toRaw=$('mailTo').value.trim();
+    const subjectRaw=$('mailSubject').value.trim();
+    const bodyRaw=$('mailBody').value.trim();
+    const text=($('mailText').value.trim() || toRaw || 'Email');
+    const href=buildMailto(toRaw, subjectRaw, bodyRaw);
+
+    if (currentMailtoEl && document.body.contains(currentMailtoEl)){
+      currentMailtoEl.setAttribute('href', href);
+      currentMailtoEl.removeAttribute('target'); currentMailtoEl.removeAttribute('style'); currentMailtoEl.removeAttribute('rel');
+      if (text !== currentMailtoEl.textContent) currentMailtoEl.textContent = text;
+    } else {
+      const sel=window.getSelection();
+      if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
+      document.execCommand('createLink', false, href);
+      const a=findClosest('A'); if (a){ a.removeAttribute('target'); a.removeAttribute('style'); a.removeAttribute('rel'); }
+    }
+    currentMailtoEl = null;
+    closeModal('mailtoModal'); queueSave();
+  });
+  function parseMailto(href){
+    let to='', subject='', body='';
+    if (!href || !href.toLowerCase().startsWith('mailto:')) return {to,subject,body};
+    const rest = href.slice(7);
+    const [addr, query=''] = rest.split('?');
+    to = decodeURIComponent(addr || '');
+    const params = new URLSearchParams(query);
+    subject = params.get('subject') ? decodeURIComponent(params.get('subject')) : '';
+    body = params.get('body') ? decodeURIComponent(params.get('body')) : '';
+    return {to, subject, body};
   }
-  function enforceLinks(root){
+  function buildMailto(to, subject, body){
+    const parts=[]; if (subject) parts.push('subject='+encodeURIComponent(subject)); if (body) parts.push('body='+encodeURIComponent(body));
+    return `mailto:${encodeURIComponent(to||'')}${parts.length?('?'+parts.join('&')):''}`;
+  }
+
+  // ===== Image modal (avoid duplicates) =====
+  let uploadedDataURL=null, insertingImage=false;
+  $('imageModalBtn').addEventListener('click', ()=>{ $('imgUrl').value=''; $('imgAlt').value=''; $('imgWidth').value=''; uploadedDataURL=null; $('imgFile').value=''; showModal('imageModal'); });
+  $('imgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>uploadedDataURL=r.result; r.readAsDataURL(f); });
+  $('imageInsertBtn').addEventListener('click', ()=>{
+    if (insertingImage) return; insertingImage = true; setTimeout(()=>insertingImage=false, 300);
+    restoreSelection(); content.focus();
+    const src=($('imgUrl').value.trim()||uploadedDataURL); const alt=$('imgAlt').value.trim(); const width=$('imgWidth').value.trim();
+    if (!src) { alert('Provide an image URL or upload a file.'); return; }
+    const img=document.createElement('img');
+    img.src=src; img.alt=alt||''; if (width) img.style.width=`${parseInt(width,10)}px`;
+    img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
+    insertNode(img);
+    closeModal('imageModal'); queueSave();
+  });
+
+  // ===== Clear formatting =====
+  $('clearBtn').addEventListener('click', () => { content.focus(); clearFormatting(); queueSave(); });
+  function clearFormatting() {
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (sel.isCollapsed) {
+      const block = currentBlock(); if (!block || block === content) return;
+      const cleaned = cleanElementDeep(block, true); block.replaceWith(cleaned); placeCaretInside(cleaned, true); return;
+    }
+    const srcFrag = range.cloneContents();
+    const container = document.createElement('div'); container.appendChild(srcFrag);
+    const cleanedContainer = document.createElement('div');
+    moveCleanedChildren(container, cleanedContainer);
+    const outFrag = document.createDocumentFragment();
+    while (cleanedContainer.firstChild) outFrag.appendChild(cleanedContainer.firstChild);
+    range.deleteContents(); range.insertNode(outFrag);
+  }
+  function cleanNode(node, forceParagraph = false) {
+    if (node.nodeType === 3) return document.createTextNode(node.textContent);
+    if (node.nodeType !== 1) return document.createTextNode('');
+    const tag = node.tagName.toLowerCase();
+    if (tag === 'br' || tag === 'img') return node.cloneNode(true);
+    const UNWRAP = new Set(['a','b','strong','i','em','u','s','strike','span','font','mark','sup','sub','code']);
+    if (UNWRAP.has(tag)) {
+      const frag = document.createDocumentFragment();
+      node.childNodes.forEach(ch => {
+        const cleaned = cleanNode(ch, forceParagraph);
+        if (cleaned.nodeType === 11) while (cleaned.firstChild) frag.appendChild(cleaned.firstChild);
+        else frag.appendChild(cleaned);
+      });
+      return frag;
+    }
+    let outTag = tag;
+    if (/^h[1-6]$/.test(tag) || (forceParagraph && (tag === 'div' || tag === 'blockquote'))) outTag = 'p';
+    const el = document.createElement(outTag);
+    node.childNodes.forEach(ch => {
+      const cleaned = cleanNode(ch, forceParagraph);
+      if (cleaned.nodeType === 11) while (cleaned.firstChild) el.appendChild(cleaned.firstChild);
+      else el.appendChild(cleaned);
+    });
+    return el;
+  }
+  function cleanElementDeep(element, forceParagraph = false) {
+    const cleaned = cleanNode(element, forceParagraph);
+    if (cleaned.nodeType === 11) {
+      const p = document.createElement('p');
+      while (cleaned.firstChild) p.appendChild(cleaned.firstChild);
+      return p;
+    }
+    return cleaned;
+  }
+  function moveCleanedChildren(src, dst) {
+    src.childNodes.forEach(ch => {
+      const cleaned = cleanNode(ch);
+      if (!cleaned) return;
+      if (cleaned.nodeType === 11) { while (cleaned.firstChild) dst.appendChild(cleaned.firstChild); }
+      else dst.appendChild(cleaned);
+    });
+  }
+
+  // ===== Helpers =====
+  function selectInserted(chars){
+    const sel=window.getSelection(); if (!sel.rangeCount) return;
+    const r=sel.getRangeAt(0); const node=r.startContainer;
+    const nr=document.createRange();
+    if (node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
+    else { nr.selectNodeContents(node); nr.collapse(false); }
+    sel.removeAllRanges(); sel.addRange(nr);
+  }
+  function insertNode(node){
+    const sel=window.getSelection(); if (!sel.rangeCount){ content.appendChild(node); return; }
+    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node); r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
+  }
+
+  // ===== Source toggle / pretty printer =====
+  $('toggleSource').addEventListener('click', ()=>{
+    if (source.style.display==='block'){
+      content.innerHTML = source.value.trim();
+      content.style.display='block'; source.style.display='none';
+    } else {
+      source.value = blockPrettyHTML(content.innerHTML);
+      source.style.display='block'; content.style.display='none';
+    }
+  });
+  function blockPrettyHTML(html){
+    try{
+      const tmp=document.createElement('div'); tmp.innerHTML=html;
+      return serializeBlock(tmp, 0).trim();
+    }catch{return html}
+  }
+  const BLOCKS = new Set(['p','h1','h2','h3','h4','h5','h6','blockquote','pre','ul','ol','li','table','thead','tbody','tfoot','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
+  function serializeBlock(node, level){
+    let out=''; const indent='  '.repeat(level);
+    node.childNodes.forEach(ch=>{
+      if (ch.nodeType===3){
+        const t = ch.textContent.replace(/\s+/g,' ').trim();
+        if (t) out += indent + t + '\n';
+        return;
+      }
+      if (ch.nodeType!==1) return;
+      const el = ch; const tag = el.tagName.toLowerCase();
+      const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
+      const open = `<${tag}${attrs}>`; const close = `</${tag}>`;
+      const hasBlockChild = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
+      if (hasBlockChild){
+        out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
+      } else {
+        out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
+      }
+    });
+    return out;
+  }
+  function getInlineHTML(el){
+    let s=''; el.childNodes.forEach(n=>{
+      if (n.nodeType===3) s += n.textContent;
+      else if (n.nodeType===1) s += n.outerHTML;
+    });
+    return s.trim();
+  }
+
+  // ===== Export / Import / Copy / New =====
+  $('exportBtn').addEventListener('click', ()=>{
+    const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',blockPrettyHTML(content.innerHTML),'</body>','</html>'].join('\n');
+    const blob=new Blob([doc],{type:'text/html;charset=utf-8'}); const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); const name=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)||'document'; a.download=name+'.html'; a.click();
+  });
+  async function copy(text){ try{ await navigator.clipboard.writeText(text); }catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } }
+  $('copyHtmlBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
+  $('copyHtmlToolbarBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
+  $('importBtn').addEventListener('click', ()=>{
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='.html,.htm,text/html';
+    inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); enforceLinkTargets(content); queueSave(); };
+    inp.click();
+  });
+  $('resetBtn').addEventListener('click', ()=>{ if(!confirm('Start a new document?')) return; titleEl.textContent='Untitled Document (DEV)'; content.innerHTML=''; saveNow(); });
+
+  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  // ===== Paste mode toggle (default: plain) + Word Sanitizer (keeps headers) =====
+  let pasteMode = 'plain';
+  const pasteModeEl = $('pasteMode');
+  if (pasteModeEl) pasteModeEl.addEventListener('change', e => pasteMode = e.target.value);
+
+  content.addEventListener('paste', (e)=>{
+    const html = e.clipboardData?.getData('text/html');
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (pasteMode === 'word' && html){
+      e.preventDefault();
+      const cleaned = cleanWordHtmlStrictKeepLinksAndHeaders(html);
+      document.execCommand('insertHTML', false, cleaned);
+      enforceLinkTargets(content);
+      queueSave();
+    } else {
+      e.preventDefault();
+      const linkedHTML = linkifyTextToHTML(text);
+      document.execCommand('insertHTML', false, linkedHTML);
+      enforceLinkTargets(content);
+      queueSave();
+    }
+  });
+
+  // Enforce link targets (http/https => _blank; mailto => no target), remove inline rel/style
+  function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
-      const href=a.getAttribute('href');
-      if(/^https?:/i.test(href))a.target='_blank';else a.removeAttribute('target');
-      a.removeAttribute('rel');a.removeAttribute('style');
+      const href = (a.getAttribute('href')||'').trim();
+      if (/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
     });
   }
 
-  /* ---------- Autosave ---------- */
-  let timer=null;
-  function queueSave(){clearTimeout(timer);status.textContent='Saving…';timer=setTimeout(saveNow,400);}
-  function saveNow(){
-    try{localStorage.setItem(DOC_KEY,JSON.stringify({title:titleEl.textContent,html:content.innerHTML}));status.textContent='Saved';}catch{}
+  // Ctrl/Cmd-click opens link in new tab (so you can test links in editor)
+  content.addEventListener('click', (e)=>{
+    const a = e.target.closest('a');
+    if (!a || !content.contains(a)) return;
+    if (e.metaKey || e.ctrlKey){
+      e.preventDefault(); window.open(a.href, '_blank');
+    }
+  });
+
+  // Plain-text linkify
+  function linkifyTextToHTML(t) {
+    const esc = s => s.replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+    const urlRe = /\bhttps?:\/\/[^\s<>"']+/gi;
+    const mailRe = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+    let out = esc(t);
+    out = out.replace(urlRe, m => `<a href="${m}" target="_blank">${esc(m)}</a>`);
+    out = out.replace(mailRe, m => `<a href="mailto:${m}">${esc(m)}</a>`);
+    return out.replace(/\n/g, '<br>');
   }
-  (()=>{
-    const d=JSON.parse(localStorage.getItem(DOC_KEY)||'{}');
-    titleEl.textContent=d.title||'Untitled Document (DEV)';
-    content.innerHTML=d.html||'<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more.</p>';
+
+  // Word sanitizer (keeps: h1,h2,h3,p,b,em,ul,ol,li,a; converts div->p; strips junk; auto target _blank for web links)
+  function cleanWordHtmlStrictKeepLinksAndHeaders(inputHtml) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(inputHtml, 'text/html');
+    const body = doc.body;
+
+    // Remove comments
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
+    const toRemove = [];
+    while (walker.nextNode()) toRemove.push(walker.currentNode);
+    toRemove.forEach(n => n.remove());
+
+    // Strip MSO classes/styles, lang/id; drop named anchors
+    body.querySelectorAll('*').forEach(el => {
+      if (/^Mso/i.test(el.className)) el.removeAttribute('class');
+      if (el.hasAttribute('style')) {
+        const cleaned = el.getAttribute('style')
+          .replace(/\s*mso-[^:]+:[^;]+;?/gi, '')
+          .replace(/\s*line-height:[^;]+;?/gi, '')
+          .trim();
+        if (cleaned) el.setAttribute('style', cleaned); else el.removeAttribute('style');
+      }
+      el.removeAttribute('lang');
+      el.removeAttribute('id');
+      if (el.tagName === 'A' && el.hasAttribute('name') && !el.hasAttribute('href')) {
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove();
+      }
+    });
+
+    // Normalize: spans/fonts -> unwrap; strong->b; i->em; div -> p
+    [...body.querySelectorAll('*')].forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'span' || tag === 'font') { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+      if (tag === 'strong') { const neo = doc.createElement('b'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
+      if (tag === 'i') { const neo = doc.createElement('em'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
+      if (tag === 'div') { const neo = doc.createElement('p'); neo.innerHTML = el.innerHTML; el.replaceWith(neo); }
+    });
+
+    // Whitelist and clean attributes
+    const ALLOWED = new Set(['h1','h2','h3','p','b','em','ul','ol','li','a']);
+    [...body.querySelectorAll('*')].forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      if (!ALLOWED.has(tag)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+
+      if (tag === 'a') {
+        const href = (el.getAttribute('href') || '').trim();
+        if (!/^https?:|^mailto:/i.test(href)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+        [...el.attributes].forEach(a => { if (a.name !== 'href') el.removeAttribute(a.name); });
+        if (/^https?:/i.test(href)) el.setAttribute('target', '_blank');
+      } else {
+        [...el.attributes].forEach(a => el.removeAttribute(a.name));
+      }
+    });
+
+    // Remove empty <p>
+    body.querySelectorAll('p').forEach(p=>{
+      if (!p.textContent.trim() && p.children.length === 0) p.remove();
+    });
+
+    // Final pass to ensure link targets/styles
+    body.querySelectorAll('a[href]').forEach(a=>{
+      const href = (a.getAttribute('href')||'').trim();
+      if (/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
+
+    return body.innerHTML.trim();
+  }
+
+  // ===== Autosave =====
+  let saveTimer=null;
+  function queueSave(){ clearTimeout(saveTimer); status.textContent='Saving…'; saveTimer=setTimeout(saveNow, 400); }
+  function saveNow(){
+    try{
+      localStorage.setItem(DOC_KEY, JSON.stringify({
+        title: titleEl.textContent || 'Untitled Document (DEV)',
+        html: content.innerHTML,
+        ts: Date.now()
+      }));
+      status.textContent='Saved';
+    }catch(e){ status.textContent='Autosave error'; }
+  }
+
+  // Restore + Welcome
+  (function restoreDoc(){
+    try{
+      const raw = localStorage.getItem(DOC_KEY);
+      if (raw){
+        const data = JSON.parse(raw);
+        titleEl.textContent = data.title || 'Untitled Document (DEV)';
+        content.innerHTML = data.html || '';
+      } else {
+        content.innerHTML = `<h1>Welcome 👋</h1>
+<p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>`;
+      }
+    }catch{}
   })();
-  content.oninput=queueSave;titleEl.oninput=queueSave;
+  content.addEventListener('input', queueSave);
+  titleEl.addEventListener('input', queueSave);
 
-  /* ---------- Notes autosave ---------- */
-  const notes=$('notesArea');notes.value=localStorage.getItem(NOTES_KEY)||'';
-  notes.oninput=()=>{try{localStorage.setItem(NOTES_KEY,notes.value);}catch{}};
+  // Notes autosave
+  const notesArea = $('notesArea'); try{ notesArea.value = localStorage.getItem(NOTES_KEY)||''; }catch{}
+  notesArea.addEventListener('input', ()=>{ try{ localStorage.setItem(NOTES_KEY, notesArea.value); }catch{} });
 
-  /* ---------- Shortcuts ---------- */
-  document.addEventListener('keydown',e=>{
-    const m=e.ctrlKey||e.metaKey,k=e.key.toLowerCase();
-    if(m&&['b','i','u'].includes(k)){e.preventDefault();document.execCommand({b:'bold',i:'italic',u:'underline'}[k]);queueSave();}
-    if(m&&k==='k'){e.preventDefault();$('linkModalBtn').click();}
-    if(m&&k==='s'){e.preventDefault();$('exportBtn').click();}
-    if(e.key==='Escape'){$('toggleSource').click();}
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e=>{
+    const meta=e.ctrlKey||e.metaKey; if (e.key==='Escape'){ e.preventDefault(); $('toggleSource').click(); }
+    if (!meta) return;
+    const k=e.key.toLowerCase();
+    if (['b','i','u'].includes(k)){ e.preventDefault(); document.querySelector(`button[data-cmd="${{b:'bold',i:'italic',u:'underline'}[k]}"]`).click(); }
+    if (k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
+    if (k==='s'){ e.preventDefault(); $('exportBtn').click(); }
   });
 })();
 </script>
