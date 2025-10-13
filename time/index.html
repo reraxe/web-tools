@@ -17,15 +17,15 @@
     html{color-scheme:dark}
     body{
       margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      background:
-        radial-gradient(1200px 800px at 70% -10%,#2b2f55 0%,transparent 60%),
-        var(--bg);
+      background: radial-gradient(1200px 800px at 70% -10%,#2b2f55 0%,transparent 60%), var(--bg);
       color:var(--txt);
       display:flex; min-height:100svh; align-items:flex-start; justify-content:center;
+      -webkit-text-size-adjust: 100%;
     }
     .wrap{width:min(100%, var(--wrap-w)); margin:28px auto; padding: clamp(12px, 2.5vw, 24px);}
     header{display:flex; align-items:center; justify-content:center; margin-bottom: clamp(12px, 2vw, 18px); text-align:center;}
     .title{font-size: clamp(22px, 2.6vw, 36px); font-weight: 800; letter-spacing:.2px;}
+
     .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid #ffffff10; border-radius:var(--radius); padding: clamp(14px, 2.2vw, 18px);}
     .grid{display:grid; gap: clamp(10px, 1.4vw, 14px)}
     .grid-2{grid-template-columns: 1fr;}
@@ -54,7 +54,7 @@
     /* Search Inputs (TimeZones.dev style) */
     .search-wrap{ position:relative; width:100%; }
     .search-input{ width:100%; border:none; outline:none; background:transparent; color:var(--txt); font-size:15px; }
-    .search-pop{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:var(--popover); border:1px solid var(--popover-b); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.35); max-height:320px; overflow:auto; z-index:50; }
+    .search-pop{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:var(--popover); border:1px solid var(--popover-b); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.35); max-height:320px; overflow:auto; z-index:50; -webkit-overflow-scrolling: touch; }
     .search-item{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #00000022; cursor:pointer;}
     .search-item:last-child{border-bottom:none}
     .search-item:hover, .search-item.active{ background:var(--highlight); }
@@ -64,6 +64,18 @@
     .kbd{background:#11152a;border:1px solid #ffffff22;border-radius:6px;padding:2px 6px;font-size:11px;color:#cbd1ef;margin-left:8px}
     .search-hint{display:flex; gap:8px; align-items:center; justify-content:flex-end; padding:6px 10px; font-size:11px; color:#9aa3bf;}
     .ghost{opacity:.7}
+
+    /* Mobile polish (keeps desktop unchanged) */
+    @media (max-width: 600px){
+      .wrap { padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0)); }
+      .grid { gap: 12px; }
+      .result { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .btn { min-height: 44px; }
+      .swap { width: 48px; height: 48px; }
+      .field { min-height: 44px; }
+      .field input, .search-input { font-size: 16px; } /* prevent iOS zoom */
+      .search-pop { max-height: 60svh; } /* keep popover on screen */
+    }
   </style>
 </head>
 <body>
@@ -366,12 +378,12 @@ function updateCards(baseInstant){
 }
 
 /* Attach pickers */
-const fromPicker = attachZonePicker(
+attachZonePicker(
   els.fromInput, els.fromPop,
   ()=>DateTime.now(),
   (z)=>{ fromZone=z; els.fromInput.value=z; setNow(); }
 );
-const toPicker = attachZonePicker(
+attachZonePicker(
   els.toInput, els.toPop,
   ()=>DateTime.now(),
   (z)=>{ toZone=z; els.toInput.value=z; convert(); }
@@ -465,6 +477,19 @@ milOn = typeof saved.mil==='boolean' ? saved.mil : false;
 /* Initialize inputs with current zones */
 els.fromInput.value = fromZone;
 els.toInput.value = toZone;
+
+/* Mobile helpers: keep focused inputs visible & close popovers on scroll */
+[els.addSearch, els.fromInput, els.toInput, els.date, els.time].forEach(el=>{
+  if (!el) return;
+  el.addEventListener('focus', ()=>{
+    setTimeout(()=>{ el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 100);
+  });
+});
+window.addEventListener('scroll', ()=>{
+  if (els.searchPop) els.searchPop.style.display = 'none';
+  if (els.fromPop) els.fromPop.style.display = 'none';
+  if (els.toPop) els.toPop.style.display = 'none';
+}, { passive: true });
 
 /* Go */
 setNow();
