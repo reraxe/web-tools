@@ -41,6 +41,8 @@
     .remove{position:absolute;right:10px;top:10px;background:#221018;color:#ffc1c1;border:none;border-radius:50%;width:22px;height:22px;line-height:20px;text-align:center;cursor:pointer;font-size:14px;font-weight:700}
     .remove:hover{background:#3c1a24;color:#fff;transform:scale(1.08)}
     .help{font-size:13px;color:var(--muted)}
+    /* (optional) nicer switch spacing */
+    .row{display:flex;align-items:center;gap:8px;margin-top:10px}
   </style>
 </head>
 <body>
@@ -60,6 +62,13 @@
         <div class="field"><select id="fromTz"></select></div>
         <label style="margin-top:8px">To timezone</label>
         <div class="field"><select id="toTz"></select></div>
+
+        <!-- NEW: DST toggle -->
+        <div class="row">
+          <input id="dstToggle" type="checkbox" checked />
+          <label for="dstToggle">Daylight saving time</label>
+        </div>
+        <div class="help">Turn off to treat all zones at their standard (non-DST) offsets.</div>
 
         <div class="controls" style="margin-top:12px">
           <button id="nowBtn" class="btn" type="button">Now</button>
@@ -87,7 +96,7 @@
   </div>
 
 <script>
-const { DateTime } = luxon;
+const { DateTime, FixedOffsetZone } = luxon;
 const els = {
   date:document.getElementById('dateInput'),
   time:document.getElementById('timeInput'),
@@ -99,7 +108,8 @@ const els = {
   add:document.getElementById('addTz'),
   cards:document.getElementById('cards'),
   outTime:document.getElementById('outTime'),
-  outMeta:document.getElementById('outMeta')
+  outMeta:document.getElementById('outMeta'),
+  dst:document.getElementById('dstToggle')
 };
 
 const fallbackZones=[
@@ -109,8 +119,25 @@ const fallbackZones=[
 let zones=[];
 try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
 
-function offsetLabel(z){try{const n=DateTime.now().setZone(z),o=n.offset;const s=o>=0?'+':'-',a=Math.abs(o);const h=String(Math.trunc(a/60)).padStart(2,'0'),m=String(a%60).padStart(2,'0');return`GMT${s}${h}:${m}`;}catch{return'';}}
-function populate(sel){const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);sel.innerHTML='';list.forEach(({z})=>{const o=document.createElement('option');o.value=z;o.textContent=`${z} (${offsetLabel(z)})`;sel.appendChild(o);});}
+function offsetLabelFromMinutes(o){
+  const s=o>=0?'+':'-'; const a=Math.abs(o);
+  const h=String(Math.trunc(a/60)).padStart(2,'0');
+  const m=String(a%60).padStart(2,'0');
+  return `GMT${s}${h}:${m}`;
+}
+
+// Default label for dropdowns (uses current actual offsets)
+function offsetLabel(z){try{const n=DateTime.now().setZone(z);return offsetLabelFromMinutes(n.offset);}catch{return'';}}
+
+function populate(sel){
+  const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);
+  sel.innerHTML='';
+  list.forEach(({z})=>{
+    const o=document.createElement('option');
+    o.value=z; o.textContent=`${z} (${offsetLabel(z)})`;
+    sel.appendChild(o);
+  });
+}
 populate(els.from);populate(els.to);populate(els.add);
 
 const selected=new Set([
@@ -120,37 +147,90 @@ const selected=new Set([
 els.from.value="America/New_York";
 els.to.value="UTC";
 
+// DST handling
+let dstOn = true;
+
+// Compute a zone's "standard" (non-DST) offset in minutes for a given instant in that zone.
+// We take min(offset at instant, offset at instant+6 months) to cover both hemispheres and odd DST deltas.
+function standardOffsetMinutes(z, instant){
+  const a = instant.setZone(z).offset;
+  const b = instant.plus({months:6}).setZone(z).offset;
+  return Math.min(a,b);
+}
+
+// Get a zone object to use (IANA name if DST on, fixed-offset zone if DST off)
+function resolvedZone(z, instant){
+  if (dstOn) return z;
+  const off = standardOffsetMinutes(z, instant);
+  return FixedOffsetZone.instance(off);
+}
+
+// For labeling an offset (e.g., in output) respecting the current DST toggle
+function effectiveOffsetLabel(z, instant){
+  try{
+    const dt = instant.setZone(resolvedZone(z, instant));
+    return offsetLabelFromMinutes(dt.offset);
+  }catch{
+    return '';
+  }
+}
+
 function fmt(){return "ccc, LLL d, yyyy • HH:mm";}
 function fmtShort(){return "HH:mm";}
+
 function convert(){
   const d=els.date.value||DateTime.now().toFormat('yyyy-LL-dd');
   const t=els.time.value||'00:00';
   const [Y,M,D]=d.split('-').map(Number);
   const [H,Mi]=t.split(':').map(Number);
-  const src=DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
-  const dst=src.setZone(els.to.value);
+
+  // First, interpret the wall time in the IANA 'from' zone
+  const srcLocal = DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
+
+  // If DST off, re-interpret that wall time against the fixed standard offset
+  const srcZone = resolvedZone(els.from.value, srcLocal);
+  const src = (dstOn)
+    ? srcLocal
+    : DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:srcZone});
+
+  // Destination zone (respecting DST toggle) based on the actual instant
+  const dstZone = resolvedZone(els.to.value, src);
+  const dst = src.setZone(dstZone);
+
   els.outTime.textContent=dst.toFormat(fmt());
-  els.outMeta.textContent=`${els.from.value} → ${els.to.value} (${offsetLabel(els.to.value)})`;
+  els.outMeta.textContent=`${els.from.value} → ${els.to.value} (${effectiveOffsetLabel(els.to.value, src)})${dstOn?'':' • DST off'}`;
+
   updateCards(src);
 }
-function setNow(){const now=DateTime.now().setZone(els.from.value);els.date.value=now.toFormat('yyyy-LL-dd');els.time.value=now.toFormat('HH:mm');convert();}
-function swap(){const a=els.from.value,b=els.to.value;els.from.value=b;els.to.value=a;convert();}
-function updateCards(base){
+
+function setNow(){
+  const now=DateTime.now().setZone(els.from.value);
+  els.date.value=now.toFormat('yyyy-LL-dd');
+  els.time.value=now.toFormat('HH:mm');
+  convert();
+}
+function swap(){
+  const a=els.from.value,b=els.to.value;els.from.value=b;els.to.value=a;convert();
+}
+
+function updateCards(baseInstant){
   els.cards.innerHTML='';
   selected.forEach(z=>{
-    const t=base.setZone(z);
+    const zUse = resolvedZone(z, baseInstant);
+    const t = baseInstant.setZone(zUse);
     const div=document.createElement('div');
     div.className='card';
     div.innerHTML=`<button class="remove" data-z="${z}">×</button>
       <h4>${z}</h4>
       <div class="big">${t.toFormat(fmtShort())}</div>
-      <div class="help">${t.toFormat('ccc, LLL d, yyyy')} (${offsetLabel(z)})</div>`;
+      <div class="help">${t.toFormat('ccc, LLL d, yyyy')} (${dstOn?offsetLabel(z):effectiveOffsetLabel(z, baseInstant)})${dstOn?'':' • DST off'}</div>`;
     els.cards.appendChild(div);
   });
   localStorage.setItem('gtc-defaults',JSON.stringify({
-    from:els.from.value,to:els.to.value,zones:[...selected]
+    from:els.from.value,to:els.to.value,zones:[...selected],dst:dstOn
   }));
 }
+
 els.cards.addEventListener('click',e=>{
   if(e.target.matches('.remove')){
     selected.delete(e.target.dataset.z);
@@ -169,10 +249,18 @@ els.swap.addEventListener('click',swap);
 els.from.addEventListener('change',()=>{setNow();});
 els.to.addEventListener('change',convert);
 
+// NEW: DST toggle listener
+els.dst.addEventListener('change',()=>{
+  dstOn = els.dst.checked;
+  convert();
+});
+
+// Restore saved prefs
 const saved=JSON.parse(localStorage.getItem('gtc-defaults')||'{}');
 if(saved.from) els.from.value=saved.from;
 if(saved.to) els.to.value=saved.to;
 if(saved.zones){saved.zones.forEach(z=>selected.add(z));}
+if(typeof saved.dst === 'boolean'){ dstOn = saved.dst; els.dst.checked = dstOn; } // default true if not saved
 
 setNow();
 </script>
