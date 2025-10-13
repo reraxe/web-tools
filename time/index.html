@@ -10,8 +10,8 @@
       --bg:#0f1220; --panel:#171a2b; --panel-2:#1f2440; --txt:#e9ecf2; --muted:#b2b8cc;
       --accent:#6f7dff; --accent-2:#29d3a1; --danger:#ff6b6b; --ring:#3343ff55; --radius:14px;
       --select-bg:#0e1020; --select-hover:#2a3163; --select-border:#ffffff22;
-      --card-h: 170px;
-      --wrap-w: 1080px;
+      --card-h: 170px; --wrap-w: 1080px;
+      --popover:#0b0e1d; --popover-b:#ffffff14; --highlight:#203072;
     }
     *{box-sizing:border-box}
     html{color-scheme:dark}
@@ -23,101 +23,47 @@
       color:var(--txt);
       display:flex; min-height:100svh; align-items:flex-start; justify-content:center;
     }
-
-    .wrap{
-      width:min(100%, var(--wrap-w));
-      margin:28px auto;
-      padding: clamp(12px, 2.5vw, 24px);
-    }
-
-    header{
-      display:flex; align-items:center; justify-content:center;
-      margin-bottom: clamp(12px, 2vw, 18px);
-      text-align:center;
-    }
-    .title{
-      font-size: clamp(22px, 2.6vw, 36px);
-      font-weight: 800;
-      letter-spacing:.2px;
-    }
-
-    .panel{
-      background:linear-gradient(180deg,var(--panel),var(--panel-2));
-      border:1px solid #ffffff10; border-radius:var(--radius);
-      padding: clamp(14px, 2.2vw, 18px);
-    }
-
+    .wrap{width:min(100%, var(--wrap-w)); margin:28px auto; padding: clamp(12px, 2.5vw, 24px);}
+    header{display:flex; align-items:center; justify-content:center; margin-bottom: clamp(12px, 2vw, 18px); text-align:center;}
+    .title{font-size: clamp(22px, 2.6vw, 36px); font-weight: 800; letter-spacing:.2px;}
+    .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2)); border:1px solid #ffffff10; border-radius:var(--radius); padding: clamp(14px, 2.2vw, 18px);}
     .grid{display:grid; gap: clamp(10px, 1.4vw, 14px)}
-    .grid-2{
-      grid-template-columns: 1fr;
-    }
-    @media (min-width: 900px){
-      .grid-2{ grid-template-columns: repeat(2, minmax(340px, 1fr)); }
-    }
+    .grid-2{grid-template-columns: 1fr;}
+    @media (min-width: 900px){ .grid-2{ grid-template-columns: repeat(2, minmax(340px, 1fr)); } }
 
-    .field{
-      display:flex; align-items:center;
-      background:var(--select-bg);
-      border:1px solid var(--select-border);
-      padding:10px 12px; border-radius:10px
-    }
-    .field:focus-within{border-color:#ffffff33;box-shadow:0 0 0 5px var(--ring)}
-    .field input,.field select{
-      background:transparent;border:none;outline:none;color:var(--txt);
-      width:100%;font-size:15px;appearance:none
-    }
-    select{color:var(--txt);background-color:var(--select-bg)}
-    select option{background-color:var(--select-bg);color:var(--txt)}
-    select option:hover{background-color:var(--select-hover);color:#fff}
+    .field{display:flex; align-items:center; background:var(--select-bg); border:1px solid var(--select-border); padding:10px 12px; border-radius:10px}
+    .field:focus-within{border-color:#ffffff33; box-shadow:0 0 0 5px var(--ring)}
+    .controls{display:flex; gap:10px; flex-wrap:wrap}
+    .btn{background:linear-gradient(180deg,#2a3163,#232a55); color:#fff; border:none; border-radius:10px; padding:10px 14px; font-weight:600; cursor:pointer}
+    .swap{display:flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px dashed #ffffff25; background:#0e1020; color:#9aa3ff; cursor:pointer}
+    .result{display:flex; align-items:center; justify-content:space-between; gap:10px; background:#0a0d1a; border:1px solid #ffffff10; border-radius:12px; padding:14px 16px; font-size:16px}
 
-    .controls{display:flex;gap:10px;flex-wrap:wrap}
-    .btn{
-      background:linear-gradient(180deg,#2a3163,#232a55);color:#fff;border:none;
-      border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer
-    }
-    .swap{
-      display:flex;align-items:center;justify-content:center;
-      width:42px;height:42px;border-radius:10px;border:1px dashed #ffffff25;
-      background:#0e1020;color:#9aa3ff;cursor:pointer
-    }
-    .result{
-      display:flex;align-items:center;justify-content:space-between;gap:10px;
-      background:#0a0d1a;border:1px solid #ffffff10;border-radius:12px;
-      padding:14px 16px;font-size:16px
-    }
-
-    /* --- Cards section: 2x2 layout --- */
-    .cards{
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap:14px;
-      margin-top:12px;
-    }
-    @media (min-width:700px){
-      .cards{grid-template-columns: repeat(2, 1fr);}
-    }
-
-    .card{
-      position:relative;
-      background:#0d1122;border:1px solid #ffffff12;border-radius:12px;
-      padding:14px;
-      transition:transform .15s;
-      display:flex; flex-direction:column; justify-content:flex-start;
-      height:var(--card-h); overflow:hidden;
-    }
+    /* 2x2 Cards */
+    .cards{display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:14px; margin-top:12px;}
+    @media (min-width:700px){ .cards{grid-template-columns: repeat(2, 1fr);} }
+    .card{position:relative; background:#0d1122; border:1px solid #ffffff12; border-radius:12px; padding:14px; transition:transform .15s; display:flex; flex-direction:column; justify-content:flex-start; height:var(--card-h); overflow:hidden;}
     .card:hover{transform:translateY(-2px)}
     .card h4{margin:0 24px 8px 0; font-size:16px; font-weight:800; line-height:1.2}
     .big{font-size:clamp(18px,2.2vw,24px); font-weight:700; line-height:1.15; margin:0 0 6px 0; white-space:nowrap}
-    .help{font-size:13px;color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .help{font-size:13px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .remove{position:absolute; right:10px; top:10px; background:#221018; color:#ffc1c1; border:none; border-radius:50%; width:22px; height:22px; line-height:20px; text-align:center; cursor:pointer; font-size:14px; font-weight:700}
+    .remove:hover{background:#3c1a24; color:#fff; transform:scale(1.08)}
+    .row{display:flex; align-items:center; gap:8px; margin-top:10px}
+    .pill{display:inline-block; padding:2px 8px; border:1px solid #ffffff22; border-radius:999px; background:#0e1020; font-size:12px; color:#c9ceef; margin-left:6px}
 
-    .remove{
-      position:absolute;right:10px;top:10px;background:#221018;color:#ffc1c1;border:none;
-      border-radius:50%;width:22px;height:22px;line-height:20px;text-align:center;cursor:pointer;
-      font-size:14px;font-weight:700
-    }
-    .remove:hover{background:#3c1a24;color:#fff;transform:scale(1.08)}
-    .row{display:flex;align-items:center;gap:8px;margin-top:10px}
-    .pill{display:inline-block;padding:2px 8px;border:1px solid #ffffff22;border-radius:999px;background:#0e1020;font-size:12px;color:#c9ceef;margin-left:6px}
+    /* Search Inputs (TimeZones.dev style) */
+    .search-wrap{ position:relative; width:100%; }
+    .search-input{ width:100%; border:none; outline:none; background:transparent; color:var(--txt); font-size:15px; }
+    .search-pop{ position:absolute; left:0; right:0; top:100%; margin-top:6px; background:var(--popover); border:1px solid var(--popover-b); border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.35); max-height:320px; overflow:auto; z-index:50; }
+    .search-item{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #00000022; cursor:pointer;}
+    .search-item:last-child{border-bottom:none}
+    .search-item:hover, .search-item.active{ background:var(--highlight); }
+    .si-left{display:flex; flex-direction:column; gap:2px;}
+    .si-title{font-weight:700; font-size:14px;}
+    .si-sub{font-size:12px; color:var(--muted);}
+    .kbd{background:#11152a;border:1px solid #ffffff22;border-radius:6px;padding:2px 6px;font-size:11px;color:#cbd1ef;margin-left:8px}
+    .search-hint{display:flex; gap:8px; align-items:center; justify-content:flex-end; padding:6px 10px; font-size:11px; color:#9aa3bf;}
+    .ghost{opacity:.7}
   </style>
 </head>
 <body>
@@ -129,14 +75,22 @@
     <div class="grid grid-2">
       <section class="panel">
         <label>Date</label>
-        <div class="field"><input id="dateInput" type="date"></div>
+        <div class="field"><input id="dateInput" type="date" class="search-input"></div>
+
         <label style="margin-top:8px">Time</label>
-        <div class="field"><input id="timeInput" type="time" step="60"></div>
+        <div class="field"><input id="timeInput" type="time" step="60" class="search-input"></div>
 
         <label style="margin-top:12px">From timezone</label>
-        <div class="field"><select id="fromTz"></select></div>
+        <div class="field search-wrap">
+          <input id="fromInput" class="search-input" placeholder="Search From timezone (e.g., New York, America/New_York, EST)…" autocomplete="off">
+          <div id="fromPop" class="search-pop" style="display:none"></div>
+        </div>
+
         <label style="margin-top:8px">To timezone</label>
-        <div class="field"><select id="toTz"></select></div>
+        <div class="field search-wrap">
+          <input id="toInput" class="search-input" placeholder="Search To timezone (e.g., UTC, London, Asia/Tokyo, PST)…" autocomplete="off">
+          <div id="toPop" class="search-pop" style="display:none"></div>
+        </div>
 
         <!-- Military time toggle (default OFF) -->
         <div class="row">
@@ -162,13 +116,17 @@
       </section>
 
       <section class="panel">
-        <label for="addTz">Add a timezone</label>
-        <div class="field">
-          <select id="addTz">
-            <option value="">— Add a timezone —</option>
-          </select>
+        <label for="addSearch">Add a timezone</label>
+        <div class="field search-wrap">
+          <input id="addSearch" class="search-input" type="text" placeholder="Search city, region, or zone (e.g., Texas, Tokyo, UTC, PST)…" autocomplete="off">
+          <div id="searchPop" class="search-pop" style="display:none"></div>
         </div>
-        <div class="help">Dropdown shows current abbreviation & offset. Click ✕ on a card to remove it. Cards auto-update.</div>
+        <div class="search-hint">
+          <span><span class="kbd">↑</span><span class="kbd">↓</span> navigate</span>
+          <span><span class="kbd">Enter</span> add/select</span>
+          <span><span class="kbd">Esc</span> clear</span>
+        </div>
+        <div class="help">Click ✕ on a card to remove it. Cards auto-update.</div>
         <div id="cards" class="cards"></div>
       </section>
     </div>
@@ -176,34 +134,54 @@
 
 <script>
 const { DateTime } = luxon;
+
+/* Elements */
 const els = {
   date:document.getElementById('dateInput'),
   time:document.getElementById('timeInput'),
-  from:document.getElementById('fromTz'),
-  to:document.getElementById('toTz'),
   now:document.getElementById('nowBtn'),
   swap:document.getElementById('swapBtn'),
   convert:document.getElementById('convertBtn'),
-  add:document.getElementById('addTz'),
   cards:document.getElementById('cards'),
   outTime:document.getElementById('outTime'),
   outMeta:document.getElementById('outMeta'),
-  mil:document.getElementById('milToggle')
+  mil:document.getElementById('milToggle'),
+  addSearch:document.getElementById('addSearch'),
+  searchPop:document.getElementById('searchPop'),
+  fromInput:document.getElementById('fromInput'),
+  fromPop:document.getElementById('fromPop'),
+  toInput:document.getElementById('toInput'),
+  toPop:document.getElementById('toPop')
 };
 
+/* Zones */
 const fallbackZones=[
   "UTC","America/New_York","America/Chicago","America/Los_Angeles",
   "Europe/London","Europe/Paris","Europe/Brussels","Europe/Berlin",
-  "Asia/Hong_Kong","Asia/Tokyo"
+  "Asia/Hong_Kong","Asia/Tokyo","Asia/Kolkata","Australia/Sydney"
 ];
 let zones=[];
 try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
 
-const addAliases = {
-  "America/Chicago":"America/Chicago • Houston",
-  "Asia/Tokyo":"Asia/Tokyo • Tokyo"
+/* Aliases / search synonyms */
+const aliasMap = {
+  // US
+  "texas":"America/Chicago","houston":"America/Chicago","dallas":"America/Chicago","austin":"America/Chicago","san antonio":"America/Chicago",
+  "new york":"America/New_York","nyc":"America/New_York","boston":"America/New_York","miami":"America/New_York",
+  "la":"America/Los_Angeles","los angeles":"America/Los_Angeles","sf":"America/Los_Angeles","seattle":"America/Los_Angeles",
+  "chicago":"America/Chicago","denver":"America/Denver","phoenix":"America/Phoenix",
+  // Europe
+  "london":"Europe/London","uk":"Europe/London","paris":"Europe/Paris","berlin":"Europe/Berlin","brussels":"Europe/Brussels","madrid":"Europe/Madrid","rome":"Europe/Rome",
+  // Asia & others
+  "tokyo":"Asia/Tokyo","japan":"Asia/Tokyo","hong kong":"Asia/Hong_Kong","hk":"Asia/Hong_Kong","shanghai":"Asia/Shanghai","singapore":"Asia/Singapore",
+  "india":"Asia/Kolkata","delhi":"Asia/Kolkata","sydney":"Australia/Sydney",
+  // Abbreviations
+  "utc":"UTC","gmt":"UTC","est":"America/New_York","edt":"America/New_York",
+  "cst":"America/Chicago","cdt":"America/Chicago","pst":"America/Los_Angeles","pdt":"America/Los_Angeles",
+  "bst":"Europe/London","cet":"Europe/Berlin","cest":"Europe/Berlin","jst":"Asia/Tokyo","ist":"Asia/Kolkata",
 };
 
+/* Helpers */
 function offsetLabelFromMinutes(o){
   const s=o>=0?'+':'-'; const a=Math.abs(o);
   const h=String(Math.trunc(a/60)).padStart(2,'0');
@@ -224,78 +202,156 @@ function prettyMeta(z, instant){
   const off = offsetLabelFromMinutes(dt.offset);
   return ab ? `${ab} • ${off}` : off;
 }
-function populateBasic(sel){
-  const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);
-  sel.innerHTML='';
-  list.forEach(({z})=>{
-    const o=document.createElement('option');
-    o.value=z; o.textContent=`${z} (${offsetLabelFromMinutes(DateTime.now().setZone(z).offset)})`;
-    sel.appendChild(o);
-  });
-}
-function populateAdd(sel){
+
+/* Build dataset */
+function buildZoneRecords(){
   const now = DateTime.now();
-  const list = zones.map(z=>{
-    const base = addAliases[z] || z;
-    return { z, off: now.setZone(z).offset, label: `${base} (${prettyMeta(z, now)})` };
-  }).sort((a,b)=>a.off-b.off);
-  sel.innerHTML='';
-  list.forEach(({z,label})=>{
-    const o=document.createElement('option');
-    o.value=z; o.textContent=label;
-    sel.appendChild(o);
-  });
-  const houLabel = `America/Chicago • Houston (${prettyMeta("America/Chicago", now)})`;
-  const houstonOption = document.createElement('option');
-  houstonOption.value = "America/Chicago";
-  houstonOption.textContent = houLabel;
-  sel.appendChild(houstonOption);
+  return zones.map(z=>{
+    const dt = now.setZone(z);
+    const meta = prettyMeta(z, now);
+    const parts = z.toLowerCase().split(/[/_-]/).join(' ');
+    const keywords = new Set([z.toLowerCase(), parts]);
+    Object.entries(aliasMap).forEach(([k,v])=>{ if (v===z) keywords.add(k); });
+    const friendly = z==="America/Chicago" ? `${z} • Houston` : z==="Asia/Tokyo" ? `${z} • Tokyo` : z;
+    return { id:z, title:friendly, raw:z, display:`${friendly} (${meta})`, meta, offset: dt.offset, keywords:[...keywords] };
+  }).sort((a,b)=>a.offset-b.offset);
+}
+let ZONE_DATA = buildZoneRecords();
+
+/* Search scoring */
+function scoreRecord(rec, q){
+  const t = rec.raw.toLowerCase();
+  const qs = q.toLowerCase().trim();
+  if (!qs) return 0;
+  if (t === qs) return 100;
+  if (t.startsWith(qs)) return 90;
+  if (rec.keywords.some(k => k === qs)) return 85;
+  if (rec.keywords.some(k => k.startsWith(qs))) return 75;
+  if (t.includes(qs) || rec.keywords.some(k => k.includes(qs))) return 60;
+  const tokens = qs.split(/\s+/);
+  const hay = t + ' ' + rec.keywords.join(' ');
+  return tokens.every(tok => hay.includes(tok)) ? 50 : 0;
 }
 
-populateBasic(els.from);
-populateBasic(els.to);
-populateAdd(els.add);
+/* Generic search component */
+function attachZonePicker(inputEl, popEl, getInstant, onPick){
+  let activeIndex = -1;
 
-const selected=new Set([
+  function render(q){
+    const now = getInstant();
+    let candidates = ZONE_DATA.slice();
+    const aliasHit = aliasMap[q.toLowerCase().trim()];
+    if (aliasHit && zones.includes(aliasHit)){
+      const rec = ZONE_DATA.find(r=>r.raw===aliasHit);
+      if (rec) candidates = [rec, ...candidates.filter(r=>r.raw!==aliasHit)];
+    }
+    const items = (q.trim()===''
+      ? ZONE_DATA.slice(0, 30).map(r=>({r,s:1}))
+      : candidates.map(r=>({r,s:scoreRecord(r,q)})).filter(x=>x.s>0).sort((a,b)=> b.s - a.s || a.r.offset - b.r.offset).slice(0, 40)
+    );
+    if (!items.length){
+      popEl.innerHTML = `<div class="search-item" style="justify-content:center;opacity:.7">No matches</div>`;
+      popEl.style.display='block'; activeIndex=-1; return;
+    }
+    popEl.innerHTML = items.map(({r},idx)=>{
+      const metaNow = prettyMeta(r.raw, now);
+      return `<div class="search-item${idx===0?' active':''}" data-id="${r.raw}">
+        <div class="si-left">
+          <div class="si-title">${r.title}</div>
+          <div class="si-sub">${metaNow}</div>
+        </div>
+        <div class="si-right"><span class="kbd">Enter</span></div>
+      </div>`;
+    }).join('');
+    popEl.style.display='block';
+    activeIndex = items.length?0:-1;
+  }
+
+  function selectActive(){
+    const items = Array.from(popEl.querySelectorAll('.search-item'));
+    const el = items[activeIndex] || items[0];
+    if (!el) return;
+    const id = el.getAttribute('data-id');
+    onPick(id);
+    popEl.style.display='none';
+  }
+
+  inputEl.addEventListener('input', e=>render(e.target.value));
+  inputEl.addEventListener('focus', e=>render(e.target.value));
+  inputEl.addEventListener('keydown', e=>{
+    const items = Array.from(popEl.querySelectorAll('.search-item'));
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length){
+      e.preventDefault();
+      activeIndex = (activeIndex + (e.key==='ArrowDown'?1:-1) + items.length) % items.length;
+      items.forEach((el,idx)=> el.classList.toggle('active', idx===activeIndex));
+      items[activeIndex].scrollIntoView({block:'nearest'});
+    } else if (e.key === 'Enter'){
+      e.preventDefault(); selectActive();
+    } else if (e.key === 'Escape'){
+      inputEl.blur(); popEl.style.display='none';
+    }
+  });
+  popEl.addEventListener('click', e=>{
+    const item = e.target.closest('.search-item');
+    if (item){ onPick(item.getAttribute('data-id')); popEl.style.display='none'; }
+  });
+  document.addEventListener('click', e=>{
+    if (!popEl.contains(e.target) && e.target !== inputEl) popEl.style.display='none';
+  });
+
+  return { render };
+}
+
+/* App state */
+let fromZone = "America/New_York";
+let toZone = "UTC";
+let milOn = false;
+
+const selected = new Set([
   "Europe/Brussels","Europe/London","Europe/Paris","Europe/Berlin",
   "Asia/Hong_Kong","Asia/Tokyo",
   "America/Los_Angeles","America/Chicago"
 ]);
-els.from.value="America/New_York";
-els.to.value="UTC";
 
-let milOn=false;
-function timePattern(){return milOn?"HH:mm":"h:mm a";}
-function fmt(){return`ccc, LLL d, yyyy • ${timePattern()}`;}
-function fmtShort(){return timePattern();}
+/* Formatting */
+function timePattern(){ return milOn ? "HH:mm" : "h:mm a"; }
+function fmt(){ return `ccc, LLL d, yyyy • ${timePattern()}`; }
+function fmtShort(){ return timePattern(); }
 
+/* Core */
 function convert(){
   const d=els.date.value||DateTime.now().toFormat('yyyy-LL-dd');
   const t=els.time.value||'00:00';
   const [Y,M,D]=d.split('-').map(Number);
   const [H,Mi]=t.split(':').map(Number);
-  const src=DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
-  const dst=src.setZone(els.to.value);
+  const src = DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:fromZone});
+  const dst = src.setZone(toZone);
+
   els.outTime.textContent=dst.toFormat(fmt());
-  const toMeta=prettyMeta(els.to.value,src);
-  const fromMeta=prettyMeta(els.from.value,src);
-  els.outMeta.textContent=`${els.from.value} (${fromMeta}) → ${els.to.value} (${toMeta})`;
+  const toMeta = prettyMeta(toZone, src);
+  const fromMeta = prettyMeta(fromZone, src);
+  els.outMeta.textContent = `${fromZone} (${fromMeta}) → ${toZone} (${toMeta})`;
+
   updateCards(src);
 }
 function setNow(){
-  const now=DateTime.now().setZone(els.from.value);
+  const now=DateTime.now().setZone(fromZone);
   els.date.value=now.toFormat('yyyy-LL-dd');
   els.time.value=now.toFormat('HH:mm');
   convert();
 }
-function swap(){
-  const a=els.from.value,b=els.to.value;els.from.value=b;els.to.value=a;convert();
+function swapZones(){
+  const a=fromZone, b=toZone;
+  fromZone=b; toZone=a;
+  els.fromInput.value = fromZone;
+  els.toInput.value = toZone;
+  setNow();
 }
 function updateCards(baseInstant){
   els.cards.innerHTML='';
   selected.forEach(z=>{
-    const t=baseInstant.setZone(z);
-    const meta=prettyMeta(z,baseInstant);
+    const t = baseInstant.setZone(z);
+    const meta = prettyMeta(z, baseInstant);
     const div=document.createElement('div');
     div.className='card';
     div.innerHTML=`<button class="remove" data-z="${z}">×</button>
@@ -305,32 +361,112 @@ function updateCards(baseInstant){
     els.cards.appendChild(div);
   });
   localStorage.setItem('gtc-defaults',JSON.stringify({
-    from:els.from.value,to:els.to.value,zones:[...selected],mil:milOn
+    from:fromZone,to:toZone,zones:[...selected],mil:milOn
   }));
 }
+
+/* Attach pickers */
+const fromPicker = attachZonePicker(
+  els.fromInput, els.fromPop,
+  ()=>DateTime.now(),
+  (z)=>{ fromZone=z; els.fromInput.value=z; setNow(); }
+);
+const toPicker = attachZonePicker(
+  els.toInput, els.toPop,
+  ()=>DateTime.now(),
+  (z)=>{ toZone=z; els.toInput.value=z; convert(); }
+);
+
+/* Add search picker (adds cards) */
+let addActiveIndex = -1;
+function renderAdd(q){
+  const now = DateTime.now();
+  let candidates = ZONE_DATA.slice();
+  const aliasHit = aliasMap[q.toLowerCase().trim()];
+  if (aliasHit && zones.includes(aliasHit)){
+    const rec = ZONE_DATA.find(r=>r.raw===aliasHit);
+    if (rec) candidates = [rec, ...candidates.filter(r=>r.raw!==aliasHit)];
+  }
+  const items = (q.trim()===''
+    ? ZONE_DATA.slice(0, 30).map(r=>({r,s:1}))
+    : candidates.map(r=>({r,s:scoreRecord(r,q)})).filter(x=>x.s>0).sort((a,b)=> b.s - a.s || a.r.offset - b.r.offset).slice(0, 40)
+  );
+  if (!items.length){
+    els.searchPop.innerHTML = `<div class="search-item" style="justify-content:center;opacity:.7">No matches</div>`;
+    els.searchPop.style.display='block'; addActiveIndex=-1; return;
+  }
+  els.searchPop.innerHTML = items.map(({r},idx)=>{
+    const metaNow = prettyMeta(r.raw, now);
+    return `<div class="search-item${idx===0?' active':''}" data-id="${r.raw}">
+      <div class="si-left">
+        <div class="si-title">${r.title}</div>
+        <div class="si-sub">${metaNow}</div>
+      </div>
+      <div class="si-right"><span class="kbd">Enter</span></div>
+    </div>`;
+  }).join('');
+  els.searchPop.style.display='block'; addActiveIndex = 0;
+}
+function addZone(z){
+  if (!z || !zones.includes(z)) return;
+  if (!selected.has(z)) selected.add(z);
+  els.addSearch.value=''; els.searchPop.style.display='none';
+  convert();
+}
+els.addSearch.addEventListener('input', e=>renderAdd(e.target.value));
+els.addSearch.addEventListener('focus', e=>renderAdd(e.target.value));
+els.searchPop.addEventListener('click', e=>{
+  const item = e.target.closest('.search-item');
+  if (item) addZone(item.getAttribute('data-id'));
+});
+els.addSearch.addEventListener('keydown', e=>{
+  const items = Array.from(els.searchPop.querySelectorAll('.search-item'));
+  if (!items.length) return;
+  if (e.key==='ArrowDown' || e.key==='ArrowUp'){
+    e.preventDefault();
+    addActiveIndex = (addActiveIndex + (e.key==='ArrowDown'?1:-1) + items.length) % items.length;
+    items.forEach((el,idx)=> el.classList.toggle('active', idx===addActiveIndex));
+    items[addActiveIndex].scrollIntoView({block:'nearest'});
+  } else if (e.key==='Enter'){
+    e.preventDefault();
+    const active = items[addActiveIndex] || items[0];
+    if (active) addZone(active.getAttribute('data-id'));
+  } else if (e.key==='Escape'){
+    els.addSearch.blur(); els.searchPop.style.display='none';
+  }
+});
+document.addEventListener('click', e=>{
+  if (!els.searchPop.contains(e.target) && e.target !== els.addSearch){
+    els.searchPop.style.display='none';
+  }
+});
+
+/* Cards interactions */
 els.cards.addEventListener('click',e=>{
   if(e.target.matches('.remove')){
     selected.delete(e.target.dataset.z);
     convert();
   }
 });
-els.add.addEventListener('change',e=>{
-  const z=e.target.value;
-  if(z&&!selected.has(z)){selected.add(z);convert();}
-  e.target.value='';
-});
-els.now.addEventListener('click',setNow);
-els.convert.addEventListener('click',convert);
-els.swap.addEventListener('click',swap);
-els.from.addEventListener('change',()=>{setNow();});
-els.to.addEventListener('change',convert);
-els.mil.addEventListener('change',()=>{milOn=els.mil.checked;convert();});
 
+/* Controls */
+els.now.addEventListener('click', setNow);
+els.convert.addEventListener('click', convert);
+els.swap.addEventListener('click', swapZones);
+els.mil.addEventListener('change', ()=>{ milOn = els.mil.checked; convert(); });
+
+/* Restore saved prefs */
 const saved=JSON.parse(localStorage.getItem('gtc-defaults')||'{}');
-if(saved.from){els.from.value=saved.from;}else{els.from.value="America/New_York";}
-if(saved.to){els.to.value=saved.to;}else{els.to.value="UTC";}
-if(saved.zones){saved.zones.forEach(z=>selected.add(z));}
-if(typeof saved.mil==='boolean'){milOn=saved.mil;els.mil.checked=milOn;}
+fromZone = saved.from || "America/New_York";
+toZone = saved.to || "UTC";
+if(saved.zones){ saved.zones.forEach(z=>selected.add(z)); }
+milOn = typeof saved.mil==='boolean' ? saved.mil : false;
+
+/* Initialize inputs with current zones */
+els.fromInput.value = fromZone;
+els.toInput.value = toZone;
+
+/* Go */
 setNow();
 </script>
 </body>
