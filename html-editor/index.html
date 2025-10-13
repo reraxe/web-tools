@@ -87,6 +87,7 @@
           <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 5h9v3h-3.76l-3.48 8H19v3H5v-3h3.76l3.48-8H10z"/></svg></button>
           <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h3v7a3 3 0 0 0 6 0V4h3v7a6 6 0 0 1-12 0zM5 20h14v2H5z"/></svg></button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0 1.1-1.79 2-3.5 2S8.5 18.1 8.5 17z"/></svg></button>
+          <button class="tool" id="supBtn" title="Superscript"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 5h3.2l3 4.6L14.2 5H17l-4.3 6.2L17 17h-2.8l-3-4.6L8 17H5l4.4-5.8zM21 7h-3V5h5v1l-3 3h3v2h-5V10l3-3z"/></svg></button>
         </div>
 
         <div class="group">
@@ -118,6 +119,8 @@
           <button class="tool" id="linkModalBtn" title="Insert link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
           <button class="tool" id="mailtoModalBtn" title="Insert mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
           <button class="tool" id="imageModalBtn" title="Insert image"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 5v14H3V5zm-2 2H5v10h14zM7 15l3-4 2 3 3-4 4 5zM7.5 9A1.5 1.5 0 1 0 7.5 12 1.5 1.5 0 0 0 7.5 9z"/></svg> Image</button>
+          <button class="tool" id="clearBtn" title="Clear formatting"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h14v2H6l3 8h8v2H8.6l-1.1 3H5.3l1.3-3.7L3 4z"/></svg></button>
+          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12zM8 5h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 2v14h12V7z"/></svg></button>
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 7l-5 5 5 5 1.5-1.5L5.9 12l3.6-3.5zM16 17l5-5-5-5-1.5 1.5 3.6 3.5-3.6 3.5z"/></svg></button>
           <button class="tool" data-cmd="undo" title="Undo">⟲</button>
           <button class="tool" data-cmd="redo" title="Redo">⟳</button>
@@ -197,12 +200,11 @@
   const byId = id => document.getElementById(id);
   const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
   const blockSelect = byId('blockFormat');
-  const autosaveKey = 'wysi_doc_v7', notesKey = 'wysi_notes_v1';
+  const autosaveKey = 'wysi_doc_v8', notesKey = 'wysi_notes_v1';
 
-  // Default Enter to paragraphs when possible
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
-  // ===== Save/restore selection (fix link/mailto applying to highlight) =====
+  // ===== selection save/restore for link/mailto/image =====
   let savedRange = null;
   function selectionInsideContent(){
     const sel = window.getSelection();
@@ -217,19 +219,34 @@
   function restoreSelection(){
     if (!savedRange) return;
     const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(savedRange);
+    sel.removeAllRanges(); sel.addRange(savedRange);
   }
   document.addEventListener('selectionchange', () => { if (selectionInsideContent()) saveSelection(); });
 
-  // ===== execCommand buttons (simple) =====
+  // ===== execCommand basics =====
   document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
     btn.addEventListener('click', ()=> { content.focus(); document.execCommand(btn.dataset.cmd, false, null); queueSave(); });
   });
   byId('foreColor').addEventListener('input', e=>{ content.focus(); document.execCommand('foreColor', false, e.target.value); queueSave(); });
   byId('backColor').addEventListener('input', e=>{ content.focus(); document.execCommand('hiliteColor', false, e.target.value); queueSave(); });
 
-  // ===== Robust Paragraph/Heading (DOM-based) =====
+  // Superscript button
+  byId('supBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('superscript', false, null); queueSave(); });
+
+  // Clear formatting button (also unwrap links)
+  byId('clearBtn').addEventListener('click', ()=>{
+    content.focus();
+    document.execCommand('removeFormat', false, null);
+    content.querySelectorAll('a').forEach(a=>{ const span=document.createElement('span'); span.innerHTML=a.innerHTML; a.replaceWith(span); });
+    queueSave();
+  });
+
+  // Toolbar "Copy HTML" button
+  byId('copyHtmlToolbarBtn').addEventListener('click', async()=>{
+    await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML');
+  });
+
+  // ===== Paragraph/Heading (DOM-based) =====
   blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
   function setBlockTag(tag){
     const sel = window.getSelection();
@@ -327,17 +344,21 @@
     closeModal('mailtoModal'); queueSave();
   });
 
-  // ===== Image =====
+  // ===== Image (manual insertion to avoid duplicates) =====
   let uploadedDataURL=null;
   byId('imageModalBtn').addEventListener('click', ()=>{ byId('imgUrl').value=''; byId('imgAlt').value=''; byId('imgWidth').value=''; uploadedDataURL=null; byId('imgFile').value=''; showModal('imageModal'); });
   byId('imgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>uploadedDataURL=r.result; r.readAsDataURL(f); });
+
+  let insertingImage = false;
   byId('imageInsertBtn').addEventListener('click', ()=>{
+    if (insertingImage) return; insertingImage = true; setTimeout(()=>insertingImage=false, 300);
     restoreSelection(); content.focus();
     const src=(byId('imgUrl').value.trim()||uploadedDataURL); const alt=byId('imgAlt').value.trim(); const width=byId('imgWidth').value.trim();
     if (!src) { alert('Provide an image URL or upload a file.'); return; }
-    const before=content.querySelectorAll('img').length; document.execCommand('insertImage', false, src);
-    let img=closestTag('IMG'); if (!img || content.querySelectorAll('img').length===before){ img=document.createElement('img'); img.src=src; insertNode(img); }
-    img.alt=alt||''; if (width) img.style.width=`${parseInt(width,10)}px`; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
+    const img=document.createElement('img');
+    img.src=src; img.alt=alt||''; if (width) img.style.width=`${parseInt(width,10)}px`;
+    img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
+    insertNode(img); // manual insert at caret => no duplicates
     closeModal('imageModal'); queueSave();
   });
 
@@ -360,7 +381,7 @@
     const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node); r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
   }
 
-  // ===== Source toggle =====
+  // ===== Source toggle / pretty printer (block-per-line, inline stays inline) =====
   byId('toggleSource').addEventListener('click', ()=>{
     if (source.style.display==='block'){
       content.innerHTML = source.value.trim();
@@ -371,7 +392,6 @@
     }
   });
 
-  // ===== Block-friendly pretty printer (blocks get newlines, inline stays inline) =====
   function blockPrettyHTML(html){
     try{
       const tmp=document.createElement('div'); tmp.innerHTML=html;
@@ -391,17 +411,14 @@
       const el = ch; const tag = el.tagName.toLowerCase();
       const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
       const open = `<${tag}${attrs}>`; const close = `</${tag}>`;
-
       const hasBlockChild = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
       if (BLOCKS.has(tag)){
         if (hasBlockChild){
           out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
         } else {
-          // inline-only inside -> keep on one line
           out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
         }
       } else {
-        // inline element: keep inline, but respect block context above
         if (hasBlockChild){
           out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
         } else {
@@ -412,7 +429,6 @@
     return out;
   }
   function getInlineHTML(el){
-    // Keep original inline HTML (no extra newlines/indent)
     let s=''; el.childNodes.forEach(n=>{
       if (n.nodeType===3) s += n.textContent;
       else if (n.nodeType===1) s += n.outerHTML;
@@ -426,9 +442,8 @@
     const blob=new Blob([doc],{type:'text/html;charset=utf-8'}); const a=document.createElement('a');
     a.href=URL.createObjectURL(blob); const name=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)||'document'; a.download=name+'.html'; a.click();
   });
-  byId('copyHtmlBtn').addEventListener('click', async()=>{
-    await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML');
-  });
+  async function copy(text){ try{ await navigator.clipboard.writeText(text); }catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } }
+  byId('copyHtmlBtn').addEventListener('click', async()=>{ await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML'); });
   byId('importBtn').addEventListener('click', ()=>{
     const inp=document.createElement('input'); inp.type='file'; inp.accept='.html,.htm,text/html';
     inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); };
@@ -436,7 +451,6 @@
   });
   byId('resetBtn').addEventListener('click', ()=>{ if(!confirm('Start a new document?')) return; titleEl.textContent='Untitled Document'; content.innerHTML=''; saveNow(); });
 
-  async function copy(text){ try{ await navigator.clipboard.writeText(text); }catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } }
   function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
