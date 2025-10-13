@@ -6,10 +6,11 @@
  Build: v1.4-dev (Base = v1.2.1, Toolbar visuals = SVG)
 =========================================================
 Scope:
-- Same behavior as v1.2.1: Paste modes (Plain/Word), Word sanitizer, auto-linkify,
-  auto target _blank for web links, theme Auto default, notes, autosave, source toggle.
-- Only toolbar visuals updated to SVG icons (functions unchanged).
+- v1.2.1 behavior: Paste modes (Plain/Word), Word sanitizer, auto-linkify,
+  auto target _blank for web links, source toggle, notes, autosave.
+- Toolbar visuals updated to SVG (functions unchanged).
 - LocalStorage keys isolated to v14.
+- FIX: "New" button now resets title/content and saves cleared doc.
 =========================================================
 -->
 <html lang="en" data-theme="light">
@@ -192,7 +193,7 @@ Scope:
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
           </button>
           <button class="tool" data-cmd="redo" title="Redo">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6a6 6 0 0 0 6 6c2.67 0 5.16-1.64 5.82-4h1.92c-.72 4.12-4.29 7-8.74 7-4.97 0-9-4.03-9-9s-4.03-9-9-9z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6a6 6 0 0 0 6 6c2.67 0 5.16-1.64 5.82-4h1.92c-.72 4.12-4.29 7-8.74 7-4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
           </button>
         </div>
       </div>
@@ -289,7 +290,7 @@ Scope:
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // ===== LocalStorage keys isolated to v1.4 =====
+  // ===== LocalStorage keys scoped to v1.4 =====
   const DOC_KEY='wysi_doc_dev_v14';
   const NOTES_KEY='wysi_notes_dev_v14';
   const THEME_MODE_KEY='wysi_theme_mode_dev_v14';
@@ -564,6 +565,26 @@ Scope:
     a.click();
   });
 
+  // --- New document (wired up: confirm, reset, save) ---
+  $('resetBtn').addEventListener('click', ()=>{
+    if (!confirm('Start a new document?')) return;
+
+    // If Source view open, close it applying its content
+    if (source.style.display === 'block') {
+      content.innerHTML = source.value.trim();
+      content.style.display = 'block';
+      source.style.display = 'none';
+    }
+
+    titleEl.textContent = 'Untitled Document (DEV v1.4)';
+    content.innerHTML = '';
+    savedRange = null;
+
+    // Save cleared doc (notes/theme untouched)
+    saveNow();
+    status.textContent = 'Saved';
+  });
+
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
@@ -694,7 +715,11 @@ Scope:
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
     if(k==='s'){ e.preventDefault(); $('exportBtn').click(); }
   });
+
+  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
 })();
 </script>
 </body>
 </html>
+
+
