@@ -7,700 +7,478 @@
 <style>
   :root{
     --bg:#0f1220; --panel:#171a2a; --panel-2:#1f2336; --text:#e7e9f3; --muted:#a8afc4;
-    --accent:#6ea8fe; --accent-2:#7ef0d9; --border:#2a2f45; --danger:#ff6b6b; --ok:#22c55e;
+    --accent:#6ea8fe; --border:#2a2f45; --danger:#ff6b6b;
   }
   *{box-sizing:border-box}
-  body{
-    margin:0; font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial;
-    background:linear-gradient(180deg,#0e1120, #0a0c16 35%, #0f1220);
-    color:var(--text);
-  }
+  body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial;background:#0e1120;color:var(--text)}
   .wrap{max-width:1100px;margin:32px auto;padding:16px}
   .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
   .titlebar h1{font-size:18px;margin:0;opacity:.9}
   .status{margin-left:auto;font-size:12px;color:var(--muted)}
   .layout{display:grid;grid-template-columns:1fr 320px;gap:16px}
   @media(max-width:1024px){.layout{grid-template-columns:1fr}}
-  .editor{
-    border:1px solid var(--border); border-radius:12px; overflow:hidden; background:var(--panel);
-    box-shadow:0 8px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
-  }
+  .editor{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel);
+    box-shadow:0 8px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);}
   .toolbar{
-    display:flex; gap:6px; flex-wrap:wrap; padding:10px; border-bottom:1px solid var(--border);
-    background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
-    position:sticky; top:0; z-index:5
+    display:flex;gap:6px;flex-wrap:wrap;padding:10px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);position:sticky;top:0;z-index:5
   }
-  .toolbar .group{display:flex; gap:6px; padding-right:8px; border-right:1px solid var(--border)}
-  .toolbar .group:last-child{border-right:none;padding-right:0}
+  .group{display:flex;gap:6px;padding-right:8px;border-right:1px solid var(--border)}
+  .group:last-child{border-right:none;padding-right:0}
   button.tool{
-    appearance:none; border:1px solid var(--border); background:var(--panel-2);
-    color:var(--text); height:36px; padding:0 10px; border-radius:9px; cursor:pointer;
-    display:inline-flex; align-items:center; gap:8px; font-size:13px; line-height:1;
+    appearance:none;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+    height:36px;padding:0 10px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13px;
   }
-  button.tool[aria-pressed="true"]{outline:2px solid var(--accent); outline-offset:0}
   button.tool:hover{background:#252a42}
-  button.tool svg{width:16px;height:16px;opacity:.9}
+  .tool svg{width:16px;height:16px;opacity:.9}
   select.tool, input[type="color"].tool{
-    height:36px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);
-    border-radius:9px; padding:0 8px; font-size:13px; cursor:pointer;
+    height:36px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);
+    border-radius:9px;padding:0 8px;font-size:13px;cursor:pointer;
   }
-  .content{
-    min-height:380px; padding:18px 20px; outline:none; line-height:1.6;
-  }
-  .content:empty:before{content:attr(data-placeholder); color:var(--muted)}
-  .source{width:100%;min-height:380px;display:none;border:0;outline:none;background:#0a0d1a;color:#dbe1ff;padding:18px 20px;font-family:ui-monospace,Menlo,Consolas,monospace}
-  .footerbar{
-    display:flex; gap:8px; align-items:center; justify-content:space-between;
-    padding:10px; border-top:1px solid var(--border); background:linear-gradient(0deg,rgba(255,255,255,.03),transparent);
-    color:var(--muted); font-size:12px;
-  }
+
+  .content{min-height:380px;padding:18px 20px;outline:none;line-height:1.6}
+  .content:empty:before{content:attr(data-placeholder);color:var(--muted)}
+  .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
+  .content blockquote{border-left:3px solid #7ef0d9;margin:1em 0;padding:.5em 1em;background:#11162a;border-radius:8px}
+  .content pre{background:#0b0f1d;color:#cfe3ff;padding:12px;border-radius:8px;overflow:auto}
+  .content code{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0c1122;padding:2px 6px;border-radius:6px}
+  .content img{max-width:100%;border-radius:8px}
+
+  .source{width:100%;min-height:380px;display:none;border:0;outline:none;background:#0a0d1a;color:#dbe1ff;
+    padding:18px 20px;font-family:ui-monospace,Menlo,Consolas,monospace}
+
+  .footerbar{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-top:1px solid var(--border);
+    background:linear-gradient(0deg,rgba(255,255,255,.03),transparent);color:var(--muted);font-size:12px}
   .chips{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{border:1px dashed var(--border); padding:6px 8px; border-radius:8px}
-  .btn-flat{
-    background:transparent; color:var(--muted); border:1px solid var(--border); border-radius:8px;
-    height:32px; padding:0 10px; cursor:pointer;
-  }
-  .btn-accent{
-    background:linear-gradient(180deg,var(--accent),#3f7fff);
-    border:0; color:#0b1020; font-weight:600; border-radius:9px; height:36px; padding:0 12px; cursor:pointer;
-  }
-  .btn-danger{background:linear-gradient(180deg,#ff8383,#ff6b6b); color:#1a0d0d}
-  .kbd{background:#11152a;border:1px solid var(--border);padding:2px 6px;border-radius:6px;color:#cdd5ff}
+  .chip{border:1px dashed var(--border);padding:6px 8px;border-radius:8px}
+  .btn-flat{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;height:32px;padding:0 10px;cursor:pointer}
+  .btn-accent{background:linear-gradient(180deg,var(--accent),#3f7fff);border:0;color:#0b1020;font-weight:600;border-radius:9px;height:36px;padding:0 12px;cursor:pointer}
+  .btn-danger{background:linear-gradient(180deg,#ff8383,#ff6b6b);color:#1a0d0d}
 
-  /* Notes panel */
-  .notes{
-    border:1px solid var(--border); border-radius:12px; background:var(--panel);
-    padding:12px; display:flex; flex-direction:column; gap:10px; height:min(560px,70vh);
-  }
+  .notes{border:1px solid var(--border);border-radius:12px;background:var(--panel);padding:12px;display:flex;flex-direction:column;gap:10px;height:min(560px,70vh)}
   .notes h2{font-size:16px;margin:0;opacity:.9}
-  .notes textarea{
-    flex:1; resize:vertical; min-height:200px; border:1px dashed var(--border);
-    background:#0b0f1d; color:#cfe3ff; border-radius:8px; padding:10px; font-family:Inter,system-ui,Arial;
-  }
+  .notes textarea{flex:1;resize:vertical;min-height:200px;border:1px dashed var(--border);background:#0b0f1d;color:#cfe3ff;border-radius:8px;padding:10px;font-family:Inter,system-ui,Arial}
 
-  /* Modal */
-  .modal-backdrop{
-    position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; align-items:center; justify-content:center; z-index:50;
-  }
-  .modal{
-    width:min(560px,92vw); background:var(--panel); border:1px solid var(--border); border-radius:12px;
-    box-shadow:0 20px 60px rgba(0,0,0,.5); padding:16px;
-  }
-  .modal header{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px}
-  .modal h3{margin:0; font-size:16px}
-  .modal .fields{display:grid; grid-template-columns:120px 1fr; gap:10px; align-items:center}
+  .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:50}
+  .modal{width:min(560px,92vw);background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);padding:16px}
+  .modal header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .modal h3{margin:0;font-size:16px}
+  .modal .fields{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center}
   .modal .row{display:contents}
-  .modal footer{display:flex; gap:8px; justify-content:flex-end; margin-top:12px}
-  .input, .modal input, .modal textarea, .modal select{
-    width:100%; height:36px; border:1px solid var(--border); background:var(--panel-2); color:var(--text);
-    border-radius:8px; padding:0 10px; font-size:14px;
-  }
-  .modal textarea{height:90px; padding:10px; resize:vertical}
+  .modal footer{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  .modal input,.modal textarea,.modal select{width:100%;height:36px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:8px;padding:0 10px;font-size:14px}
+  .modal textarea{height:90px;padding:10px;resize:vertical}
   .close-x{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
-  .helper{font-size:12px;color:var(--muted);margin-top:6px}
-  @media(max-width:560px){ .modal .fields{grid-template-columns:1fr} .modal .row{display:block} }
 </style>
 </head>
 <body>
-  <div class="wrap" role="application" aria-label="WYSIWYG HTML Editor">
-    <div class="titlebar">
-      <h1 contenteditable="true" aria-label="Document title">Untitled Document</h1>
-      <span class="status" id="status">Saved</span>
-    </div>
-
-    <div class="layout">
-      <!-- Editor -->
-      <div class="editor" id="editor">
-        <div class="toolbar" role="toolbar" aria-label="Formatting toolbar" id="toolbar">
-          <div class="group" aria-label="Basic text">
-            <button class="tool" data-cmd="bold" aria-label="Bold (Ctrl+B)" aria-pressed="false" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h6a4 4 0 0 1 0 8H7zm0 8h7a4 4 0 1 1 0 8H7z"/></svg>B</button>
-            <button class="tool" data-cmd="italic" aria-label="Italic (Ctrl+I)" aria-pressed="false" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 5h9v3h-3.76l-3.48 8H19v3H5v-3h3.76l3.48-8H10z"/></svg>I</button>
-            <button class="tool" data-cmd="underline" aria-label="Underline (Ctrl+U)" aria-pressed="false" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h3v7a3 3 0 0 0 6 0V4h3v7a6 6 0 0 1-12 0zM5 20h14v2H5z"/></svg>U</button>
-            <button class="tool" data-cmd="strikeThrough" aria-label="Strikethrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0-1.1-1.79 2-3.5 2S8.5 18.1 8.5 17z"/></svg></button>
-          </div>
-
-          <div class="group" aria-label="Headings & font">
-            <select class="tool" id="blockFormat" title="Block style">
-              <option value="p">Paragraph</option>
-              <option value="h1">Heading 1</option>
-              <option value="h2">Heading 2</option>
-              <option value="h3">Heading 3</option>
-            </select>
-            <input class="tool" type="color" id="foreColor" title="Text color" aria-label="Text color" value="#e7e9f3" />
-            <input class="tool" type="color" id="backColor" title="Highlight color" aria-label="Highlight color" value="#222d6b" />
-          </div>
-
-          <div class="group" aria-label="Lists & indentation">
-            <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg></button>
-            <button class="tool" data-cmd="insertOrderedList" title="Numbered list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 6h2V4H2v6h3V8H3zM2 14h3v-2H2v2zm0 6h3v-2H2v2z"/></svg></button>
-            <button class="tool" data-cmd="outdent" title="Outdent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm10 4l-4-3v6z"/></svg></button>
-            <button class="tool" data-cmd="indent" title="Indent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm6 2l4 3-4 3z"/></svg></button>
-          </div>
-
-          <div class="group" aria-label="Alignment">
-            <button class="tool" data-cmd="justifyLeft" title="Align left"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg></button>
-            <button class="tool" data-cmd="justifyCenter" title="Align center"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM7 8h10v2H7zM3 12h18v2H3zM7 16h10v2H7zM3 20h18v2H3z"/></svg></button>
-            <button class="tool" data-cmd="justifyRight" title="Align right"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM11 8h10v2H11zM3 12h18v2H3zM11 16h10v2H11zM3 20h18v2H3z"/></svg></button>
-            <button class="tool" data-cmd="justifyFull" title="Justify"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h18v2H3zM3 12h18v2H3zM3 16h18v2H3zM3 20h18v2H3z"/></svg></button>
-          </div>
-
-          <div class="group" aria-label="Insert">
-            <button class="tool" id="linkModalBtn" title="Insert link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
-            <button class="tool" id="mailtoModalBtn" title="Insert mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
-            <button class="tool" id="imageModalBtn" title="Insert image"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 5v14H3V5zm-2 2H5v10h14zM7 15l3-4 2 3 3-4 4 5zM7.5 9A1.5 1.5 0 1 0 7.5 12 1.5 1.5 0 0 0 7.5 9z"/></svg> Image</button>
-            <button class="tool" id="blockquoteBtn" title="Blockquote"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 7h7v6H9v4H5zM12 7h7v6h-3v4h-4z"/></svg></button>
-            <button class="tool" id="codeBlockBtn" title="Code block"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 17l-5-5 5-5 1.5 1.5L6 12l3.5 3.5zM16 7l5 5-5 5-1.5-1.5L18 12l-3.5-3.5z"/></svg></button>
-            <button class="tool" id="tableBtn" title="Insert 2×2 table"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 5h18v14H3zm2 2v3h6V7zm8 0v3h6V7zM5 12v5h6v-5zm8 0v5h6v-5z"/></svg></button>
-            <button class="tool" id="clearBtn" title="Clear formatting"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h14v2H6l3 8h8v2H8.6l-1.1 3H5.3l1.3-3.7L3 4z"/></svg></button>
-          </div>
-
-          <div class="group" aria-label="History & view">
-            <button class="tool" data-cmd="undo" title="Undo (Ctrl+Z)">⟲</button>
-            <button class="tool" data-cmd="redo" title="Redo (Ctrl+Y)">⟳</button>
-            <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">&#60;/&#62;</button>
-          </div>
-        </div>
-
-        <div id="content" class="content" contenteditable="true" role="textbox" aria-multiline="true" spellcheck="true" data-placeholder="Start typing…"></div>
-        <textarea id="source" class="source" aria-label="HTML source view"></textarea>
-
-        <div class="footerbar">
-          <div class="chips">
-            <span class="chip">Autosave: <span id="autosaveState" class="kbd">on</span></span>
-            <span class="chip">Paste: <span class="kbd">plain text</span></span>
-            <span class="chip">Shortcuts: <span class="kbd">Ctrl+B</span> <span class="kbd">Ctrl+I</span> <span class="kbd">Ctrl+U</span> <span class="kbd">Ctrl+K</span></span>
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn-flat" id="copyHtmlBtn" title="Copy full HTML">Copy HTML</button>
-            <button class="btn-flat" id="copySelHtmlBtn" title="Copy selection (HTML)">Copy Selection</button>
-            <button class="btn-flat" id="copySelTextBtn" title="Copy selection (plain text)">Copy Text</button>
-            <button class="btn-flat" id="importBtn" title="Import HTML file">Import</button>
-            <button class="btn-accent" id="exportBtn" title="Download HTML">Export</button>
-            <button class="btn-accent btn-danger" id="resetBtn" title="Clear document">New</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Notes (not exported) -->
-      <aside class="notes" aria-label="Notes (not part of the document)">
-        <h2>Notes (not exported)</h2>
-        <textarea id="notesArea" placeholder="Jot down ideas, to-dos, assets… Not included in Export/Copy HTML."></textarea>
-        <div class="helper">Autosaves separately. You can paste images/links here too, but this section is never exported.</div>
-      </aside>
-    </div>
+<div class="wrap">
+  <div class="titlebar">
+    <h1 contenteditable="true" aria-label="Document title">Untitled Document</h1>
+    <span class="status" id="status">Saved</span>
   </div>
 
-  <!-- Link Modal -->
-  <div class="modal-backdrop" id="linkModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
-      <header>
-        <h3 id="linkTitle">Insert link</h3>
-        <button class="close-x" data-close="linkModal" aria-label="Close">✕</button>
-      </header>
-      <div class="fields">
-        <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text" /></div>
-        <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com" /></div>
-        <div class="row"><label for="linkTarget">Open in</label>
-          <select id="linkTarget">
-            <option value="_blank">New tab</option>
-            <option value="_self">Same tab</option>
+  <div class="layout">
+    <!-- Editor -->
+    <div class="editor" id="editor">
+      <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
+        <div class="group">
+          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h6a4 4 0 0 1 0 8H7zm0 8h7a4 4 0 1 1 0 8H7z"/></svg></button>
+          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 5h9v3h-3.76l-3.48 8H19v3H5v-3h3.76l3.48-8H10z"/></svg></button>
+          <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h3v7a3 3 0 0 0 6 0V4h3v7a6 6 0 0 1-12 0zM5 20h14v2H5z"/></svg></button>
+          <button class="tool" data-cmd="strikeThrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0 1.1-1.79 2-3.5 2S8.5 18.1 8.5 17z"/></svg></button>
+        </div>
+
+        <div class="group">
+          <select class="tool" id="blockFormat" title="Block style">
+            <option value="p">Paragraph</option>
+            <option value="h1">Heading 1</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
           </select>
+          <input class="tool" type="color" id="foreColor" title="Text color" value="#e7e9f3"/>
+          <input class="tool" type="color" id="backColor" title="Highlight color" value="#222d6b"/>
         </div>
-        <div class="row"><label for="linkRel">Rel</label><input id="linkRel" value="noopener noreferrer" /></div>
-      </div>
-      <div class="helper">Tip: select text first to use as link text. If none selected, we’ll use “link”.</div>
-      <footer>
-        <button class="btn-flat" data-close="linkModal">Cancel</button>
-        <button class="btn-accent" id="linkInsertBtn">Insert</button>
-      </footer>
-    </div>
-  </div>
 
-  <!-- Mailto Modal -->
-  <div class="modal-backdrop" id="mailtoModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
-      <header>
-        <h3 id="mailtoTitle">Insert mailto link</h3>
-        <button class="close-x" data-close="mailtoModal" aria-label="Close">✕</button>
-      </header>
-      <div class="fields">
-        <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com" /></div>
-        <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello" /></div>
-        <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
-        <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us" /></div>
-      </div>
-      <footer>
-        <button class="btn-flat" data-close="mailtoModal">Cancel</button>
-        <button class="btn-accent" id="mailtoInsertBtn">Insert</button>
-      </footer>
-    </div>
-  </div>
+        <div class="group">
+          <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg></button>
+          <button class="tool" data-cmd="insertOrderedList" title="Numbered list"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 6h2V4H2v6h3V8H3zM2 14h3v-2H2v2zm0 6h3v-2H2v2z"/></svg></button>
+          <button class="tool" data-cmd="outdent" title="Outdent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm10 4l-4-3v6z"/></svg></button>
+          <button class="tool" data-cmd="indent" title="Indent"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zm0 14h18v2H3zM3 8h10v2H3zm6 2l4 3-4 3z"/></svg></button>
+        </div>
 
-  <!-- Image Modal -->
-  <div class="modal-backdrop" id="imageModal">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
-      <header>
-        <h3 id="imageTitle">Insert image</h3>
-        <button class="close-x" data-close="imageModal" aria-label="Close">✕</button>
-      </header>
-      <div class="fields">
-        <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…" /></div>
-        <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description (for accessibility)" /></div>
-        <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*" /></div>
-        <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)" /></div>
+        <div class="group">
+          <button class="tool" data-cmd="justifyLeft" title="Align left"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg></button>
+          <button class="tool" data-cmd="justifyCenter" title="Align center"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM7 8h10v2H7zM3 12h18v2H3zM7 16h10v2H7zM3 20h18v2H3z"/></svg></button>
+          <button class="tool" data-cmd="justifyRight" title="Align right"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM11 8h10v2H11zM3 12h18v2H3zM11 16h10v2H11zM3 20h18v2H3z"/></svg></button>
+          <button class="tool" data-cmd="justifyFull" title="Justify"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h18v2H3zM3 12h18v2H3zM3 16h18v2H3zM3 20h18v2H3z"/></svg></button>
+        </div>
+
+        <div class="group">
+          <button class="tool" id="linkModalBtn" title="Insert link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
+          <button class="tool" id="mailtoModalBtn" title="Insert mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
+          <button class="tool" id="imageModalBtn" title="Insert image"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 5v14H3V5zm-2 2H5v10h14zM7 15l3-4 2 3 3-4 4 5zM7.5 9A1.5 1.5 0 1 0 7.5 12 1.5 1.5 0 0 0 7.5 9z"/></svg> Image</button>
+          <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 7l-5 5 5 5 1.5-1.5L5.9 12l3.6-3.5zM16 17l5-5-5-5-1.5 1.5 3.6 3.5-3.6 3.5z"/></svg></button>
+          <button class="tool" data-cmd="undo" title="Undo">⟲</button>
+          <button class="tool" data-cmd="redo" title="Redo">⟳</button>
+        </div>
       </div>
-      <footer>
-        <button class="btn-flat" data-close="imageModal">Cancel</button>
-        <button class="btn-accent" id="imageInsertBtn">Insert</button>
-      </footer>
+
+      <div id="content" class="content" contenteditable="true" data-placeholder="Start typing…"></div>
+      <textarea id="source" class="source" aria-label="HTML source view"></textarea>
+
+      <div class="footerbar">
+        <div class="chips">
+          <span class="chip">Autosave: on</span>
+          <span class="chip">Paste: plain text</span>
+          <span class="chip">Shortcuts: Ctrl/Cmd + B I U K</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML">Copy HTML</button>
+          <button class="btn-flat" id="importBtn" title="Import HTML">Import</button>
+          <button class="btn-accent" id="exportBtn" title="Download HTML">Export</button>
+          <button class="btn-accent btn-danger" id="resetBtn" title="Clear document">New</button>
+        </div>
+      </div>
     </div>
+
+    <!-- Notes (not exported) -->
+    <aside class="notes">
+      <h2>Notes (not exported)</h2>
+      <textarea id="notesArea" placeholder="Jot down ideas… This panel is never exported."></textarea>
+    </aside>
   </div>
+</div>
+
+<!-- Link Modal -->
+<div class="modal-backdrop" id="linkModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
+    <header><h3 id="linkTitle">Insert link</h3><button class="close-x" data-close="linkModal">✕</button></header>
+    <div class="fields">
+      <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text"/></div>
+      <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com"/></div>
+      <div class="row"><label for="linkTarget">Open in</label><select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select></div>
+      <div class="row"><label for="linkRel">Rel</label><input id="linkRel" value="noopener noreferrer"/></div>
+    </div>
+    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Insert</button></footer>
+  </div>
+</div>
+
+<!-- Mailto Modal -->
+<div class="modal-backdrop" id="mailtoModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
+    <header><h3 id="mailtoTitle">Insert mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
+    <div class="fields">
+      <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com"/></div>
+      <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello"/></div>
+      <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
+      <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us"/></div>
+    </div>
+    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Insert</button></footer>
+  </div>
+</div>
+
+<!-- Image Modal -->
+<div class="modal-backdrop" id="imageModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
+    <header><h3 id="imageTitle">Insert image</h3><button class="close-x" data-close="imageModal">✕</button></header>
+    <div class="fields">
+      <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…"/></div>
+      <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description"/></div>
+      <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*"/></div>
+      <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)"/></div>
+    </div>
+    <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
+  </div>
+</div>
 
 <script>
 (() => {
   const byId = id => document.getElementById(id);
-  const content = byId('content');
-  const source = byId('source');
-  const status = byId('status');
-  const titleEl = document.querySelector('.titlebar h1');
+  const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
+  const blockSelect = byId('blockFormat');
+  const autosaveKey = 'wysi_doc_v7', notesKey = 'wysi_notes_v1';
 
-  const autosaveKey = 'wysi_doc_v2';
-  const notesKey = 'wysi_notes_v1';
+  // Default Enter to paragraphs when possible
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
-  // execCommand helper
-  function cmd(command, value = null) {
-    content.focus();
-    document.execCommand(command, false, value);
-    updateToolbarState();
-    queueSave();
-  }
-
-  // Toolbar execCommand bindings
-  document.querySelectorAll('button.tool[data-cmd]').forEach(btn => {
-    btn.addEventListener('click', () => cmd(btn.dataset.cmd));
-  });
-
-  // Block formats
-  byId('blockFormat').addEventListener('change', e => {
-    const map = {p:'P',h1:'H1',h2:'H2',h3:'H3'};
-    document.execCommand('formatBlock', false, map[e.target.value]);
-    queueSave();
-  });
-
-  // Colors
-  byId('foreColor').addEventListener('input', e => cmd('foreColor', e.target.value));
-  byId('backColor').addEventListener('input', e => cmd('hiliteColor', e.target.value));
-
-  // ===== Modals =====
-  function showModal(id){
-    const el = byId(id);
-    el.style.display = 'flex';
-    setTimeout(() => {
-      const firstInput = el.querySelector('input,textarea,select,button:not([data-close])');
-      if (firstInput) firstInput.focus();
-    }, 0);
-  }
-  function closeModal(id){
-    const el = byId(id);
-    el.style.display = 'none';
-    content.focus();
-  }
-  document.querySelectorAll('[data-close]').forEach(b=>{
-    b.addEventListener('click', ()=> closeModal(b.getAttribute('data-close')));
-  });
-  [ 'linkModal', 'mailtoModal', 'imageModal' ].forEach(id=>{
-    byId(id).addEventListener('click', (e)=>{ if (e.target.id === id) closeModal(id); });
-  });
-
-  // ===== Link modal =====
-  byId('linkModalBtn').addEventListener('click', () => {
+  // ===== Save/restore selection (fix link/mailto applying to highlight) =====
+  let savedRange = null;
+  function selectionInsideContent(){
     const sel = window.getSelection();
-    const selectedText = sel && sel.rangeCount ? sel.toString() : '';
-    byId('linkText').value = selectedText || 'link';
-    byId('linkUrl').value = 'https://';
-    byId('linkTarget').value = '_blank';
-    byId('linkRel').value = 'noopener noreferrer';
+    return sel && sel.rangeCount && content.contains(sel.anchorNode);
+  }
+  function saveSelection(){
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && content.contains(sel.anchorNode)) {
+      savedRange = sel.getRangeAt(0).cloneRange();
+    }
+  }
+  function restoreSelection(){
+    if (!savedRange) return;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+  }
+  document.addEventListener('selectionchange', () => { if (selectionInsideContent()) saveSelection(); });
+
+  // ===== execCommand buttons (simple) =====
+  document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
+    btn.addEventListener('click', ()=> { content.focus(); document.execCommand(btn.dataset.cmd, false, null); queueSave(); });
+  });
+  byId('foreColor').addEventListener('input', e=>{ content.focus(); document.execCommand('foreColor', false, e.target.value); queueSave(); });
+  byId('backColor').addEventListener('input', e=>{ content.focus(); document.execCommand('hiliteColor', false, e.target.value); queueSave(); });
+
+  // ===== Robust Paragraph/Heading (DOM-based) =====
+  blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
+  function setBlockTag(tag){
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    let block = currentBlock();
+    if (!block || block === content){
+      const el = document.createElement(tag);
+      el.innerHTML = sel.isCollapsed ? '<br>' : '';
+      if (!sel.isCollapsed) el.appendChild(range.extractContents());
+      range.insertNode(el); placeCaretInside(el); queueSave(); return;
+    }
+    if (block.tagName.toLowerCase() === tag) { placeCaretInside(block); return; }
+    const newEl = document.createElement(tag);
+    while (block.firstChild) newEl.appendChild(block.firstChild);
+    block.replaceWith(newEl);
+    placeCaretInside(newEl);
+    queueSave();
+  }
+  function currentBlock(){
+    const sel = window.getSelection(); if (!sel || !sel.rangeCount) return null;
+    let n = sel.anchorNode; if (n && n.nodeType===3) n = n.parentNode;
+    while (n && n !== content){
+      if (/^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)) return n;
+      n = n.parentNode;
+    }
+    return content;
+  }
+  function placeCaretInside(el, atEnd=true){
+    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  document.addEventListener('selectionchange', ()=>{
+    const sel = window.getSelection(); let val='p';
+    if (sel && sel.rangeCount){
+      let n = sel.anchorNode; if (n && n.nodeType===3) n=n.parentNode;
+      while (n && n !== content){
+        const t=(n.tagName||'').toLowerCase();
+        if (t==='p'||t==='h1'||t==='h2'||t==='h3'){ val=t; break; }
+        n=n.parentNode;
+      }
+    }
+    blockSelect.value = val;
+  });
+
+  // ===== Modals infra =====
+  function showModal(id){ saveSelection(); const el=byId(id); el.style.display='flex'; setTimeout(()=>{const f=el.querySelector('input,textarea,select,button:not([data-close])'); if(f) f.focus();},0); }
+  function closeModal(id){ byId(id).style.display='none'; content.focus(); }
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.getAttribute('data-close'))));
+  ['linkModal','mailtoModal','imageModal'].forEach(id=>byId(id).addEventListener('click',e=>{ if (e.target.id===id) closeModal(id); }));
+
+  // ===== Link =====
+  byId('linkModalBtn').addEventListener('click', ()=>{
+    const s=window.getSelection(); byId('linkText').value=(s&&s.rangeCount?s.toString():'')||'link';
+    byId('linkUrl').value='https://'; byId('linkTarget').value='_blank'; byId('linkRel').value='noopener noreferrer';
     showModal('linkModal');
   });
-
-  function ensureLinksSecure(root) {
-    root.querySelectorAll('a').forEach(a => {
-      if (!a.target) a.target = '_blank';
-      if (!a.rel) a.rel = 'noopener noreferrer';
-      a.style.color = '#7ef0d9';
-      a.style.textDecoration = 'underline';
+  function ensureLinksSecure(root){
+    root.querySelectorAll('a').forEach(a=>{
+      if (a.href && a.href.startsWith('mailto:')) return;
+      if (!a.target) a.target = '_blank'; if (!a.rel) a.rel='noopener noreferrer';
+      a.style.color='#7ef0d9'; a.style.textDecoration='underline';
     });
   }
-
-  byId('linkInsertBtn').addEventListener('click', () => {
-    const text = byId('linkText').value.trim() || 'link';
-    const url = byId('linkUrl').value.trim() || '#';
-    const target = byId('linkTarget').value;
-    const rel = byId('linkRel').value.trim();
-
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.toString().length === 0) {
-      document.execCommand('insertText', false, text);
-      selectPreviousTextNode(text.length);
-    }
+  byId('linkInsertBtn').addEventListener('click', ()=>{
+    restoreSelection(); content.focus();
+    const text=(byId('linkText').value||'link').trim();
+    const url=(byId('linkUrl').value||'#').trim();
+    const target=byId('linkTarget').value; const rel=byId('linkRel').value.trim();
+    const sel=window.getSelection();
+    if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
     document.execCommand('createLink', false, url);
-    const a = findClosestAnchor();
-    if (a){
-      a.target = target;
-      a.rel = rel;
-    }
-    ensureLinksSecure(content);
-    queueSave();
-    closeModal('linkModal');
+    const a=closestTag('A'); if (a){ a.target=target; a.rel=rel; }
+    ensureLinksSecure(content); closeModal('linkModal'); queueSave();
   });
 
-  function selectPreviousTextNode(chars){
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const node = range.startContainer;
-    try {
-      const r = document.createRange();
-      if (node.nodeType === 3) {
-        r.setStart(node, node.length - chars);
-        r.setEnd(node, node.length);
-      } else {
-        r.selectNodeContents(node);
-        r.collapse(false);
-      }
-      sel.removeAllRanges();
-      sel.addRange(r);
-    } catch {}
-  }
-
-  function findClosestAnchor(){
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return null;
-    let node = sel.anchorNode;
-    while (node && node !== content) {
-      if (node.nodeType === 1 && node.tagName === 'A') return node;
-      node = node.parentNode;
-    }
-    return null;
-  }
-
-  // ===== Mailto modal =====
-  byId('mailtoModalBtn').addEventListener('click', () => {
-    const sel = window.getSelection();
-    const selectedText = sel && sel.rangeCount ? sel.toString() : '';
-    byId('mailTo').value = '';
-    byId('mailSubject').value = '';
-    byId('mailBody').value = '';
-    byId('mailText').value = selectedText || 'Email us';
+  // ===== Mailto =====
+  byId('mailtoModalBtn').addEventListener('click', ()=>{
+    const s=window.getSelection(); byId('mailText').value=(s&&s.rangeCount?s.toString():'')||'Email us';
+    byId('mailTo').value=''; byId('mailSubject').value=''; byId('mailBody').value='';
     showModal('mailtoModal');
   });
-
-  byId('mailtoInsertBtn').addEventListener('click', () => {
-    const to = encodeURIComponent(byId('mailTo').value.trim());
-    const subject = encodeURIComponent(byId('mailSubject').value.trim());
-    const body = encodeURIComponent(byId('mailBody').value.trim());
-    const text = byId('mailText').value.trim() || 'Email';
-
-    const params = [];
-    if (subject) params.push(`subject=${subject}`);
-    if (body) params.push(`body=${body}`);
-    const href = `mailto:${to}${params.length ? '?' + params.join('&') : ''}`;
-
-    const sel = window.getSelection();
-    if (!sel.rangeCount || sel.toString().length === 0) {
-      document.execCommand('insertText', false, text);
-      selectPreviousTextNode(text.length);
-    }
+  byId('mailtoInsertBtn').addEventListener('click', ()=>{
+    restoreSelection(); content.focus();
+    const toRaw=byId('mailTo').value.trim(); const to=encodeURIComponent(toRaw);
+    const subject=encodeURIComponent(byId('mailSubject').value.trim());
+    const body=encodeURIComponent(byId('mailBody').value.trim());
+    const text=(byId('mailText').value.trim() || toRaw || 'Email');
+    const params=[]; if(subject) params.push(`subject=${subject}`); if(body) params.push(`body=${body}`);
+    const href=`mailto:${to}${params.length?('?'+params.join('&')):''}`;
+    const sel=window.getSelection();
+    if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
     document.execCommand('createLink', false, href);
-    const a = findClosestAnchor();
-    if (a){
-      a.removeAttribute('target');
-      a.rel = '';
-    }
-    queueSave();
-    closeModal('mailtoModal');
+    const a=closestTag('A'); if (a){ a.removeAttribute('target'); a.rel=''; }
+    closeModal('mailtoModal'); queueSave();
   });
 
-  // ===== Image modal =====
-  let uploadedDataURL = null;
-  byId('imageModalBtn').addEventListener('click', () => {
-    byId('imgUrl').value = '';
-    byId('imgAlt').value = '';
-    byId('imgWidth').value = '';
-    uploadedDataURL = null;
-    byId('imgFile').value = '';
-    showModal('imageModal');
+  // ===== Image =====
+  let uploadedDataURL=null;
+  byId('imageModalBtn').addEventListener('click', ()=>{ byId('imgUrl').value=''; byId('imgAlt').value=''; byId('imgWidth').value=''; uploadedDataURL=null; byId('imgFile').value=''; showModal('imageModal'); });
+  byId('imgFile').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>uploadedDataURL=r.result; r.readAsDataURL(f); });
+  byId('imageInsertBtn').addEventListener('click', ()=>{
+    restoreSelection(); content.focus();
+    const src=(byId('imgUrl').value.trim()||uploadedDataURL); const alt=byId('imgAlt').value.trim(); const width=byId('imgWidth').value.trim();
+    if (!src) { alert('Provide an image URL or upload a file.'); return; }
+    const before=content.querySelectorAll('img').length; document.execCommand('insertImage', false, src);
+    let img=closestTag('IMG'); if (!img || content.querySelectorAll('img').length===before){ img=document.createElement('img'); img.src=src; insertNode(img); }
+    img.alt=alt||''; if (width) img.style.width=`${parseInt(width,10)}px`; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
+    closeModal('imageModal'); queueSave();
   });
 
-  byId('imgFile').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { uploadedDataURL = reader.result; };
-    reader.readAsDataURL(file);
-  });
-
-  byId('imageInsertBtn').addEventListener('click', () => {
-    const urlInput = byId('imgUrl').value.trim();
-    const alt = byId('imgAlt').value.trim();
-    const width = byId('imgWidth').value.trim();
-    const src = urlInput || uploadedDataURL;
-    if (!src){ alert('Provide an image URL or upload a file.'); return; }
-
-    document.execCommand('insertImage', false, src);
-    const img = findLastImageNearSelection();
-    if (img){
-      img.alt = alt;
-      if (width) img.style.width = `${parseInt(width,10)}px`;
-      img.style.borderRadius = '8px';
-      img.style.maxWidth = '100%';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-    }
-    queueSave();
-    closeModal('imageModal');
-  });
-
-  function findLastImageNearSelection(){
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return null;
-    let node = sel.anchorNode;
-    for (let i=0; i<3 && node; i++){
-      if (node.nodeType === 1 && node.tagName === 'IMG') return node;
-      node = node.previousSibling || node.parentNode;
-    }
-    const imgs = content.querySelectorAll('img');
-    return imgs.length ? imgs[imgs.length-1] : null;
+  // ===== Helpers =====
+  function selectInserted(chars){
+    const sel=window.getSelection(); if (!sel.rangeCount) return;
+    const r=sel.getRangeAt(0); const node=r.startContainer;
+    const nr=document.createRange();
+    if (node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
+    else { nr.selectNodeContents(node); nr.collapse(false); }
+    sel.removeAllRanges(); sel.addRange(nr);
   }
-
-  // Blockquote / Code / Table / Clear
-  byId('blockquoteBtn').addEventListener('click', () => {
-    document.execCommand('formatBlock', false, 'BLOCKQUOTE'); queueSave();
-  });
-  byId('codeBlockBtn').addEventListener('click', () => { wrapSelectionWithCodeBlock(); queueSave(); });
-  byId('tableBtn').addEventListener('click', () => {
-    const table = document.createElement('table');
-    for (let r=0;r<2;r++){
-      const tr=document.createElement('tr');
-      for (let c=0;c<2;c++){
-        const td=document.createElement('td'); td.textContent=' '; tr.appendChild(td);
-      } table.appendChild(tr);
-    } insertNode(table); queueSave();
-  });
+  function closestTag(tag){
+    const sel=window.getSelection(); if (!sel.rangeCount) return null;
+    let n=sel.anchorNode; while (n && n!==content){ if (n.nodeType===1 && n.tagName===tag) return n; n=n.parentNode; }
+    return null;
+  }
   function insertNode(node){
-    const sel = window.getSelection();
-    if (!sel.rangeCount) { content.appendChild(node); return; }
-    const range = sel.getRangeAt(0); range.collapse(false); range.insertNode(node);
-  }
-  function wrapSelectionWithCodeBlock() {
-    const sel = window.getSelection(); if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    if (sel.isCollapsed){
-      const pre = document.createElement('pre'); const code = document.createElement('code');
-      code.appendChild(document.createTextNode('// code')); pre.appendChild(code); range.insertNode(pre);
-      sel.removeAllRanges(); const nr=document.createRange(); nr.selectNodeContents(pre); nr.collapse(false); sel.addRange(nr); return;
-    }
-    const pre = document.createElement('pre'); const code = document.createElement('code');
-    code.appendChild(range.extractContents()); pre.appendChild(code); range.insertNode(pre); sel.removeAllRanges();
+    const sel=window.getSelection(); if (!sel.rangeCount){ content.appendChild(node); return; }
+    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node); r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
   }
 
-  // Clear formatting
-  byId('clearBtn').addEventListener('click', () => {
-    document.execCommand('removeFormat');
-    content.querySelectorAll('a').forEach(a => {
-      const span = document.createElement('span'); span.innerHTML = a.innerHTML; a.replaceWith(span);
-    });
-    queueSave();
-  });
-
-  // Toggle source/design
-  const toggleBtn = byId('toggleSource');
-  toggleBtn.addEventListener('click', toggleSourceView);
-  function toggleSourceView(){
-    const showingSource = source.style.display === 'block';
-    if (showingSource){
+  // ===== Source toggle =====
+  byId('toggleSource').addEventListener('click', ()=>{
+    if (source.style.display==='block'){
       content.innerHTML = source.value.trim();
-      content.style.display = 'block'; source.style.display = 'none';
-      toggleBtn.setAttribute('aria-pressed','false'); content.focus();
+      content.style.display='block'; source.style.display='none';
     } else {
-      source.value = prettyHTML(content.innerHTML);
-      content.style.display = 'none'; source.style.display = 'block';
-      toggleBtn.setAttribute('aria-pressed','true'); source.focus();
+      source.value = blockPrettyHTML(content.innerHTML);
+      source.style.display='block'; content.style.display='none';
     }
+  });
+
+  // ===== Block-friendly pretty printer (blocks get newlines, inline stays inline) =====
+  function blockPrettyHTML(html){
+    try{
+      const tmp=document.createElement('div'); tmp.innerHTML=html;
+      return serializeBlock(tmp, 0).trim();
+    }catch{return html}
   }
-  function prettyHTML(html){
-    try {
-      const tmp = document.createElement('div'); tmp.innerHTML = html;
-      return formatNode(tmp, 0).trim();
-    } catch { return html; }
-    function formatNode(node, level){
-      const indent = '  '.repeat(level); let out = '';
-      node.childNodes.forEach(child => {
-        if (child.nodeType === 3){
-          const text = child.textContent.replace(/\s+\n/g,'\n').replace(/\n\s+/g,'\n').trim();
-          if (text) out += indent + text + '\n';
-        } else if (child.nodeType === 1){
-          const el = child; const inner = formatNode(el, level+1);
-          const open = indent + `<${el.tagName.toLowerCase()}${[...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('')}>`;
-          const close = `</${el.tagName.toLowerCase()}>`;
-          out += inner.trim() ? `${open}\n${inner}${indent}${close}\n` : `${open}${close}\n`;
+  const BLOCKS = new Set(['p','h1','h2','h3','h4','h5','h6','blockquote','pre','ul','ol','li','table','thead','tbody','tfoot','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
+  function serializeBlock(node, level){
+    let out=''; const indent='  '.repeat(level);
+    node.childNodes.forEach(ch=>{
+      if (ch.nodeType===3){
+        const t = ch.textContent.replace(/\s+/g,' ').trim();
+        if (t) out += indent + t + '\n';
+        return;
+      }
+      if (ch.nodeType!==1) return;
+      const el = ch; const tag = el.tagName.toLowerCase();
+      const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
+      const open = `<${tag}${attrs}>`; const close = `</${tag}>`;
+
+      const hasBlockChild = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
+      if (BLOCKS.has(tag)){
+        if (hasBlockChild){
+          out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
+        } else {
+          // inline-only inside -> keep on one line
+          out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
         }
-      }); return out;
-    }
-  }
-
-  // Toolbar reflect state
-  ['keyup','mouseup','selectionchange','input'].forEach(ev => { document.addEventListener(ev, updateToolbarState); });
-  function updateToolbarState(){
-    const setState = (cmdName) => {
-      const state = document.queryCommandState(cmdName);
-      document.querySelectorAll(`button.tool[data-cmd="${cmdName}"]`).forEach(b=>b.setAttribute('aria-pressed', state ? 'true':'false'));
-    };
-    ['bold','italic','underline','strikeThrough'].forEach(setState);
-    try {
-      const block = document.queryCommandValue('formatBlock') || 'P';
-      const map = {P:'p',H1:'h1',H2:'h2',H3:'h3'}; byId('blockFormat').value = map[block] || 'p';
-    } catch {}
-    status.textContent = savePending ? 'Saving…' : 'Saved';
-  }
-
-  // Keyboard shortcuts
-  document.addEventListener('keydown', (e) => {
-    const meta = e.ctrlKey || e.metaKey;
-    if (e.key === 'Escape'){ e.preventDefault(); toggleSourceView(); return; }
-    if (!meta) return;
-    switch (e.key.toLowerCase()){
-      case 'b': e.preventDefault(); cmd('bold'); break;
-      case 'i': e.preventDefault(); cmd('italic'); break;
-      case 'u': e.preventDefault(); cmd('underline'); break;
-      case 'k': e.preventDefault(); byId('linkModalBtn').click(); break;
-      case 's': e.preventDefault(); exportHTML(); break;
-    }
-  });
-
-  // Paste plain text
-  content.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const text = (e.clipboardData || window.clipboardData).getData('text/plain');
-    document.execCommand('insertText', false, text);
-    queueSave();
-  });
-
-  // Export / Import / New
-  byId('exportBtn').addEventListener('click', exportHTML);
-  function exportHTML(){
-    const blob = new Blob([`<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>${escapeHtml(titleEl.textContent || 'Document')}</title></head>
-<body>
-${content.innerHTML}
-</body>
-</html>`], {type:'text/html;charset=utf-8'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    const name = (titleEl.textContent || 'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40);
-    a.download = `${name || 'document'}.html`; document.body.appendChild(a);
-    a.click(); a.remove();
-  }
-
-  byId('importBtn').addEventListener('click', () => {
-    const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.html,.htm,text/html';
-    inp.addEventListener('change', async () => {
-      const file = inp.files[0]; if (!file) return;
-      const text = await file.text();
-      const match = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      content.innerHTML = (match ? match[1] : text).trim(); queueSave(true);
+      } else {
+        // inline element: keep inline, but respect block context above
+        if (hasBlockChild){
+          out += `${indent}${open}\n${serializeBlock(el, level+1)}${indent}${close}\n`;
+        } else {
+          out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
+        }
+      }
     });
+    return out;
+  }
+  function getInlineHTML(el){
+    // Keep original inline HTML (no extra newlines/indent)
+    let s=''; el.childNodes.forEach(n=>{
+      if (n.nodeType===3) s += n.textContent;
+      else if (n.nodeType===1) s += n.outerHTML;
+    });
+    return s.trim();
+  }
+
+  // ===== Export / Import / Copy / New =====
+  byId('exportBtn').addEventListener('click', ()=>{
+    const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',blockPrettyHTML(content.innerHTML),'</body>','</html>'].join('\n');
+    const blob=new Blob([doc],{type:'text/html;charset=utf-8'}); const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); const name=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)||'document'; a.download=name+'.html'; a.click();
+  });
+  byId('copyHtmlBtn').addEventListener('click', async()=>{
+    await copy(blockPrettyHTML(content.innerHTML)); flash('Copied HTML');
+  });
+  byId('importBtn').addEventListener('click', ()=>{
+    const inp=document.createElement('input'); inp.type='file'; inp.accept='.html,.htm,text/html';
+    inp.onchange=async()=>{ const f=inp.files[0]; if(!f) return; const text=await f.text(); const m=text.match(/<body[^>]*>([\s\S]*)<\/body>/i); content.innerHTML=(m?m[1]:text).trim(); };
     inp.click();
   });
+  byId('resetBtn').addEventListener('click', ()=>{ if(!confirm('Start a new document?')) return; titleEl.textContent='Untitled Document'; content.innerHTML=''; saveNow(); });
 
-  byId('resetBtn').addEventListener('click', () => {
-    if (!confirm('Start a new document? This will clear the current content.')) return;
-    titleEl.textContent = 'Untitled Document'; content.innerHTML = ''; saveNow();
+  async function copy(text){ try{ await navigator.clipboard.writeText(text); }catch{ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } }
+  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+  // ===== Paste plain text =====
+  content.addEventListener('paste', e=>{
+    e.preventDefault(); const text=(e.clipboardData||window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, text); queueSave();
   });
 
-  // Copy buttons
-  byId('copyHtmlBtn').addEventListener('click', async () => {
-    const html = content.innerHTML;
-    await copyToClipboard(html);
-    flash('Copied HTML');
-  });
-  byId('copySelHtmlBtn').addEventListener('click', async () => {
-    const sel = window.getSelection();
-    const frag = sel && sel.rangeCount ? sel.getRangeAt(0).cloneContents() : null;
-    const div = document.createElement('div'); if (frag) div.appendChild(frag);
-    await copyToClipboard(div.innerHTML || '');
-    flash('Copied selection (HTML)');
-  });
-  byId('copySelTextBtn').addEventListener('click', async () => {
-    const sel = window.getSelection();
-    await copyToClipboard(sel ? sel.toString() : '');
-    flash('Copied text');
-  });
-
-  async function copyToClipboard(text){
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement('textarea'); ta.value = text;
-      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
-    }
-  }
-  function flash(msg){
-    status.textContent = msg; setTimeout(()=> updateToolbarState(), 1200);
-  }
-
-  // Autosave to localStorage
-  let saveTimer = null; let savePending = false;
-  function queueSave(force=false){
-    savePending = true; updateToolbarState();
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => saveNow(), force ? 0 : 500);
-  }
+  // ===== Autosave =====
+  let saveTimer=null, savePending=false;
+  function queueSave(force=false){ savePending=true; clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveNow(), force?0:400); status.textContent='Saving…'; }
   function saveNow(){
-    const payload = {
-      title: titleEl.textContent || 'Untitled Document',
-      html: content.innerHTML,
-      ts: Date.now()
-    };
-    try { localStorage.setItem(autosaveKey, JSON.stringify(payload)); savePending = false; updateToolbarState(); }
-    catch (e) { console.warn('Autosave failed', e); status.textContent = 'Autosave error'; }
+    try{ localStorage.setItem(autosaveKey, JSON.stringify({title:titleEl.textContent||'Untitled Document', html:content.innerHTML, ts:Date.now()})); }
+    catch(e){ console.warn('Autosave failed', e); status.textContent='Autosave error'; return; }
+    savePending=false; status.textContent='Saved';
   }
 
-  // Restore
-  try {
-    const raw = localStorage.getItem(autosaveKey);
+  // ===== Restore + Welcome content =====
+  try{
+    const raw=localStorage.getItem(autosaveKey);
     if (raw){
-      const data = JSON.parse(raw);
-      titleEl.textContent = data.title || 'Untitled Document';
-      content.innerHTML = data.html || '';
+      const data=JSON.parse(raw); titleEl.textContent=data.title||'Untitled Document'; content.innerHTML=data.html||'';
     } else {
       content.innerHTML = `<h1>Welcome 👋</h1>
 <p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>`;
     }
   } catch {}
-
-  // Notes autosave (separate from document)
-  const notesArea = byId('notesArea');
-  try {
-    const n = localStorage.getItem(notesKey);
-    if (n) notesArea.value = n;
-  } catch {}
-  notesArea.addEventListener('input', () => {
-    try { localStorage.setItem(notesKey, notesArea.value); } catch {}
-  });
-
-  // Reflect link attributes on load
   ensureLinksSecure(content);
 
-  // Save on edits/title changes
-  ['input','keyup','mouseup'].forEach(ev => {
-    content.addEventListener(ev, () => queueSave());
-    titleEl.addEventListener(ev, () => queueSave());
-  });
+  // Notes autosave
+  const notesArea = byId('notesArea'); try{ notesArea.value = localStorage.getItem(notesKey)||''; }catch{}
+  notesArea.addEventListener('input', ()=>{ try{ localStorage.setItem(notesKey, notesArea.value); }catch{} });
 
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e=>{
+    const meta=e.ctrlKey||e.metaKey; if (e.key==='Escape'){ e.preventDefault(); byId('toggleSource').click(); }
+    if (!meta) return;
+    const k=e.key.toLowerCase();
+    if (['b','i','u'].includes(k)){ e.preventDefault(); document.querySelector(`button[data-cmd="${{b:'bold',i:'italic',u:'underline'}[k]}"]`).click(); }
+    if (k==='k'){ e.preventDefault(); byId('linkModalBtn').click(); }
+    if (k==='s'){ e.preventDefault(); byId('exportBtn').click(); }
+  });
 })();
 </script>
 </body>
