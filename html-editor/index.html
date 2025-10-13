@@ -87,7 +87,7 @@
           <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h6a4 4 0 0 1 0 8H7zm0 8h7a4 4 0 1 1 0 8H7z"/></svg></button>
           <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 5h9v3h-3.76l-3.48 8H19v3H5v-3h3.76l3.48-8H10z"/></svg></button>
           <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h3v7a3 3 0 0 0 6 0V4h3v7a6 6 0 0 1-12 0zM5 20h14v2H5z"/></svg></button>
-          <button class="tool" data-cmd="strikeThrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0 1.1-1.79 2-3.5 2S8.5 18.1 8.5 17z"/></svg></button>
+          <button class="tool" data-cmd="strikeThrough" title="Strikethrough"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 12h18v2H3zM6 8c0-2.21 2.91-4 6.5-4S19 5.79 19 8h-3.5c0-1.1-1.79-2-3.5-2S8.5 6.9 8.5 8zM5 17c0 2.21 2.91 4 6.5 4S18 19.21 18 17h-3.5c0 1.1-1.79-2-3.5-2S8.5 18.1 8.5 17z"/></svg></button>
           <button class="tool" id="supBtn" title="Superscript"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 5h3.2l3 4.6L14.2 5H17l-4.3 6.2L17 17h-2.8l-3-4.6L8 17H5l4.4-5.8zM21 7h-3V5h5v1l-3 3h3v2h-5V10l3-3z"/></svg></button>
         </div>
 
@@ -208,7 +208,7 @@
   const byId = id => document.getElementById(id);
   const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
   const blockSelect = byId('blockFormat');
-  const autosaveKey = 'wysi_doc_v13', notesKey = 'wysi_notes_v1';
+  const autosaveKey = 'wysi_doc_v14', notesKey = 'wysi_notes_v1';
 
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
@@ -369,7 +369,6 @@
     }
     showModal('mailtoModal');
   });
-
   byId('mailtoInsertBtn').addEventListener('click', ()=>{
     restoreSelection(); content.focus();
     const toRaw=byId('mailTo').value.trim();
@@ -392,7 +391,6 @@
     currentMailtoEl = null;
     closeModal('mailtoModal'); queueSave();
   });
-
   function parseMailto(href){
     let to='', subject='', body='';
     if (!href || !href.toLowerCase().startsWith('mailto:')) return {to,subject,body};
@@ -431,7 +429,6 @@
 
   // ===== Clear formatting (robust) =====
   byId('clearBtn').addEventListener('click', () => { content.focus(); clearFormatting(); queueSave(); });
-
   function clearFormatting() {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -459,7 +456,6 @@
     range.deleteContents();
     range.insertNode(outFrag);
   }
-
   function cleanNode(node, forceParagraph = false) {
     if (node.nodeType === 3) return document.createTextNode(node.textContent);
     if (node.nodeType !== 1) return document.createTextNode('');
@@ -489,7 +485,6 @@
     });
     return el;
   }
-
   function cleanElementDeep(element, forceParagraph = false) {
     const cleaned = cleanNode(element, forceParagraph);
     if (cleaned.nodeType === 11) {
@@ -499,7 +494,6 @@
     }
     return cleaned;
   }
-
   function moveCleanedChildren(src, dst) {
     src.childNodes.forEach(ch => {
       const cleaned = cleanNode(ch);
@@ -523,7 +517,7 @@
     const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node); r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
   }
 
-  // ===== Source toggle / pretty printer (block-per-line, inline stays inline) =====
+  // ===== Source toggle / pretty printer (block-per-line) =====
   byId('toggleSource').addEventListener('click', ()=>{
     if (source.style.display==='block'){
       content.innerHTML = source.value.trim();
@@ -533,7 +527,6 @@
       source.style.display='block'; content.style.display='none';
     }
   });
-
   function blockPrettyHTML(html){
     try{
       const tmp=document.createElement('div'); tmp.innerHTML=html;
@@ -597,7 +590,7 @@
   function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  // ===== Paste mode toggle (default: plain) + Word Sanitizer (strict keep links) =====
+  // ===== Paste mode toggle (default: plain) + Word Sanitizer (keeps headers) =====
   let pasteMode = 'plain';
   const pasteModeEl = byId('pasteMode');
   if (pasteModeEl) pasteModeEl.addEventListener('change', e => pasteMode = e.target.value);
@@ -607,7 +600,7 @@
     const text = e.clipboardData?.getData('text/plain') || '';
     if (pasteMode === 'word' && html){
       e.preventDefault();
-      const cleaned = cleanWordHtmlStrictKeepLinks(html);
+      const cleaned = cleanWordHtmlStrictKeepLinksAndHeaders(html);
       document.execCommand('insertHTML', false, cleaned);
       queueSave();
     } else {
@@ -617,10 +610,10 @@
     }
   });
 
-  // Keeps only: <p>, <b>, <em>, <ul>, <ol>, <li>, <a>
-  // Converts: <div>, <h1>–<h6> -> <p>
+  // Keeps: <h1>, <h2>, <h3>, <p>, <b>, <em>, <ul>, <ol>, <li>, <a>
+  // Converts: <div> -> <p>
   // Strips: styles/classes/lang/id, mso-*, line-height, <a name="..."> anchors, spans/fonts.
-  function cleanWordHtmlStrictKeepLinks(inputHtml) {
+  function cleanWordHtmlStrictKeepLinksAndHeaders(inputHtml) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
     const body = doc.body;
@@ -650,17 +643,18 @@
       }
     });
 
-    // Normalize: spans/fonts -> unwrap; strong->b; i->em; div/h1..h6 -> p
+    // Normalize: spans/fonts -> unwrap; strong->b; i->em; div -> p
     [...body.querySelectorAll('*')].forEach(el => {
       const tag = el.tagName.toLowerCase();
       if (tag === 'span' || tag === 'font') { unwrap(el); return; }
       if (tag === 'strong') replaceTag(el, 'b');
       if (tag === 'i') replaceTag(el, 'em');
-      if (/^(div|h1|h2|h3|h4|h5|h6)$/i.test(tag)) replaceTag(el, 'p');
+      if (tag === 'div') replaceTag(el, 'p');
+      // headings h1-h3 are preserved as-is
     });
 
     // Whitelist
-    const ALLOWED = new Set(['p','b','em','ul','ol','li','a']);
+    const ALLOWED = new Set(['h1','h2','h3','p','b','em','ul','ol','li','a']);
     [...body.querySelectorAll('*')].forEach(el => {
       const tag = el.tagName.toLowerCase();
       if (!ALLOWED.has(tag)) { unwrap(el); return; }
