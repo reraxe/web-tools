@@ -17,6 +17,7 @@
   .status{margin-left:auto;font-size:12px;color:var(--muted)}
   .layout{display:grid;grid-template-columns:1fr 320px;gap:16px}
   @media(max-width:1024px){.layout{grid-template-columns:1fr}}
+
   .editor{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--panel);
     box-shadow:0 8px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);}
   .toolbar{
@@ -116,8 +117,8 @@
         </div>
 
         <div class="group">
-          <button class="tool" id="linkModalBtn" title="Insert link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
-          <button class="tool" id="mailtoModalBtn" title="Insert mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
+          <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.9 12a5 5 0 0 1 5-5h3v2h-3a3 3 0 1 0 0 6h3v2h-3a5 5 0 0 1-5-5zm7.1 1v-2h2v2zM12.1 7h3a5 5 0 1 1 0 10h-3v-2h3a3 3 0 1 0 0-6h-3z"/></svg> Link</button>
+          <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v1l10 6 10-6V6a2 2 0 0 0-2-2zm0 5.5l-8 4.8-8-4.8V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg> Mailto</button>
           <button class="tool" id="imageModalBtn" title="Insert image"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 5v14H3V5zm-2 2H5v10h14zM7 15l3-4 2 3 3-4 4 5zM7.5 9A1.5 1.5 0 1 0 7.5 12 1.5 1.5 0 0 0 7.5 9z"/></svg> Image</button>
           <button class="tool" id="clearBtn" title="Clear formatting"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h14v2H6l3 8h8v2H8.6l-1.1 3H5.3l1.3-3.7L3 4z"/></svg></button>
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12zM8 5h12a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm0 2v14h12V7z"/></svg></button>
@@ -156,28 +157,29 @@
 <!-- Link Modal -->
 <div class="modal-backdrop" id="linkModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
-    <header><h3 id="linkTitle">Insert link</h3><button class="close-x" data-close="linkModal">✕</button></header>
+    <header><h3 id="linkTitle">Insert/edit link</h3><button class="close-x" data-close="linkModal">✕</button></header>
     <div class="fields">
       <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text"/></div>
       <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com"/></div>
-      <div class="row"><label for="linkTarget">Open in</label><select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select></div>
-      <div class="row"><label for="linkRel">Rel</label><input id="linkRel" value="noopener noreferrer"/></div>
+      <div class="row"><label for="linkTarget">Open in</label>
+        <select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
+      </div>
     </div>
-    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Insert</button></footer>
+    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Save</button></footer>
   </div>
 </div>
 
 <!-- Mailto Modal -->
 <div class="modal-backdrop" id="mailtoModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
-    <header><h3 id="mailtoTitle">Insert mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
+    <header><h3 id="mailtoTitle">Insert/edit mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
     <div class="fields">
       <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com"/></div>
       <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello"/></div>
       <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
       <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us"/></div>
     </div>
-    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Insert</button></footer>
+    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Save</button></footer>
   </div>
 </div>
 
@@ -200,11 +202,11 @@
   const byId = id => document.getElementById(id);
   const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
   const blockSelect = byId('blockFormat');
-  const autosaveKey = 'wysi_doc_v9', notesKey = 'wysi_notes_v1';
+  const autosaveKey = 'wysi_doc_v11', notesKey = 'wysi_notes_v1';
 
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
-  // ===== selection save/restore for link/mailto/image =====
+  // ===== selection save/restore for modals =====
   let savedRange = null;
   function selectionInsideContent(){
     const sel = window.getSelection();
@@ -229,8 +231,6 @@
   });
   byId('foreColor').addEventListener('input', e=>{ content.focus(); document.execCommand('foreColor', false, e.target.value); queueSave(); });
   byId('backColor').addEventListener('input', e=>{ content.focus(); document.execCommand('hiliteColor', false, e.target.value); queueSave(); });
-
-  // Superscript button
   byId('supBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('superscript', false, null); queueSave(); });
 
   // ===== Paragraph/Heading (DOM-based) =====
@@ -285,51 +285,130 @@
   document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.getAttribute('data-close'))));
   ['linkModal','mailtoModal','imageModal'].forEach(id=>byId(id).addEventListener('click',e=>{ if (e.target.id===id) closeModal(id); }));
 
-  // ===== Link =====
+  function findClosest(tag){
+    const sel=window.getSelection(); if (!sel || !sel.rangeCount) return null;
+    let n=sel.anchorNode;
+    while (n && n!==content){ if (n.nodeType===1 && n.tagName===tag) return n; n=n.parentNode; }
+    return null;
+  }
+
+  // ===== Link (standard; editable) =====
+  let currentLinkEl = null;
+
   byId('linkModalBtn').addEventListener('click', ()=>{
-    const s=window.getSelection(); byId('linkText').value=(s&&s.rangeCount?s.toString():'')||'link';
-    byId('linkUrl').value='https://'; byId('linkTarget').value='_blank'; byId('linkRel').value='noopener noreferrer';
+    const sel = window.getSelection();
+    currentLinkEl = findClosest('A');
+    if (currentLinkEl && currentLinkEl.href.toLowerCase().startsWith('mailto:')) {
+      // If it's a mailto link, better edit via the Mailto modal
+      currentLinkEl = null;
+    }
+    if (currentLinkEl){
+      byId('linkText').value = currentLinkEl.textContent || '';
+      byId('linkUrl').value = currentLinkEl.getAttribute('href') || '';
+      const tgt = (currentLinkEl.getAttribute('target') || '_blank'); // prefer _blank default
+      byId('linkTarget').value = tgt === '_self' ? '_self' : '_blank';
+    } else {
+      byId('linkText').value = (sel && sel.rangeCount ? sel.toString() : '') || 'link';
+      byId('linkUrl').value = 'https://';
+      byId('linkTarget').value = '_blank'; // default: New tab
+    }
     showModal('linkModal');
   });
-  function ensureLinksSecure(root){
-    root.querySelectorAll('a').forEach(a=>{
-      if (a.href && a.href.startsWith('mailto:')) return;
-      if (!a.target) a.target = '_blank'; if (!a.rel) a.rel='noopener noreferrer';
-      a.style.color='#7ef0d9'; a.style.textDecoration='underline';
-    });
-  }
+
   byId('linkInsertBtn').addEventListener('click', ()=>{
     restoreSelection(); content.focus();
-    const text=(byId('linkText').value||'link').trim();
-    const url=(byId('linkUrl').value||'#').trim();
-    const target=byId('linkTarget').value; const rel=byId('linkRel').value.trim();
-    const sel=window.getSelection();
-    if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
-    document.execCommand('createLink', false, url);
-    const a=closestTag('A'); if (a){ a.target=target; a.rel=rel; }
-    ensureLinksSecure(content); closeModal('linkModal'); queueSave();
+    const text=(byId('linkText').value || 'link').trim();
+    const url=(byId('linkUrl').value || '#').trim();
+    const target=byId('linkTarget').value; // _blank | _self
+
+    if (currentLinkEl && document.body.contains(currentLinkEl)){
+      currentLinkEl.setAttribute('href', url);
+      if (target === '_blank') currentLinkEl.setAttribute('target','_blank'); else currentLinkEl.removeAttribute('target');
+      currentLinkEl.removeAttribute('style'); // standard color
+      currentLinkEl.removeAttribute('rel');   // no rel
+      if (text !== currentLinkEl.textContent) currentLinkEl.textContent = text;
+    } else {
+      const sel=window.getSelection();
+      if (!sel.rangeCount || sel.toString().length===0){
+        document.execCommand('insertText', false, text);
+        selectInserted(text.length);
+      }
+      document.execCommand('createLink', false, url);
+      const a = findClosest('A');
+      if (a){
+        if (target === '_blank') a.setAttribute('target','_blank'); else a.removeAttribute('target');
+        a.removeAttribute('style');
+        a.removeAttribute('rel');
+      }
+    }
+    currentLinkEl = null;
+    closeModal('linkModal'); queueSave();
   });
 
-  // ===== Mailto =====
+  // ===== Mailto (prefill + editable) =====
+  let currentMailtoEl = null;
+
   byId('mailtoModalBtn').addEventListener('click', ()=>{
-    const s=window.getSelection(); byId('mailText').value=(s&&s.rangeCount?s.toString():'')||'Email us';
-    byId('mailTo').value=''; byId('mailSubject').value=''; byId('mailBody').value='';
+    const sel = window.getSelection();
+    currentMailtoEl = findClosest('A');
+    if (currentMailtoEl && currentMailtoEl.href.toLowerCase().startsWith('mailto:')) {
+      const {to, subject, body} = parseMailto(currentMailtoEl.getAttribute('href') || '');
+      byId('mailTo').value = to || '';
+      byId('mailSubject').value = subject || '';
+      byId('mailBody').value = body || '';
+      byId('mailText').value = currentMailtoEl.textContent || 'Email us';
+    } else {
+      currentMailtoEl = null;
+      byId('mailTo').value = '';
+      byId('mailSubject').value = '';
+      byId('mailBody').value = '';
+      byId('mailText').value = (sel && sel.rangeCount ? sel.toString() : '') || 'Email us';
+    }
     showModal('mailtoModal');
   });
+
   byId('mailtoInsertBtn').addEventListener('click', ()=>{
     restoreSelection(); content.focus();
-    const toRaw=byId('mailTo').value.trim(); const to=encodeURIComponent(toRaw);
-    const subject=encodeURIComponent(byId('mailSubject').value.trim());
-    const body=encodeURIComponent(byId('mailBody').value.trim());
+    const toRaw=byId('mailTo').value.trim();
+    const subjectRaw=byId('mailSubject').value.trim();
+    const bodyRaw=byId('mailBody').value.trim();
     const text=(byId('mailText').value.trim() || toRaw || 'Email');
-    const params=[]; if(subject) params.push(`subject=${subject}`); if(body) params.push(`body=${body}`);
-    const href=`mailto:${to}${params.length?('?'+params.join('&')):''}`;
-    const sel=window.getSelection();
-    if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
-    document.execCommand('createLink', false, href);
-    const a=closestTag('A'); if (a){ a.removeAttribute('target'); a.rel=''; }
+    const href=buildMailto(toRaw, subjectRaw, bodyRaw);
+
+    if (currentMailtoEl && document.body.contains(currentMailtoEl)){
+      currentMailtoEl.setAttribute('href', href);
+      currentMailtoEl.removeAttribute('target'); // mailto shouldn't have target
+      currentMailtoEl.removeAttribute('style');
+      currentMailtoEl.removeAttribute('rel');
+      if (text !== currentMailtoEl.textContent) currentMailtoEl.textContent = text;
+    } else {
+      const sel=window.getSelection();
+      if (!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText', false, text); selectInserted(text.length); }
+      document.execCommand('createLink', false, href);
+      const a=findClosest('A');
+      if (a){ a.removeAttribute('target'); a.removeAttribute('style'); a.removeAttribute('rel'); }
+    }
+    currentMailtoEl = null;
     closeModal('mailtoModal'); queueSave();
   });
+
+  function parseMailto(href){
+    let to='', subject='', body='';
+    if (!href || !href.toLowerCase().startsWith('mailto:')) return {to,subject,body};
+    const rest = href.slice(7);
+    const [addr, query=''] = rest.split('?');
+    to = decodeURIComponent(addr || '');
+    const params = new URLSearchParams(query);
+    subject = params.get('subject') ? decodeURIComponent(params.get('subject')) : '';
+    body = params.get('body') ? decodeURIComponent(params.get('body')) : '';
+    return {to, subject, body};
+  }
+  function buildMailto(to, subject, body){
+    const parts=[];
+    if (subject) parts.push('subject='+encodeURIComponent(subject));
+    if (body) parts.push('body='+encodeURIComponent(body));
+    return `mailto:${encodeURIComponent(to||'')}${parts.length?('?'+parts.join('&')):''}`;
+  }
 
   // ===== Image (manual insertion to avoid duplicates) =====
   let uploadedDataURL=null;
@@ -345,16 +424,12 @@
     const img=document.createElement('img');
     img.src=src; img.alt=alt||''; if (width) img.style.width=`${parseInt(width,10)}px`;
     img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
-    insertNode(img); // manual insert at caret => no duplicates
+    insertNode(img);
     closeModal('imageModal'); queueSave();
   });
 
-  // ===== Clear formatting (robust: unwraps inline, strips attrs, Hx->p) =====
-  byId('clearBtn').addEventListener('click', () => {
-    content.focus();
-    clearFormatting();
-    queueSave();
-  });
+  // ===== Clear formatting (robust) =====
+  byId('clearBtn').addEventListener('click', () => { content.focus(); clearFormatting(); queueSave(); });
 
   function clearFormatting() {
     const sel = window.getSelection();
@@ -441,11 +516,6 @@
     if (node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
     else { nr.selectNodeContents(node); nr.collapse(false); }
     sel.removeAllRanges(); sel.addRange(nr);
-  }
-  function closestTag(tag){
-    const sel=window.getSelection(); if (!sel.rangeCount) return null;
-    let n=sel.anchorNode; while (n && n!==content){ if (n.nodeType===1 && n.tagName===tag) return n; n=n.parentNode; }
-    return null;
   }
   function insertNode(node){
     const sel=window.getSelection(); if (!sel.rangeCount){ content.appendChild(node); return; }
@@ -550,7 +620,6 @@
 <p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>`;
     }
   } catch {}
-  ensureLinksSecure(content);
 
   // Notes autosave
   const notesArea = byId('notesArea'); try{ notesArea.value = localStorage.getItem(notesKey)||''; }catch{}
