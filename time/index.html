@@ -1,1 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Global Time Converter - NY Base</title>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+  <style>
+    :root{
+      --bg:#0f1220; --panel:#171a2b; --panel-2:#1f2440; --txt:#e9ecf2; --muted:#b2b8cc;
+      --accent:#6f7dff; --accent-2:#29d3a1; --danger:#ff6b6b; --ring:#3343ff55; --radius:14px;
+      --select-bg:#0e1020; --select-hover:#2a3163; --select-border:#ffffff22;
+    }
+    *{box-sizing:border-box}
+    html{color-scheme:dark}
+    body{
+      margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:radial-gradient(1200px 800px at 70% -10%,#2b2f55 0%,transparent 60%),var(--bg);
+      color:var(--txt);
+    }
+    .wrap{max-width:1100px;margin:32px auto;padding:20px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    .title{font-size:clamp(22px,2.6vw,36px);font-weight:800}
+    .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid #ffffff10;border-radius:var(--radius);padding:18px}
+    .grid{display:grid;gap:14px}
+    @media(min-width:900px){.grid-2{grid-template-columns:1.2fr 1fr}}
+    .field{display:flex;align-items:center;background:var(--select-bg);border:1px solid var(--select-border);padding:10px 12px;border-radius:10px}
+    .field:focus-within{border-color:#ffffff33;box-shadow:0 0 0 5px var(--ring)}
+    .field input,.field select{background:transparent;border:none;outline:none;color:var(--txt);width:100%;font-size:15px;appearance:none}
+    select{color:var(--txt);background-color:var(--select-bg)}
+    select option{background-color:var(--select-bg);color:var(--txt)}
+    select option:hover{background-color:var(--select-hover);color:#fff}
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{background:linear-gradient(180deg,#2a3163,#232a55);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+    .swap{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;border:1px dashed #ffffff25;background:#0e1020;color:#9aa3ff;cursor:pointer}
+    .result{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0a0d1a;border:1px solid #ffffff10;border-radius:12px;padding:14px 16px;font-size:16px}
+    .cards{display:grid;gap:12px;margin-top:12px}
+    @media(min-width:800px){.cards{grid-template-columns:repeat(3,1fr)}}
+    .card{background:#0d1122;border:1px solid #ffffff12;padding:14px;border-radius:12px;position:relative;transition:transform .15s}
+    .card:hover{transform:translateY(-2px)}
+    .remove{position:absolute;right:10px;top:10px;background:#221018;color:#ffc1c1;border:none;border-radius:50%;width:22px;height:22px;line-height:20px;text-align:center;cursor:pointer;font-size:14px;font-weight:700}
+    .remove:hover{background:#3c1a24;color:#fff;transform:scale(1.08)}
+    .help{font-size:13px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">🌍 Global Time Converter (Base: New York)</div>
+    </header>
 
+    <div class="grid grid-2">
+      <section class="panel">
+        <label>Date</label>
+        <div class="field"><input id="dateInput" type="date"></div>
+        <label style="margin-top:8px">Time</label>
+        <div class="field"><input id="timeInput" type="time" step="60"></div>
+
+        <label style="margin-top:12px">From timezone</label>
+        <div class="field"><select id="fromTz"></select></div>
+        <label style="margin-top:8px">To timezone</label>
+        <div class="field"><select id="toTz"></select></div>
+
+        <div class="controls" style="margin-top:12px">
+          <button id="nowBtn" class="btn" type="button">Now</button>
+          <button id="swapBtn" class="swap" type="button">⇄</button>
+          <button id="convertBtn" class="btn" type="button">Convert</button>
+        </div>
+
+        <div id="result" class="result" style="margin-top:14px">
+          <div><div class="help">Converted time</div><time id="outTime"></time></div>
+          <div class="help" id="outMeta"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <label for="addTz">Add a timezone</label>
+        <div class="field">
+          <select id="addTz">
+            <option value="">— Add a timezone —</option>
+          </select>
+        </div>
+        <div class="help">Click ✕ on a card to remove it. Cards auto-update.</div>
+        <div id="cards" class="cards"></div>
+      </section>
+    </div>
+  </div>
+
+<script>
+const { DateTime } = luxon;
+const els = {
+  date:document.getElementById('dateInput'),
+  time:document.getElementById('timeInput'),
+  from:document.getElementById('fromTz'),
+  to:document.getElementById('toTz'),
+  now:document.getElementById('nowBtn'),
+  swap:document.getElementById('swapBtn'),
+  convert:document.getElementById('convertBtn'),
+  add:document.getElementById('addTz'),
+  cards:document.getElementById('cards'),
+  outTime:document.getElementById('outTime'),
+  outMeta:document.getElementById('outMeta')
+};
+
+const fallbackZones=[
+  "UTC","America/New_York","Europe/London","Europe/Paris","Europe/Brussels",
+  "Europe/Berlin","Asia/Hong_Kong","America/Chicago","America/Los_Angeles"
+];
+let zones=[];
+try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
+
+function offsetLabel(z){try{const n=DateTime.now().setZone(z),o=n.offset;const s=o>=0?'+':'-',a=Math.abs(o);const h=String(Math.trunc(a/60)).padStart(2,'0'),m=String(a%60).padStart(2,'0');return`GMT${s}${h}:${m}`;}catch{return'';}}
+function populate(sel){const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);sel.innerHTML='';list.forEach(({z})=>{const o=document.createElement('option');o.value=z;o.textContent=`${z} (${offsetLabel(z)})`;sel.appendChild(o);});}
+populate(els.from);populate(els.to);populate(els.add);
+
+const selected=new Set([
+  "Europe/Brussels","Europe/London","Europe/Paris","Europe/Berlin",
+  "Asia/Hong_Kong","America/Los_Angeles","America/Chicago"
+]);
+els.from.value="America/New_York";
+els.to.value="UTC";
+
+function fmt(){return "ccc, LLL d, yyyy • HH:mm";}
+function fmtShort(){return "HH:mm";}
+function convert(){
+  const d=els.date.value||DateTime.now().toFormat('yyyy-LL-dd');
+  const t=els.time.value||'00:00';
+  const [Y,M,D]=d.split('-').map(Number);
+  const [H,Mi]=t.split(':').map(Number);
+  const src=DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
+  const dst=src.setZone(els.to.value);
+  els.outTime.textContent=dst.toFormat(fmt());
+  els.outMeta.textContent=`${els.from.value} → ${els.to.value} (${offsetLabel(els.to.value)})`;
+  updateCards(src);
+}
+function setNow(){const now=DateTime.now().setZone(els.from.value);els.date.value=now.toFormat('yyyy-LL-dd');els.time.value=now.toFormat('HH:mm');convert();}
+function swap(){const a=els.from.value,b=els.to.value;els.from.value=b;els.to.value=a;convert();}
+function updateCards(base){
+  els.cards.innerHTML='';
+  selected.forEach(z=>{
+    const t=base.setZone(z);
+    const div=document.createElement('div');
+    div.className='card';
+    div.innerHTML=`<button class="remove" data-z="${z}">×</button>
+      <h4>${z}</h4>
+      <div class="big">${t.toFormat(fmtShort())}</div>
+      <div class="help">${t.toFormat('ccc, LLL d, yyyy')} (${offsetLabel(z)})</div>`;
+    els.cards.appendChild(div);
+  });
+  localStorage.setItem('gtc-defaults',JSON.stringify({
+    from:els.from.value,to:els.to.value,zones:[...selected]
+  }));
+}
+els.cards.addEventListener('click',e=>{
+  if(e.target.matches('.remove')){
+    selected.delete(e.target.dataset.z);
+    convert();
+  }
+});
+els.add.addEventListener('change',e=>{
+  const z=e.target.value;
+  if(z&&!selected.has(z)){selected.add(z);convert();}
+  e.target.value='';
+});
+
+els.now.addEventListener('click',setNow);
+els.convert.addEventListener('click',convert);
+els.swap.addEventListener('click',swap);
+els.from.addEventListener('change',()=>{setNow();});
+els.to.addEventListener('change',convert);
+
+const saved=JSON.parse(localStorage.getItem('gtc-defaults')||'{}');
+if(saved.from) els.from.value=saved.from;
+if(saved.to) els.to.value=saved.to;
+if(saved.zones){saved.zones.forEach(z=>selected.add(z));}
+
+setNow();
+</script>
+</body>
+</html>
