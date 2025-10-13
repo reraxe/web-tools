@@ -63,9 +63,9 @@
         <label style="margin-top:8px">To timezone</label>
         <div class="field"><select id="toTz"></select></div>
 
-        <!-- Military time toggle (kept) -->
+        <!-- Military time toggle (default OFF) -->
         <div class="row">
-          <input id="milToggle" type="checkbox" checked />
+          <input id="milToggle" type="checkbox" />
           <label for="milToggle">Military (24-hour) time</label>
           <span class="pill">DST auto (EST/EDT shown)</span>
         </div>
@@ -93,7 +93,7 @@
             <option value="">— Add a timezone —</option>
           </select>
         </div>
-        <div class="help">Click ✕ on a card to remove it. Cards auto-update.</div>
+        <div class="help">Dropdown shows current DST/STD abbreviation. Click ✕ on a card to remove it. Cards auto-update.</div>
         <div id="cards" class="cards"></div>
       </section>
     </div>
@@ -116,12 +116,20 @@ const els = {
   mil:document.getElementById('milToggle')
 };
 
+// Fallback zones (include Tokyo; Houston is mapped to America/Chicago)
 const fallbackZones=[
-  "UTC","America/New_York","Europe/London","Europe/Paris","Europe/Brussels",
-  "Europe/Berlin","Asia/Hong_Kong","America/Chicago","America/Los_Angeles"
+  "UTC","America/New_York","America/Chicago","America/Los_Angeles",
+  "Europe/London","Europe/Paris","Europe/Brussels","Europe/Berlin",
+  "Asia/Hong_Kong","Asia/Tokyo"
 ];
 let zones=[];
 try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
+
+// Aliases for nicer labels in the Add dropdown
+const addAliases = {
+  "America/Chicago":"America/Chicago • Houston",
+  "Asia/Tokyo":"Asia/Tokyo • Tokyo"
+};
 
 function offsetLabelFromMinutes(o){
   const s=o>=0?'+':'-'; const a=Math.abs(o);
@@ -131,17 +139,17 @@ function offsetLabelFromMinutes(o){
 }
 function offsetLabel(z){try{const n=DateTime.now().setZone(z);return offsetLabelFromMinutes(n.offset);}catch{return'';}}
 
-// Try to show zone abbreviation (EST/EDT, CET/CEST, etc). Fallback to GMT offset.
+// Try to show zone abbreviation (EST/EDT, CET/CEST, JST, etc.). Fallback to GMT offset.
 function abbrOrOffset(z, instant){
   try{
     const dt = instant.setZone(z);
-    // Luxon exposes a short name in many environments:
     const abbr = dt.offsetNameShort || '';
     return abbr || offsetLabelFromMinutes(dt.offset);
   }catch{return '';}
 }
 
-function populate(sel){
+// Populate FROM/TO (stable GMT offsets)
+function populateBasic(sel){
   const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);
   sel.innerHTML='';
   list.forEach(({z})=>{
@@ -150,17 +158,52 @@ function populate(sel){
     sel.appendChild(o);
   });
 }
-populate(els.from);populate(els.to);populate(els.add);
 
+// Populate ADD dropdown (with DT/ST abbreviations)
+function populateAdd(sel){
+  const now = DateTime.now();
+  const list = zones.map(z=>{
+    const dt = now.setZone(z);
+    const offStr = offsetLabelFromMinutes(dt.offset);
+    const abbr = dt.offsetNameShort || '';
+    const base = addAliases[z] || z;
+    return { z, off: dt.offset, label: `${base} (${offStr}${abbr ? ' • ' + abbr : ''})` };
+  }).sort((a,b)=>a.off-b.off);
+
+  sel.innerHTML='';
+  list.forEach(({z,label})=>{
+    const o=document.createElement('option');
+    o.value=z; o.textContent=label;
+    sel.appendChild(o);
+  });
+
+  // Ensure a dedicated "Houston" entry exists pointing to America/Chicago
+  // (even if America/Chicago is already in the list with a generic label)
+  const nowChi = now.setZone("America/Chicago");
+  const houLabel = `America/Chicago • Houston (${offsetLabelFromMinutes(nowChi.offset)}${nowChi.offsetNameShort ? ' • ' + nowChi.offsetNameShort : ''})`;
+  const houstonOption = document.createElement('option');
+  houstonOption.value = "America/Chicago";
+  houstonOption.textContent = houLabel;
+  sel.appendChild(houstonOption);
+}
+
+populateBasic(els.from);
+populateBasic(els.to);
+populateAdd(els.add);
+
+// Default selected cards (Tokyo included)
 const selected=new Set([
   "Europe/Brussels","Europe/London","Europe/Paris","Europe/Berlin",
-  "Asia/Hong_Kong","America/Los_Angeles","America/Chicago"
+  "Asia/Hong_Kong","Asia/Tokyo",
+  "America/Los_Angeles","America/Chicago"
 ]);
-els.from.value="America/New_York";
-els.to.value="UTC";
 
-// military time toggle state
-let milOn = true;
+// Defaults (overridden by localStorage if present)
+els.from.value = "America/New_York";
+els.to.value = "UTC";
+
+// Military time toggle state (default OFF => 12-hour)
+let milOn = false;
 
 function timePattern(){ return milOn ? "HH:mm" : "h:mm a"; }
 function fmt(){ return `ccc, LLL d, yyyy • ${timePattern()}`; }
@@ -172,14 +215,14 @@ function convert(){
   const [Y,M,D]=d.split('-').map(Number);
   const [H,Mi]=t.split(':').map(Number);
 
-  // interpret wall time in FROM zone (DST auto via IANA rules)
+  // interpret wall time in FROM zone (DST auto)
   const src = DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
   const dst = src.setZone(els.to.value);
 
   els.outTime.textContent=dst.toFormat(fmt());
 
   const fromTag = abbrOrOffset(els.from.value, src);
-  const toTag = abbrOrOffset(els.to.value, src); // label using same instant
+  const toTag = abbrOrOffset(els.to.value, src);
   const toGmt = offsetLabelFromMinutes(dst.offset);
   els.outMeta.textContent = `${els.from.value} (${fromTag}) → ${els.to.value} (${toTag}, ${toGmt})`;
 
@@ -232,14 +275,14 @@ els.swap.addEventListener('click',swap);
 els.from.addEventListener('change',()=>{setNow();});
 els.to.addEventListener('change',convert);
 
-// military toggle listener
+// Military toggle listener
 els.mil.addEventListener('change',()=>{ milOn = els.mil.checked; convert(); });
 
-// restore saved
+// Restore saved prefs
 const saved=JSON.parse(localStorage.getItem('gtc-defaults')||'{}');
-if(saved.from) els.from.value=saved.from;
-if(saved.to) els.to.value=saved.to;
-if(saved.zones){saved.zones.forEach(z=>selected.add(z));}
+if(saved.from){ els.from.value=saved.from; } else { els.from.value="America/New_York"; }
+if(saved.to){ els.to.value=saved.to; } else { els.to.value="UTC"; }
+if(saved.zones){ saved.zones.forEach(z=>selected.add(z)); }
 if(typeof saved.mil === 'boolean'){ milOn = saved.mil; els.mil.checked = milOn; }
 
 setNow();
