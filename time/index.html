@@ -10,44 +10,100 @@
       --bg:#0f1220; --panel:#171a2b; --panel-2:#1f2440; --txt:#e9ecf2; --muted:#b2b8cc;
       --accent:#6f7dff; --accent-2:#29d3a1; --danger:#ff6b6b; --ring:#3343ff55; --radius:14px;
       --select-bg:#0e1020; --select-hover:#2a3163; --select-border:#ffffff22;
-      --card-h: 160px; /* unified card height */
+      --card-h: 170px;
+      --wrap-w: 1080px;
     }
     *{box-sizing:border-box}
     html{color-scheme:dark}
     body{
       margin:0; font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;
-      background:radial-gradient(1200px 800px at 70% -10%,#2b2f55 0%,transparent 60%),var(--bg);
+      background:
+        radial-gradient(1200px 800px at 70% -10%,#2b2f55 0%,transparent 60%),
+        var(--bg);
       color:var(--txt);
+      display:flex; min-height:100svh; align-items:flex-start; justify-content:center;
     }
-    .wrap{max-width:1100px;margin:32px auto;padding:20px}
-    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
-    .title{font-size:clamp(22px,2.6vw,36px);font-weight:800}
-    .panel{background:linear-gradient(180deg,var(--panel),var(--panel-2));border:1px solid #ffffff10;border-radius:var(--radius);padding:18px}
-    .grid{display:grid;gap:14px}
-    @media(min-width:900px){.grid-2{grid-template-columns:1.2fr 1fr}}
-    .field{display:flex;align-items:center;background:var(--select-bg);border:1px solid var(--select-border);padding:10px 12px;border-radius:10px}
+
+    .wrap{
+      width:min(100%, var(--wrap-w));
+      margin:28px auto;
+      padding: clamp(12px, 2.5vw, 24px);
+    }
+
+    header{
+      display:flex; align-items:center; justify-content:center;
+      margin-bottom: clamp(12px, 2vw, 18px);
+      text-align:center;
+    }
+    .title{
+      font-size: clamp(22px, 2.6vw, 36px);
+      font-weight: 800;
+      letter-spacing:.2px;
+    }
+
+    .panel{
+      background:linear-gradient(180deg,var(--panel),var(--panel-2));
+      border:1px solid #ffffff10; border-radius:var(--radius);
+      padding: clamp(14px, 2.2vw, 18px);
+    }
+
+    .grid{display:grid; gap: clamp(10px, 1.4vw, 14px)}
+    .grid-2{
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 900px){
+      .grid-2{ grid-template-columns: repeat(2, minmax(340px, 1fr)); }
+    }
+
+    .field{
+      display:flex; align-items:center;
+      background:var(--select-bg);
+      border:1px solid var(--select-border);
+      padding:10px 12px; border-radius:10px
+    }
     .field:focus-within{border-color:#ffffff33;box-shadow:0 0 0 5px var(--ring)}
-    .field input,.field select{background:transparent;border:none;outline:none;color:var(--txt);width:100%;font-size:15px;appearance:none}
+    .field input,.field select{
+      background:transparent;border:none;outline:none;color:var(--txt);
+      width:100%;font-size:15px;appearance:none
+    }
     select{color:var(--txt);background-color:var(--select-bg)}
     select option{background-color:var(--select-bg);color:var(--txt)}
     select option:hover{background-color:var(--select-hover);color:#fff}
-    .controls{display:flex;gap:10px;flex-wrap:wrap}
-    .btn{background:linear-gradient(180deg,#2a3163,#232a55);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
-    .swap{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;border:1px dashed #ffffff25;background:#0e1020;color:#9aa3ff;cursor:pointer}
-    .result{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0a0d1a;border:1px solid #ffffff10;border-radius:12px;padding:14px 16px;font-size:16px}
 
-    /* SYMMETRICAL CARD GRID */
-    .cards{
-      display:grid; gap:12px; margin-top:12px;
-      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-      align-items:stretch;
+    .controls{display:flex;gap:10px;flex-wrap:wrap}
+    .btn{
+      background:linear-gradient(180deg,#2a3163,#232a55);color:#fff;border:none;
+      border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer
     }
+    .swap{
+      display:flex;align-items:center;justify-content:center;
+      width:42px;height:42px;border-radius:10px;border:1px dashed #ffffff25;
+      background:#0e1020;color:#9aa3ff;cursor:pointer
+    }
+    .result{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      background:#0a0d1a;border:1px solid #ffffff10;border-radius:12px;
+      padding:14px 16px;font-size:16px
+    }
+
+    /* --- Cards section: 2x2 layout --- */
+    .cards{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap:14px;
+      margin-top:12px;
+    }
+    @media (min-width:700px){
+      .cards{grid-template-columns: repeat(2, 1fr);}
+    }
+
     .card{
       position:relative;
       background:#0d1122;border:1px solid #ffffff12;border-radius:12px;
-      padding:14px; transition:transform .15s;
+      padding:14px;
+      transition:transform .15s;
       display:flex; flex-direction:column; justify-content:flex-start;
-      height:var(--card-h); overflow:hidden; /* keep height consistent */
+      height:var(--card-h); overflow:hidden;
     }
     .card:hover{transform:translateY(-2px)}
     .card h4{margin:0 24px 8px 0; font-size:16px; font-weight:800; line-height:1.2}
@@ -135,7 +191,6 @@ const els = {
   mil:document.getElementById('milToggle')
 };
 
-// Fallback zones (include Tokyo; Houston maps to America/Chicago)
 const fallbackZones=[
   "UTC","America/New_York","America/Chicago","America/Los_Angeles",
   "Europe/London","Europe/Paris","Europe/Brussels","Europe/Berlin",
@@ -144,7 +199,6 @@ const fallbackZones=[
 let zones=[];
 try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
 
-// Aliases for nicer labels in Add dropdown
 const addAliases = {
   "America/Chicago":"America/Chicago • Houston",
   "Asia/Tokyo":"Asia/Tokyo • Tokyo"
@@ -156,8 +210,6 @@ function offsetLabelFromMinutes(o){
   const m=String(a%60).padStart(2,'0');
   return `GMT${s}${h}:${m}`;
 }
-
-// Get real timezone abbreviation via Intl; blank if it's just a GMT string
 function getAbbr(z, instant){
   try{
     const fmt = new Intl.DateTimeFormat('en-US',{ timeZone:z, hour:'2-digit', minute:'2-digit', timeZoneName:'short' });
@@ -166,16 +218,12 @@ function getAbbr(z, instant){
     return /GMT/i.test(name) ? '' : name;
   }catch{ return ''; }
 }
-
-// Pretty label "(ABBR • GMT±hh:mm)" or "(GMT±hh:mm)"
 function prettyMeta(z, instant){
   const dt = instant.setZone(z);
   const ab = getAbbr(z, instant);
   const off = offsetLabelFromMinutes(dt.offset);
   return ab ? `${ab} • ${off}` : off;
 }
-
-// Populate FROM/TO (stable GMT offsets so order doesn’t jump)
 function populateBasic(sel){
   const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);
   sel.innerHTML='';
@@ -185,23 +233,18 @@ function populateBasic(sel){
     sel.appendChild(o);
   });
 }
-
-// Populate ADD dropdown (with ABBR • GMT)
 function populateAdd(sel){
   const now = DateTime.now();
   const list = zones.map(z=>{
     const base = addAliases[z] || z;
     return { z, off: now.setZone(z).offset, label: `${base} (${prettyMeta(z, now)})` };
   }).sort((a,b)=>a.off-b.off);
-
   sel.innerHTML='';
   list.forEach(({z,label})=>{
     const o=document.createElement('option');
     o.value=z; o.textContent=label;
     sel.appendChild(o);
   });
-
-  // Ensure a dedicated Houston entry at the end (alias of America/Chicago)
   const houLabel = `America/Chicago • Houston (${prettyMeta("America/Chicago", now)})`;
   const houstonOption = document.createElement('option');
   houstonOption.value = "America/Chicago";
@@ -213,42 +256,32 @@ populateBasic(els.from);
 populateBasic(els.to);
 populateAdd(els.add);
 
-// Default selected cards
 const selected=new Set([
   "Europe/Brussels","Europe/London","Europe/Paris","Europe/Berlin",
   "Asia/Hong_Kong","Asia/Tokyo",
   "America/Los_Angeles","America/Chicago"
 ]);
+els.from.value="America/New_York";
+els.to.value="UTC";
 
-// Defaults (overridden by localStorage if present)
-els.from.value = "America/New_York";
-els.to.value = "UTC";
-
-// Military time toggle state (default OFF => 12-hour)
-let milOn = false;
-
-function timePattern(){ return milOn ? "HH:mm" : "h:mm a"; }
-function fmt(){ return `ccc, LLL d, yyyy • ${timePattern()}`; }
-function fmtShort(){ return timePattern(); }
+let milOn=false;
+function timePattern(){return milOn?"HH:mm":"h:mm a";}
+function fmt(){return`ccc, LLL d, yyyy • ${timePattern()}`;}
+function fmtShort(){return timePattern();}
 
 function convert(){
   const d=els.date.value||DateTime.now().toFormat('yyyy-LL-dd');
   const t=els.time.value||'00:00';
   const [Y,M,D]=d.split('-').map(Number);
   const [H,Mi]=t.split(':').map(Number);
-
-  const src = DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
-  const dst = src.setZone(els.to.value);
-
+  const src=DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
+  const dst=src.setZone(els.to.value);
   els.outTime.textContent=dst.toFormat(fmt());
-
-  const toMeta = prettyMeta(els.to.value, src);
-  const fromMeta = prettyMeta(els.from.value, src);
-  els.outMeta.textContent = `${els.from.value} (${fromMeta}) → ${els.to.value} (${toMeta})`;
-
+  const toMeta=prettyMeta(els.to.value,src);
+  const fromMeta=prettyMeta(els.from.value,src);
+  els.outMeta.textContent=`${els.from.value} (${fromMeta}) → ${els.to.value} (${toMeta})`;
   updateCards(src);
 }
-
 function setNow(){
   const now=DateTime.now().setZone(els.from.value);
   els.date.value=now.toFormat('yyyy-LL-dd');
@@ -258,12 +291,11 @@ function setNow(){
 function swap(){
   const a=els.from.value,b=els.to.value;els.from.value=b;els.to.value=a;convert();
 }
-
 function updateCards(baseInstant){
   els.cards.innerHTML='';
   selected.forEach(z=>{
-    const t = baseInstant.setZone(z);
-    const meta = prettyMeta(z, baseInstant);
+    const t=baseInstant.setZone(z);
+    const meta=prettyMeta(z,baseInstant);
     const div=document.createElement('div');
     div.className='card';
     div.innerHTML=`<button class="remove" data-z="${z}">×</button>
@@ -276,7 +308,6 @@ function updateCards(baseInstant){
     from:els.from.value,to:els.to.value,zones:[...selected],mil:milOn
   }));
 }
-
 els.cards.addEventListener('click',e=>{
   if(e.target.matches('.remove')){
     selected.delete(e.target.dataset.z);
@@ -288,23 +319,18 @@ els.add.addEventListener('change',e=>{
   if(z&&!selected.has(z)){selected.add(z);convert();}
   e.target.value='';
 });
-
 els.now.addEventListener('click',setNow);
 els.convert.addEventListener('click',convert);
 els.swap.addEventListener('click',swap);
 els.from.addEventListener('change',()=>{setNow();});
 els.to.addEventListener('change',convert);
+els.mil.addEventListener('change',()=>{milOn=els.mil.checked;convert();});
 
-// Military toggle listener
-els.mil.addEventListener('change',()=>{ milOn = els.mil.checked; convert(); });
-
-// Restore saved prefs
 const saved=JSON.parse(localStorage.getItem('gtc-defaults')||'{}');
-if(saved.from){ els.from.value=saved.from; } else { els.from.value="America/New_York"; }
-if(saved.to){ els.to.value=saved.to; } else { els.to.value="UTC"; }
-if(saved.zones){ saved.zones.forEach(z=>selected.add(z)); }
-if(typeof saved.mil === 'boolean'){ milOn = saved.mil; els.mil.checked = milOn; }
-
+if(saved.from){els.from.value=saved.from;}else{els.from.value="America/New_York";}
+if(saved.to){els.to.value=saved.to;}else{els.to.value="UTC";}
+if(saved.zones){saved.zones.forEach(z=>selected.add(z));}
+if(typeof saved.mil==='boolean'){milOn=saved.mil;els.mil.checked=milOn;}
 setNow();
 </script>
 </body>
