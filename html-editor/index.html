@@ -50,8 +50,8 @@
 
   .footerbar{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:10px;border-top:1px solid var(--border);
     background:linear-gradient(0deg,rgba(255,255,255,.03),transparent);color:var(--muted);font-size:12px}
-  .chips{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{border:1px dashed var(--border);padding:6px 8px;border-radius:8px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .chip{border:1px dashed var(--border);padding:6px 8px;border-radius:8px;display:inline-flex;gap:6px;align-items:center}
   .btn-flat{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;height:32px;padding:0 10px;cursor:pointer}
   .btn-accent{background:linear-gradient(180deg,var(--accent),#3f7fff);border:0;color:#0b1020;font-weight:600;border-radius:9px;height:36px;padding:0 12px;cursor:pointer}
   .btn-danger{background:linear-gradient(180deg,#ff8383,#ff6b6b);color:#1a0d0d}
@@ -134,7 +134,13 @@
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">Paste: plain text</span>
+          <label class="chip" title="Choose how pasted content is handled">
+            Paste mode:
+            <select id="pasteMode">
+              <option value="plain" selected>Plain text</option>
+              <option value="word">Word sanitized</option>
+            </select>
+          </label>
           <span class="chip">Shortcuts: Ctrl/Cmd + B I U K</span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -202,7 +208,7 @@
   const byId = id => document.getElementById(id);
   const content = byId('content'), source = byId('source'), status = byId('status'), titleEl = document.querySelector('.titlebar h1');
   const blockSelect = byId('blockFormat');
-  const autosaveKey = 'wysi_doc_v11', notesKey = 'wysi_notes_v1';
+  const autosaveKey = 'wysi_doc_v13', notesKey = 'wysi_notes_v1';
 
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch {}
 
@@ -299,13 +305,12 @@
     const sel = window.getSelection();
     currentLinkEl = findClosest('A');
     if (currentLinkEl && currentLinkEl.href.toLowerCase().startsWith('mailto:')) {
-      // If it's a mailto link, better edit via the Mailto modal
-      currentLinkEl = null;
+      currentLinkEl = null; // edit mailto via mailto modal
     }
     if (currentLinkEl){
       byId('linkText').value = currentLinkEl.textContent || '';
       byId('linkUrl').value = currentLinkEl.getAttribute('href') || '';
-      const tgt = (currentLinkEl.getAttribute('target') || '_blank'); // prefer _blank default
+      const tgt = (currentLinkEl.getAttribute('target') || '_blank');
       byId('linkTarget').value = tgt === '_self' ? '_self' : '_blank';
     } else {
       byId('linkText').value = (sel && sel.rangeCount ? sel.toString() : '') || 'link';
@@ -319,13 +324,12 @@
     restoreSelection(); content.focus();
     const text=(byId('linkText').value || 'link').trim();
     const url=(byId('linkUrl').value || '#').trim();
-    const target=byId('linkTarget').value; // _blank | _self
+    const target=byId('linkTarget').value;
 
     if (currentLinkEl && document.body.contains(currentLinkEl)){
       currentLinkEl.setAttribute('href', url);
       if (target === '_blank') currentLinkEl.setAttribute('target','_blank'); else currentLinkEl.removeAttribute('target');
-      currentLinkEl.removeAttribute('style'); // standard color
-      currentLinkEl.removeAttribute('rel');   // no rel
+      currentLinkEl.removeAttribute('style'); currentLinkEl.removeAttribute('rel');
       if (text !== currentLinkEl.textContent) currentLinkEl.textContent = text;
     } else {
       const sel=window.getSelection();
@@ -337,8 +341,7 @@
       const a = findClosest('A');
       if (a){
         if (target === '_blank') a.setAttribute('target','_blank'); else a.removeAttribute('target');
-        a.removeAttribute('style');
-        a.removeAttribute('rel');
+        a.removeAttribute('style'); a.removeAttribute('rel');
       }
     }
     currentLinkEl = null;
@@ -377,9 +380,7 @@
 
     if (currentMailtoEl && document.body.contains(currentMailtoEl)){
       currentMailtoEl.setAttribute('href', href);
-      currentMailtoEl.removeAttribute('target'); // mailto shouldn't have target
-      currentMailtoEl.removeAttribute('style');
-      currentMailtoEl.removeAttribute('rel');
+      currentMailtoEl.removeAttribute('target'); currentMailtoEl.removeAttribute('style'); currentMailtoEl.removeAttribute('rel');
       if (text !== currentMailtoEl.textContent) currentMailtoEl.textContent = text;
     } else {
       const sel=window.getSelection();
@@ -596,10 +597,99 @@
   function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-  // ===== Paste plain text =====
-  content.addEventListener('paste', e=>{
-    e.preventDefault(); const text=(e.clipboardData||window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, text); queueSave();
+  // ===== Paste mode toggle (default: plain) + Word Sanitizer (strict keep links) =====
+  let pasteMode = 'plain';
+  const pasteModeEl = byId('pasteMode');
+  if (pasteModeEl) pasteModeEl.addEventListener('change', e => pasteMode = e.target.value);
+
+  content.addEventListener('paste', (e)=>{
+    const html = e.clipboardData?.getData('text/html');
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (pasteMode === 'word' && html){
+      e.preventDefault();
+      const cleaned = cleanWordHtmlStrictKeepLinks(html);
+      document.execCommand('insertHTML', false, cleaned);
+      queueSave();
+    } else {
+      e.preventDefault();
+      document.execCommand('insertText', false, text);
+      queueSave();
+    }
   });
+
+  // Keeps only: <p>, <b>, <em>, <ul>, <ol>, <li>, <a>
+  // Converts: <div>, <h1>–<h6> -> <p>
+  // Strips: styles/classes/lang/id, mso-*, line-height, <a name="..."> anchors, spans/fonts.
+  function cleanWordHtmlStrictKeepLinks(inputHtml) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(inputHtml, 'text/html');
+    const body = doc.body;
+
+    // Remove comments
+    (function removeComments(root){
+      const walker = doc.createTreeWalker(root, NodeFilter.SHOW_COMMENT, null);
+      const toRemove = [];
+      while (walker.nextNode()) toRemove.push(walker.currentNode);
+      toRemove.forEach(n => n.remove());
+    })(body);
+
+    // Strip MSO classes/styles, lang/id; drop named anchors
+    body.querySelectorAll('*').forEach(el => {
+      if (/^Mso/i.test(el.className)) el.removeAttribute('class');
+      if (el.hasAttribute('style')) {
+        const cleaned = el.getAttribute('style')
+          .replace(/\s*mso-[^:]+:[^;]+;?/gi, '')
+          .replace(/\s*line-height:[^;]+;?/gi, '')
+          .trim();
+        if (cleaned) el.setAttribute('style', cleaned); else el.removeAttribute('style');
+      }
+      el.removeAttribute('lang');
+      el.removeAttribute('id');
+      if (el.tagName === 'A' && el.hasAttribute('name') && !el.hasAttribute('href')) {
+        unwrap(el);
+      }
+    });
+
+    // Normalize: spans/fonts -> unwrap; strong->b; i->em; div/h1..h6 -> p
+    [...body.querySelectorAll('*')].forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'span' || tag === 'font') { unwrap(el); return; }
+      if (tag === 'strong') replaceTag(el, 'b');
+      if (tag === 'i') replaceTag(el, 'em');
+      if (/^(div|h1|h2|h3|h4|h5|h6)$/i.test(tag)) replaceTag(el, 'p');
+    });
+
+    // Whitelist
+    const ALLOWED = new Set(['p','b','em','ul','ol','li','a']);
+    [...body.querySelectorAll('*')].forEach(el => {
+      const tag = el.tagName.toLowerCase();
+      if (!ALLOWED.has(tag)) { unwrap(el); return; }
+
+      if (tag === 'a') {
+        const href = (el.getAttribute('href') || '').trim();
+        if (!/^https?:|^mailto:/i.test(href)) { unwrap(el); return; }
+        // keep only href
+        [...el.attributes].forEach(a => { if (a.name !== 'href') el.removeAttribute(a.name); });
+      } else {
+        // strip attrs on allowed non-link tags
+        [...el.attributes].forEach(a => el.removeAttribute(a.name));
+      }
+    });
+
+    // Remove empty <p>
+    body.querySelectorAll('p').forEach(p=>{
+      if (!p.textContent.trim() && p.children.length === 0) p.remove();
+    });
+
+    return body.innerHTML.trim();
+
+    function unwrap(el){ while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
+    function replaceTag(el, newTag){
+      const neo = doc.createElement(newTag);
+      while (el.firstChild) neo.appendChild(el.firstChild);
+      el.replaceWith(neo);
+    }
+  }
 
   // ===== Autosave =====
   let saveTimer=null, savePending=false;
