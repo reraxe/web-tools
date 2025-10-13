@@ -10,6 +10,7 @@
       --bg:#0f1220; --panel:#171a2b; --panel-2:#1f2440; --txt:#e9ecf2; --muted:#b2b8cc;
       --accent:#6f7dff; --accent-2:#29d3a1; --danger:#ff6b6b; --ring:#3343ff55; --radius:14px;
       --select-bg:#0e1020; --select-hover:#2a3163; --select-border:#ffffff22;
+      --card-h: 160px; /* unified card height */
     }
     *{box-sizing:border-box}
     html{color-scheme:dark}
@@ -34,13 +35,31 @@
     .btn{background:linear-gradient(180deg,#2a3163,#232a55);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
     .swap{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;border:1px dashed #ffffff25;background:#0e1020;color:#9aa3ff;cursor:pointer}
     .result{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0a0d1a;border:1px solid #ffffff10;border-radius:12px;padding:14px 16px;font-size:16px}
-    .cards{display:grid;gap:12px;margin-top:12px}
-    @media(min-width:800px){.cards{grid-template-columns:repeat(3,1fr)}}
-    .card{background:#0d1122;border:1px solid #ffffff12;padding:14px;border-radius:12px;position:relative;transition:transform .15s}
+
+    /* SYMMETRICAL CARD GRID */
+    .cards{
+      display:grid; gap:12px; margin-top:12px;
+      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+      align-items:stretch;
+    }
+    .card{
+      position:relative;
+      background:#0d1122;border:1px solid #ffffff12;border-radius:12px;
+      padding:14px; transition:transform .15s;
+      display:flex; flex-direction:column; justify-content:flex-start;
+      height:var(--card-h); overflow:hidden; /* keep height consistent */
+    }
     .card:hover{transform:translateY(-2px)}
-    .remove{position:absolute;right:10px;top:10px;background:#221018;color:#ffc1c1;border:none;border-radius:50%;width:22px;height:22px;line-height:20px;text-align:center;cursor:pointer;font-size:14px;font-weight:700}
+    .card h4{margin:0 24px 8px 0; font-size:16px; font-weight:800; line-height:1.2}
+    .big{font-size:clamp(18px,2.2vw,24px); font-weight:700; line-height:1.15; margin:0 0 6px 0; white-space:nowrap}
+    .help{font-size:13px;color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+
+    .remove{
+      position:absolute;right:10px;top:10px;background:#221018;color:#ffc1c1;border:none;
+      border-radius:50%;width:22px;height:22px;line-height:20px;text-align:center;cursor:pointer;
+      font-size:14px;font-weight:700
+    }
     .remove:hover{background:#3c1a24;color:#fff;transform:scale(1.08)}
-    .help{font-size:13px;color:var(--muted)}
     .row{display:flex;align-items:center;gap:8px;margin-top:10px}
     .pill{display:inline-block;padding:2px 8px;border:1px solid #ffffff22;border-radius:999px;background:#0e1020;font-size:12px;color:#c9ceef;margin-left:6px}
   </style>
@@ -93,7 +112,7 @@
             <option value="">— Add a timezone —</option>
           </select>
         </div>
-        <div class="help">Dropdown shows current DST/STD abbreviation. Click ✕ on a card to remove it. Cards auto-update.</div>
+        <div class="help">Dropdown shows current abbreviation & offset. Click ✕ on a card to remove it. Cards auto-update.</div>
         <div id="cards" class="cards"></div>
       </section>
     </div>
@@ -116,7 +135,7 @@ const els = {
   mil:document.getElementById('milToggle')
 };
 
-// Fallback zones (include Tokyo; Houston is mapped to America/Chicago)
+// Fallback zones (include Tokyo; Houston maps to America/Chicago)
 const fallbackZones=[
   "UTC","America/New_York","America/Chicago","America/Los_Angeles",
   "Europe/London","Europe/Paris","Europe/Brussels","Europe/Berlin",
@@ -125,7 +144,7 @@ const fallbackZones=[
 let zones=[];
 try{zones=Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):fallbackZones;}catch{zones=fallbackZones;}
 
-// Aliases for nicer labels in the Add dropdown
+// Aliases for nicer labels in Add dropdown
 const addAliases = {
   "America/Chicago":"America/Chicago • Houston",
   "Asia/Tokyo":"Asia/Tokyo • Tokyo"
@@ -137,37 +156,42 @@ function offsetLabelFromMinutes(o){
   const m=String(a%60).padStart(2,'0');
   return `GMT${s}${h}:${m}`;
 }
-function offsetLabel(z){try{const n=DateTime.now().setZone(z);return offsetLabelFromMinutes(n.offset);}catch{return'';}}
 
-// Try to show zone abbreviation (EST/EDT, CET/CEST, JST, etc.). Fallback to GMT offset.
-function abbrOrOffset(z, instant){
+// Get real timezone abbreviation via Intl; blank if it's just a GMT string
+function getAbbr(z, instant){
   try{
-    const dt = instant.setZone(z);
-    const abbr = dt.offsetNameShort || '';
-    return abbr || offsetLabelFromMinutes(dt.offset);
-  }catch{return '';}
+    const fmt = new Intl.DateTimeFormat('en-US',{ timeZone:z, hour:'2-digit', minute:'2-digit', timeZoneName:'short' });
+    const parts = fmt.formatToParts(instant.toJSDate());
+    const name = (parts.find(p=>p.type==='timeZoneName')||{}).value || '';
+    return /GMT/i.test(name) ? '' : name;
+  }catch{ return ''; }
 }
 
-// Populate FROM/TO (stable GMT offsets)
+// Pretty label "(ABBR • GMT±hh:mm)" or "(GMT±hh:mm)"
+function prettyMeta(z, instant){
+  const dt = instant.setZone(z);
+  const ab = getAbbr(z, instant);
+  const off = offsetLabelFromMinutes(dt.offset);
+  return ab ? `${ab} • ${off}` : off;
+}
+
+// Populate FROM/TO (stable GMT offsets so order doesn’t jump)
 function populateBasic(sel){
   const list=zones.map(z=>({z,off:DateTime.now().setZone(z).offset})).sort((a,b)=>a.off-b.off);
   sel.innerHTML='';
   list.forEach(({z})=>{
     const o=document.createElement('option');
-    o.value=z; o.textContent=`${z} (${offsetLabel(z)})`;
+    o.value=z; o.textContent=`${z} (${offsetLabelFromMinutes(DateTime.now().setZone(z).offset)})`;
     sel.appendChild(o);
   });
 }
 
-// Populate ADD dropdown (with DT/ST abbreviations)
+// Populate ADD dropdown (with ABBR • GMT)
 function populateAdd(sel){
   const now = DateTime.now();
   const list = zones.map(z=>{
-    const dt = now.setZone(z);
-    const offStr = offsetLabelFromMinutes(dt.offset);
-    const abbr = dt.offsetNameShort || '';
     const base = addAliases[z] || z;
-    return { z, off: dt.offset, label: `${base} (${offStr}${abbr ? ' • ' + abbr : ''})` };
+    return { z, off: now.setZone(z).offset, label: `${base} (${prettyMeta(z, now)})` };
   }).sort((a,b)=>a.off-b.off);
 
   sel.innerHTML='';
@@ -177,10 +201,8 @@ function populateAdd(sel){
     sel.appendChild(o);
   });
 
-  // Ensure a dedicated "Houston" entry exists pointing to America/Chicago
-  // (even if America/Chicago is already in the list with a generic label)
-  const nowChi = now.setZone("America/Chicago");
-  const houLabel = `America/Chicago • Houston (${offsetLabelFromMinutes(nowChi.offset)}${nowChi.offsetNameShort ? ' • ' + nowChi.offsetNameShort : ''})`;
+  // Ensure a dedicated Houston entry at the end (alias of America/Chicago)
+  const houLabel = `America/Chicago • Houston (${prettyMeta("America/Chicago", now)})`;
   const houstonOption = document.createElement('option');
   houstonOption.value = "America/Chicago";
   houstonOption.textContent = houLabel;
@@ -191,7 +213,7 @@ populateBasic(els.from);
 populateBasic(els.to);
 populateAdd(els.add);
 
-// Default selected cards (Tokyo included)
+// Default selected cards
 const selected=new Set([
   "Europe/Brussels","Europe/London","Europe/Paris","Europe/Berlin",
   "Asia/Hong_Kong","Asia/Tokyo",
@@ -215,16 +237,14 @@ function convert(){
   const [Y,M,D]=d.split('-').map(Number);
   const [H,Mi]=t.split(':').map(Number);
 
-  // interpret wall time in FROM zone (DST auto)
   const src = DateTime.fromObject({year:Y,month:M,day:D,hour:H,minute:Mi},{zone:els.from.value});
   const dst = src.setZone(els.to.value);
 
   els.outTime.textContent=dst.toFormat(fmt());
 
-  const fromTag = abbrOrOffset(els.from.value, src);
-  const toTag = abbrOrOffset(els.to.value, src);
-  const toGmt = offsetLabelFromMinutes(dst.offset);
-  els.outMeta.textContent = `${els.from.value} (${fromTag}) → ${els.to.value} (${toTag}, ${toGmt})`;
+  const toMeta = prettyMeta(els.to.value, src);
+  const fromMeta = prettyMeta(els.from.value, src);
+  els.outMeta.textContent = `${els.from.value} (${fromMeta}) → ${els.to.value} (${toMeta})`;
 
   updateCards(src);
 }
@@ -243,13 +263,13 @@ function updateCards(baseInstant){
   els.cards.innerHTML='';
   selected.forEach(z=>{
     const t = baseInstant.setZone(z);
+    const meta = prettyMeta(z, baseInstant);
     const div=document.createElement('div');
     div.className='card';
-    const tag = abbrOrOffset(z, baseInstant);
     div.innerHTML=`<button class="remove" data-z="${z}">×</button>
       <h4>${z}</h4>
       <div class="big">${t.toFormat(fmtShort())}</div>
-      <div class="help">${t.toFormat('ccc, LLL d, yyyy')} (${tag}, ${offsetLabelFromMinutes(t.offset)})</div>`;
+      <div class="help">${t.toFormat('ccc, LLL d, yyyy')} (${meta})</div>`;
     els.cards.appendChild(div);
   });
   localStorage.setItem('gtc-defaults',JSON.stringify({
