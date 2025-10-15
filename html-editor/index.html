@@ -2,22 +2,22 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.4.html
- Build: v1.4-dev (Base = v1.2.1, Toolbar visuals = SVG)
+ File: editor-dev-v1.4.1.html
+ Build: v1.4.1-dev
 =========================================================
-Scope:
-- v1.2.1 behavior: Paste modes (Plain/Word), Word sanitizer, auto-linkify,
-  auto target _blank for web links, source toggle, notes, autosave.
-- Toolbar visuals updated to SVG (functions unchanged).
-- LocalStorage keys isolated to v14.
-- FIX: "New" button now resets title/content and saves cleared doc.
+Changelog (v1.4.1)
+- Visual: Redo mirrors Undo; Clear Formatting = Material 'format_clear';
+          Numbered List = 'format_list_numbered'; Outdent/Indent = proper mirrored pair;
+          Link = Material 'link'; Source icon = '< >'; Superscript '²' raised slightly.
+- Behavior: zero-width space for empty blocks (no stray <br>); collapse consecutive <br>
+            on paste and when returning from Source; auto-paragraph when empty; v141 storage keys.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.4)</title>
+<title>WYSIWYG HTML Editor (DEV v1.4.1)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -104,7 +104,7 @@ Scope:
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.4)</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.4.1)</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -124,8 +124,12 @@ Scope:
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
           </button>
+          <!-- Superscript (² raised a bit) -->
           <button class="tool" id="supBtn" title="Superscript">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 4h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6zM18.5 10H22v1.5h-3v1H22V14h-4v-1.5h2.5v-1H18V10z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
+              <path fill="currentColor" d="M18 5h4v1.5h-2.5V8H22v1.5h-4z"/>
+            </svg>
           </button>
         </div>
 
@@ -145,18 +149,26 @@ Scope:
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg>
           </button>
           <button class="tool" data-cmd="insertOrderedList" title="Numbered list">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8 5h14v2H8zM8 11h14v2H8zM8 17h14v2H8zM3 6h2V4H2v1h1v1zm1 5v1H3v1h1v1H2v1h3v-4zM2 17v1h1v3h1v-4z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M9 5h12v2H9V5zm0 6h12v2H9v-2zm0 6h12v2H9v-2z"/>
+              <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
+            </svg>
           </button>
+          <!-- Outdent / Indent: proper mirrored pair -->
           <button class="tool" data-cmd="outdent" title="Outdent">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 4h20v2H2zM2 18h20v2H2zM10 9v6l-4-3zM2 11h8v2H2zM14 8h8v8h-8z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="indent" title="Indent">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M2 4h20v2H2zM2 18h20v2H2zM14 9v6l4-3zM2 11h8v2H2zM14 8h8v8h-8z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
+            </svg>
           </button>
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="justifyLeft" title="Align left">
+          <button class="tool" id="justifyLeft" data-cmd="justifyLeft" title="Align left">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
           </button>
           <button class="tool" data-cmd="justifyCenter" title="Align center">
@@ -171,8 +183,11 @@ Scope:
         </div>
 
         <div class="group">
+          <!-- Link = Material 'link' icon -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10.59 13.41a1.995 1.995 0 0 0 0 2.83 2 2 0 0 0 2.83 0l3.54-3.54a4.998 4.998 0 0 0-7.07-7.07l-1.77 1.77 1.42 1.42 1.77-1.77a3 3 0 0 1 4.24 4.24l-3.54 3.54zM13.41 10.59a1.995 1.995 0 0 0 0-2.83 2 2 0 0 0-2.83 0L7.04 11.3a4.998 4.998 0 0 0 7.07 7.07l1.77-1.77-1.42-1.42-1.77 1.77a3 3 0 0 1-4.24-4.24z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
+            </svg>
           </button>
           <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/></svg>
@@ -181,19 +196,28 @@ Scope:
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/></svg>
           </button>
           <button class="tool" id="clearBtn" title="Clear formatting">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 4h7v2H6v14H4V6a2 2 0 0 1 2-2zm13.5 9L21 15l-9 9-3-3 6-6-2-2-6 6-3-3 9-9 3 3 1.5-1.5z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
+            </svg>
           </button>
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
+          <!-- Source toggle icon = '< >' -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.59 16.59 13.17 12 8.59 7.41 10 6l6 6-6 6z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="undo" title="Undo">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
           </button>
           <button class="tool" data-cmd="redo" title="Redo">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6a6 6 0 0 0 6 6c2.67 0 5.16-1.64 5.82-4h1.92c-.72 4.12-4.29 7-8.74 7-4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <g transform="translate(24,0) scale(-1,1)">
+                <path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
+              </g>
+            </svg>
           </button>
         </div>
       </div>
@@ -203,8 +227,8 @@ Scope:
 
       <div class="footerbar">
         <div class="chips">
-          <span class="chip">DEV v1.4</span>
           <span class="chip">Autosave: on</span>
+          <span class="chip">DEV v1.4.1</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -290,10 +314,10 @@ Scope:
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // ===== LocalStorage keys scoped to v1.4 =====
-  const DOC_KEY='wysi_doc_dev_v14';
-  const NOTES_KEY='wysi_notes_dev_v14';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v14';
+  // Versioned storage (v1.4.1)
+  const DOC_KEY='wysi_doc_dev_v141';
+  const NOTES_KEY='wysi_notes_dev_v141';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v141';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -317,20 +341,38 @@ Scope:
   // Default paragraph separator = <p>
   try{ document.execCommand('defaultParagraphSeparator', false, 'p'); }catch{}
 
-  /* ===== Selection save/restore for pop-ins ===== */
+  /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){ const s=window.getSelection(); return s && s.rangeCount && content.contains(s.anchorNode); }
   function saveSelection(){
     const s=window.getSelection();
-    if(s && s.rangeCount && content.contains(s.anchorNode)){
-      savedRange = s.getRangeAt(0).cloneRange();
-    }
+    if(s && s.rangeCount && content.contains(s.anchorNode)){ savedRange = s.getRangeAt(0).cloneRange(); }
   }
   function restoreSelection(){
-    if(!savedRange) return;
-    const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
+    if(!savedRange) return; const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
   }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
+
+  /* ===== Helpers ===== */
+  function placeCaretInside(el, atEnd=true){
+    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  function collapseConsecutiveBR(root){
+    const brs = Array.from(root.querySelectorAll('br'));
+    brs.forEach(br=>{
+      let prev=br.previousSibling;
+      while(prev && prev.nodeType===3 && !prev.textContent.trim()) prev=prev.previousSibling;
+      if(prev && prev.nodeType===1 && prev.tagName==='BR'){ br.remove(); }
+    });
+  }
+  function ensureParagraph(){
+    // If editor is empty or root has only whitespace, ensure a <p> to start typing into.
+    if (!content.textContent.trim() && content.innerHTML.trim() === '') {
+      content.innerHTML = '<p>\u200B</p>';
+      const p = content.querySelector('p'); if (p) placeCaretInside(p);
+    }
+  }
 
   /* ===== Toolbar execCommand bindings ===== */
   document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
@@ -352,8 +394,12 @@ Scope:
     let block=currentBlock();
     if(!block || block===content){
       const el=document.createElement(tag);
-      if(r.collapsed){ el.innerHTML='<br>'; r.insertNode(el); placeCaretInside(el,true); }
-      else { el.appendChild(r.extractContents()); r.insertNode(el); placeCaretInside(el,true); }
+      if(r.collapsed){
+        el.appendChild(document.createTextNode('\u200B'));
+        r.insertNode(el); placeCaretInside(el,true);
+      } else {
+        el.appendChild(r.extractContents()); r.insertNode(el); placeCaretInside(el,true);
+      }
       queueSave(); return;
     }
     if(block.tagName.toLowerCase()===tag){ placeCaretInside(block,true); return; }
@@ -370,10 +416,6 @@ Scope:
     }
     return content;
   }
-  function placeCaretInside(el, atEnd=true){
-    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
-    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
-  }
   document.addEventListener('selectionchange', ()=>{
     const sel=window.getSelection(); let v='p';
     if(sel && sel.rangeCount){
@@ -387,7 +429,7 @@ Scope:
     blockSelect.value=v;
   });
 
-  /* ===== Modal infra ===== */
+  /* ===== Modals infra ===== */
   function showModal(id){ saveSelection(); const m=$(id); m.style.display='flex'; setTimeout(()=>m.querySelector('input,textarea,select')?.focus(),0); }
   function closeModal(id){ $(id).style.display='none'; content.focus(); }
   document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click', ()=> closeModal(b.dataset.close)));
@@ -470,7 +512,7 @@ Scope:
     return `mailto:${encodeURIComponent(to||'')}${qs.toString()?('?'+qs.toString()):''}`;
   }
 
-  /* ===== Image modal (URL or file), prevent duplicates ===== */
+  /* ===== Image modal ===== */
   let uploadedDataURL=null, insertingImage=false;
   $('imageModalBtn').addEventListener('click', ()=>{
     $('imgUrl').value=''; $('imgAlt').value=''; $('imgWidth').value=''; uploadedDataURL=null; $('imgFile').value='';
@@ -489,7 +531,7 @@ Scope:
     const img=document.createElement('img'); img.src=src; img.alt=alt||''; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
     if(w && !isNaN(+w)) img.style.width=`${parseInt(w,10)}px`;
     insertNodeAtSelection(img);
-    closeModal('imageModal'); queueSave();
+    queueSave(); closeModal('imageModal');
   });
   function insertNodeAtSelection(node){
     const sel=window.getSelection();
@@ -497,9 +539,14 @@ Scope:
     const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
     r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
   }
-
-  /* ===== Clear formatting ===== */
-  $('clearBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('removeFormat',false,null); queueSave(); });
+  function selectInserted(chars){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const r=sel.getRangeAt(0); const node=r.startContainer;
+    const nr=document.createRange();
+    if(node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
+    else { nr.selectNodeContents(node); nr.collapse(false); }
+    sel.removeAllRanges(); sel.addRange(nr);
+  }
 
   /* ===== Toggle Source / Design ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
@@ -507,6 +554,8 @@ Scope:
   function toggleSourceView(){
     if(source.style.display==='block'){
       content.innerHTML = source.value.trim();
+      collapseConsecutiveBR(content);
+      ensureParagraph();
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
       source.value = prettyHTML(content.innerHTML);
@@ -552,6 +601,8 @@ Scope:
       const m=txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
       content.innerHTML=(m?m[1]:txt).trim();
       enforceLinkTargets(content);
+      collapseConsecutiveBR(content);
+      ensureParagraph();
       queueSave();
     };
     i.click();
@@ -565,22 +616,22 @@ Scope:
     a.click();
   });
 
-  // --- New document (wired up: confirm, reset, save) ---
+  // --- New document ---
   $('resetBtn').addEventListener('click', ()=>{
     if (!confirm('Start a new document?')) return;
 
-    // If Source view open, close it applying its content
     if (source.style.display === 'block') {
       content.innerHTML = source.value.trim();
+      collapseConsecutiveBR(content);
       content.style.display = 'block';
       source.style.display = 'none';
     }
 
-    titleEl.textContent = 'Untitled Document (DEV v1.4)';
-    content.innerHTML = '';
+    titleEl.textContent = 'Untitled Document (DEV v1.4.1)';
+    content.innerHTML = '<p>\u200B</p>'; // ensure first typing is inside <p>
+    const p=content.querySelector('p'); if (p) placeCaretInside(p);
     savedRange = null;
 
-    // Save cleared doc (notes/theme untouched)
     saveNow();
     status.textContent = 'Saved';
   });
@@ -603,6 +654,7 @@ Scope:
       document.execCommand('insertHTML', false, linked);
     }
     enforceLinkTargets(content);
+    collapseConsecutiveBR(content);
     queueSave();
   });
 
@@ -610,7 +662,7 @@ Scope:
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
-      else a.removeAttribute('target'); // mailto and others
+      else a.removeAttribute('target');
       a.removeAttribute('rel'); a.removeAttribute('style');
     });
   }
@@ -626,7 +678,7 @@ Scope:
     // remove comments
     const walker=doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
     const del=[]; while(walker.nextNode()) del.push(walker.currentNode); del.forEach(n=>n.remove());
-    // strip junk + normalize
+    // strip MSO noise & named anchors
     body.querySelectorAll('*').forEach(el=>{
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
       if(el.hasAttribute('style')){
@@ -639,6 +691,7 @@ Scope:
       el.removeAttribute('id'); el.removeAttribute('lang');
       if(el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) unwrap(el);
     });
+    // normalize tags
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(t==='span'||t==='font') unwrap(el);
@@ -646,6 +699,7 @@ Scope:
       if(t==='i'){ replaceTag(el,'em'); }
       if(t==='div'){ replaceTag(el,'p'); }
     });
+    // whitelist + link target
     const ALLOWED=new Set(['h1','h2','h3','p','b','em','ul','ol','li','a']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
@@ -677,7 +731,7 @@ Scope:
   let timer=null;
   function queueSave(){ clearTimeout(timer); status.textContent='Saving…'; timer=setTimeout(saveNow,400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.4)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
+    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.4.1)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
     catch(e){ status.textContent='Autosave error'; }
   }
   (function restore(){
@@ -685,8 +739,9 @@ Scope:
       const raw=localStorage.getItem(DOC_KEY);
       if(raw){
         const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document (DEV v1.4)';
+        titleEl.textContent=d.title||'Untitled Document (DEV v1.4.1)';
         content.innerHTML=d.html||'';
+        ensureParagraph();
       } else {
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
       }
@@ -694,7 +749,7 @@ Scope:
       content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
     }
   })();
-  content.addEventListener('input', queueSave);
+  content.addEventListener('input', ()=>{ ensureParagraph(); queueSave(); });
   titleEl.addEventListener('input', queueSave);
 
   // Notes autosave
@@ -721,5 +776,4 @@ Scope:
 </script>
 </body>
 </html>
-
 
