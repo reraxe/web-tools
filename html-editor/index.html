@@ -2,22 +2,23 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.4.1.html
- Build: v1.4.1-dev
+ File: editor-dev-v1.6.1.html
+ Build: v1.6.1-dev
 =========================================================
-Changelog (v1.4.1)
-- Visual: Redo mirrors Undo; Clear Formatting = Material 'format_clear';
-          Numbered List = 'format_list_numbered'; Outdent/Indent = proper mirrored pair;
-          Link = Material 'link'; Source icon = '< >'; Superscript '²' raised slightly.
-- Behavior: zero-width space for empty blocks (no stray <br>); collapse consecutive <br>
-            on paste and when returning from Source; auto-paragraph when empty; v141 storage keys.
+Changelog (v1.6.1)
+- Source View formatting: keep inline elements (<em>, <strong>, <a>, etc.) on the same line.
+  Only true block elements (<p>, <ul>, <ol>, headings, etc.) are line-separated.
+- Lightweight semantic normalization: <b> -> <strong>, <i> -> <em> on input/paste.
+- No behavioral or UI changes otherwise. 
+
+(Dev lineage based on STB v1.4.1 visuals & behaviors)
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.4.1)</title>
+<title>WYSIWYG HTML Editor (DEV v1.6.1)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -87,6 +88,8 @@ Changelog (v1.4.1)
   .notes h2{font-size:16px;margin:0;opacity:.9}
   .notes textarea{flex:1;resize:vertical;min-height:200px;border:1px dashed var(--border);background:color-mix(in srgb, var(--bg) 95%, #fff);color:inherit;border-radius:8px;padding:10px;font-family:Inter,system-ui,Arial}
   [data-theme="dark"] .notes textarea{background:#0b0f1d;color:#cfe3ff}
+  .notes .row{display:flex;gap:8px;align-items:center}
+  .notes .row .btn-flat{height:30px;padding:0 8px}
 
   /* Modals */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
@@ -104,7 +107,7 @@ Changelog (v1.4.1)
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.4.1)</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -122,9 +125,8 @@ Changelog (v1.4.1)
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 7c0-2 2.5-3 6-3s6 1 6 3c0 1.1-.7 1.9-2 2.4l-2.3-.5c.9-.2 1.3-.6 1.3-1.1 0-.9-1.6-1.5-3-1.5S9 6 9 7c0 .6.5 1 1.5 1.3H6.9C6.3 7.9 6 7.5 6 7zM3 12h18v2H3zm7.2 3.5-2.2-.5c-1 .4-1.5.9-1.5 1.5 0 1.1 2.1 2 5.5 2s5.5-.9 5.5-2c0-.7-.7-1.2-2-1.5l-2.3.5c1 .2 1.3.6 1.3 1 0 .9-1.7 1.5-3.5 1.5S9 17.9 9 17c0-.4.4-.8 1.2-1.5z"/></svg>
           </button>
-          <!-- Superscript (² raised a bit) -->
           <button class="tool" id="supBtn" title="Superscript">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
@@ -154,7 +156,6 @@ Changelog (v1.4.1)
               <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
             </svg>
           </button>
-          <!-- Outdent / Indent: proper mirrored pair -->
           <button class="tool" data-cmd="outdent" title="Outdent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
@@ -183,7 +184,6 @@ Changelog (v1.4.1)
         </div>
 
         <div class="group">
-          <!-- Link = Material 'link' icon -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
@@ -228,7 +228,7 @@ Changelog (v1.4.1)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.4.1</span>
+          <span class="chip">DEV v1.6.1</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -257,8 +257,11 @@ Changelog (v1.4.1)
 
     <!-- Notes (not exported) -->
     <aside class="notes">
-      <h2>Notes (not exported)</h2>
-      <textarea id="notesArea" placeholder="Your dev notes…"></textarea>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2 style="margin:0">Your notes (not part of HTML)</h2>
+        <button class="btn-flat" id="clearNotesBtn" title="Clear notes">Clear notes</button>
+      </div>
+      <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
     </aside>
   </div>
 </div>
@@ -305,6 +308,7 @@ Changelog (v1.4.1)
     <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
   </div>
 </div>
+
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -314,10 +318,10 @@ Changelog (v1.4.1)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.4.1)
-  const DOC_KEY='wysi_doc_dev_v141';
-  const NOTES_KEY='wysi_notes_dev_v141';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v141';
+  // Versioned storage (v1.6.1)
+  const DOC_KEY='wysi_doc_dev_v161';
+  const NOTES_KEY='wysi_notes_dev_v161';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v161';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -367,11 +371,19 @@ Changelog (v1.4.1)
     });
   }
   function ensureParagraph(){
-    // If editor is empty or root has only whitespace, ensure a <p> to start typing into.
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
+  }
+  function normalizeBI(root){
+    // Convert <b> to <strong>, <i> to <em> (lightweight, non-destructive)
+    root.querySelectorAll('b').forEach(b=>{
+      const st = document.createElement('strong'); st.innerHTML = b.innerHTML; b.replaceWith(st);
+    });
+    root.querySelectorAll('i').forEach(i=>{
+      const em = document.createElement('em'); em.innerHTML = i.innerHTML; i.replaceWith(em);
+    });
   }
 
   /* ===== Toolbar execCommand bindings ===== */
@@ -379,6 +391,7 @@ Changelog (v1.4.1)
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
+      normalizeBI(content);
       queueSave();
     });
   });
@@ -556,28 +569,53 @@ Changelog (v1.4.1)
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
       ensureParagraph();
+      normalizeBI(content);
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
       source.value = prettyHTML(content.innerHTML);
       content.style.display='none'; source.style.display='block'; source.focus();
     }
   }
+
+  // Pretty-printer: keep inlines on the same line; only block elements on new lines.
   function prettyHTML(html){
-    try{ const tmp=document.createElement('div'); tmp.innerHTML=html; return serialize(tmp,0).trim(); }
-    catch{ return html }
+    try{
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      return serialize(tmp, 0).trim();
+    }catch{ return html }
   }
-  const BLOCKS=new Set(['p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre','table','thead','tbody','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
-  function serialize(node,level){
-    let out=''; const indent='  '.repeat(level);
+  const BLOCKS = new Set([
+    'p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre',
+    'table','thead','tbody','tfoot','tr','td','th','hr','div','section','article',
+    'nav','header','footer','aside','figure','figcaption'
+  ]);
+  const INLINE = new Set([
+    'a','em','strong','span','b','i','u','s','sup','sub','img','code','mark','small','br'
+  ]);
+  function serialize(node, level){
+    let out = '';
+    const indent = '  '.repeat(level);
     node.childNodes.forEach(ch=>{
-      if(ch.nodeType===3){ const t=ch.textContent.replace(/\s+/g,' ').trim(); if(t) out+=indent+t+'\n'; return; }
-      if(ch.nodeType!==1) return;
-      const el=ch; const tag=el.tagName.toLowerCase();
-      const attrs=[...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
-      const open=`<${tag}${attrs}>`, close=`</${tag}>`;
-      const hasBlock = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
-      if(BLOCKS.has(tag) || hasBlock){ out += `${indent}${open}\n${serialize(el,level+1)}${indent}${close}\n`; }
-      else{ out += `${indent}${open}${el.innerHTML}${close}\n`; }
+      if(ch.nodeType === 3){
+        const t = ch.textContent.replace(/\s+/g,' ');
+        if(t.trim()) out += t;
+        return;
+      }
+      if(ch.nodeType !== 1) return;
+
+      const el = ch;
+      const tag = el.tagName.toLowerCase();
+      const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
+      const open = `<${tag}${attrs}>`;
+      const close = `</${tag}>`;
+      const isBlock = BLOCKS.has(tag);
+
+      if(isBlock){
+        out += `${indent}${open}\n${serialize(el, level+1)}${indent}${close}\n`;
+      } else {
+        out += open + serialize(el, level) + close;
+      }
     });
     return out;
   }
@@ -603,6 +641,7 @@ Changelog (v1.4.1)
       enforceLinkTargets(content);
       collapseConsecutiveBR(content);
       ensureParagraph();
+      normalizeBI(content);
       queueSave();
     };
     i.click();
@@ -627,8 +666,8 @@ Changelog (v1.4.1)
       source.style.display = 'none';
     }
 
-    titleEl.textContent = 'Untitled Document (DEV v1.4.1)';
-    content.innerHTML = '<p>\u200B</p>'; // ensure first typing is inside <p>
+    titleEl.textContent = 'Untitled Document';
+    content.innerHTML = '<p>\u200B</p>';
     const p=content.querySelector('p'); if (p) placeCaretInside(p);
     savedRange = null;
 
@@ -636,7 +675,7 @@ Changelog (v1.4.1)
     status.textContent = 'Saved';
   });
 
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function escapeHtml(s){ return s.replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
   let pasteMode='plain';
@@ -655,6 +694,7 @@ Changelog (v1.4.1)
     }
     enforceLinkTargets(content);
     collapseConsecutiveBR(content);
+    normalizeBI(content);
     queueSave();
   });
 
@@ -695,12 +735,13 @@ Changelog (v1.4.1)
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(t==='span'||t==='font') unwrap(el);
-      if(t==='strong'){ replaceTag(el,'b'); }
+      if(t==='strong'){ replaceTag(el,'strong'); }
       if(t==='i'){ replaceTag(el,'em'); }
+      if(t==='b'){ replaceTag(el,'strong'); }
       if(t==='div'){ replaceTag(el,'p'); }
     });
     // whitelist + link target
-    const ALLOWED=new Set(['h1','h2','h3','p','b','em','ul','ol','li','a']);
+    const ALLOWED=new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){ unwrap(el); return; }
@@ -731,7 +772,7 @@ Changelog (v1.4.1)
   let timer=null;
   function queueSave(){ clearTimeout(timer); status.textContent='Saving…'; timer=setTimeout(saveNow,400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.4.1)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
+    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
     catch(e){ status.textContent='Autosave error'; }
   }
   (function restore(){
@@ -739,22 +780,29 @@ Changelog (v1.4.1)
       const raw=localStorage.getItem(DOC_KEY);
       if(raw){
         const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document (DEV v1.4.1)';
+        titleEl.textContent=d.title||'Untitled Document';
         content.innerHTML=d.html||'';
         ensureParagraph();
+        normalizeBI(content);
       } else {
+        // One-line welcome content inside a single <p>
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
       }
     }catch{
       content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
     }
   })();
-  content.addEventListener('input', ()=>{ ensureParagraph(); queueSave(); });
+  content.addEventListener('input', ()=>{ ensureParagraph(); normalizeBI(content); queueSave(); });
   titleEl.addEventListener('input', queueSave);
 
-  // Notes autosave
+  // Notes autosave + clear
   const notes=$('notesArea'); try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
   notes.addEventListener('input', ()=>{ try{ localStorage.setItem(NOTES_KEY, notes.value); }catch{} });
+  $('clearNotesBtn').addEventListener('click', ()=>{
+    if(!confirm('Clear all notes?')) return;
+    notes.value = '';
+    try{ localStorage.setItem(NOTES_KEY, ''); }catch{}
+  });
 
   // Shortcuts
   document.addEventListener('keydown', e=>{
@@ -765,6 +813,7 @@ Changelog (v1.4.1)
     if(['b','i','u'].includes(k)){
       e.preventDefault();
       document.execCommand({b:'bold',i:'italic',u:'underline'}[k], false, null);
+      normalizeBI(content);
       queueSave();
     }
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
@@ -776,4 +825,3 @@ Changelog (v1.4.1)
 </script>
 </body>
 </html>
-
