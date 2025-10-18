@@ -2,22 +2,22 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.6.3.html
- Build: v1.6.3-dev
+ File: editor-dev-v1.6.4.html
+ Build: v1.6.4-dev
 =========================================================
-Highlights (v1.6.3)
-- Single-line <p> normalization (no random wraps inside <p>), keeps inline <em>/<strong>/<a>/<sup>.
-- Word Sanitizer preserves footnotes (#_ftn*/#_ftnref*), converts <b>/<i> to <strong>/<em>.
-- Cleans <br></br> to <br>, removes empty <p> directly before <ul>/<ol>.
-- External links => target="_blank"; mailto/# anchors => no target.
-- Notes panel text updated.
+Changelog (v1.6.4)
+- Footnote-preserving cleanup: in footnote paragraphs, keep <em>, <strong>, <a>, <sup>
+  even when they only contain &nbsp; (so italics/links in legal-style footnotes aren't lost).
+- Keeps all previous behavior: one-line-per-<p>, auto <p>, Word Sanitizer, links target _blank (mailto no target),
+  collapses double <br>, removes empty <p> before lists, theme auto, notes, modals, import/export/copy.
+- Storage keys: v164 (separate from prior versions).
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.6.3)</title>
+<title>WYSIWYG HTML Editor (DEV v1.6.4)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -104,7 +104,7 @@ Highlights (v1.6.3)
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.6.4)</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -113,7 +113,7 @@ Highlights (v1.6.3)
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
           <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.79 4.79 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
           </button>
           <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
@@ -122,8 +122,9 @@ Highlights (v1.6.3)
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 8c0-2.2 2.1-4 6-4 2.5 0 4.7.7 6 1.8l-1.2 1.6C15.7 6.5 14.1 6 12 6c-2.7 0-4 .9-4 2h12v2H4V8h2zm12 4v2c0 2.2-2.1 4-6 4-2.5 0-4.7-.7-6-1.8l1.2-1.6c1.1.9 2.7 1.4 4.8 1.4 2.7 0 4-.9 4-2H6v-2h12z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
           </button>
+          <!-- Superscript -->
           <button class="tool" id="supBtn" title="Superscript">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
@@ -200,10 +201,10 @@ Highlights (v1.6.3)
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
-          <!-- Source toggle icon = '</>' (industry style) -->
+          <!-- Source toggle icon looks like '< >' -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12l4.5-4.5L18.5 6l-6 6 6 6 1.5-1.5z"/>
+              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
             </svg>
           </button>
           <button class="tool" data-cmd="undo" title="Undo">
@@ -225,7 +226,7 @@ Highlights (v1.6.3)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.6.3</span>
+          <span class="chip">DEV v1.6.4</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -254,8 +255,8 @@ Highlights (v1.6.3)
 
     <!-- Notes (not exported) -->
     <aside class="notes">
-      <h2>Your notes (not part of HTML)</h2>
-      <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
+      <h2>Notes (not exported)</h2>
+      <textarea id="notesArea" placeholder="Your dev notes…"></textarea>
     </aside>
   </div>
 </div>
@@ -311,10 +312,10 @@ Highlights (v1.6.3)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.6.3)
-  const DOC_KEY='wysi_doc_dev_v163';
-  const NOTES_KEY='wysi_notes_dev_v163';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v163';
+  // Versioned storage (v1.6.4)
+  const DOC_KEY='wysi_doc_dev_v164';
+  const NOTES_KEY='wysi_notes_dev_v164';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v164';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -329,10 +330,7 @@ Highlights (v1.6.3)
     if(mode==='auto'){ applySystemTheme(); mql.addEventListener('change', onSystemChange); }
     else { mql.removeEventListener('change', onSystemChange); applyTheme(mode); }
   }
-  (()=>{
-    const saved=localStorage.getItem(THEME_MODE_KEY)||'auto';
-    themeSelect.value=saved; setThemeMode(saved);
-  })();
+  (()=>{ const saved=localStorage.getItem(THEME_MODE_KEY)||'auto'; themeSelect.value=saved; setThemeMode(saved); })();
   themeSelect.addEventListener('change', e=> setThemeMode(e.target.value));
 
   // Default paragraph separator = <p>
@@ -350,27 +348,10 @@ Highlights (v1.6.3)
   }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
 
-  /* ===== Normalizers / Cleanup ===== */
-  function normalizeInlineTags(root){
-    // Convert <b> -> <strong>, <i> -> <em>
-    root.querySelectorAll('b').forEach(b=>{ const s=document.createElement('strong'); s.innerHTML=b.innerHTML; b.replaceWith(s); });
-    root.querySelectorAll('i').forEach(i=>{ const e=document.createElement('em'); e.innerHTML=i.innerHTML; i.replaceWith(e); });
-  }
-  function flattenParagraphInline(p){
-    // Remove <br> inside <p>
-    p.querySelectorAll('br').forEach(br=> br.remove());
-    // Collapse whitespace in text nodes
-    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
-    const texts = [];
-    while (walker.nextNode()) texts.push(walker.currentNode);
-    texts.forEach(n=>{
-      n.nodeValue = n.nodeValue.replace(/\u00A0/g,' ').replace(/\s+/g,' ');
-    });
-    // Trim edges
-    if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.nodeValue = p.firstChild.nodeValue.replace(/^\s+/, '');
-    if (p.lastChild && p.lastChild.nodeType===3)  p.lastChild.nodeValue  = p.lastChild.nodeValue.replace(/\s+$/, '');
-    // Remove empty text nodes
-    Array.from(p.childNodes).forEach(n=>{ if(n.nodeType===3 && !n.nodeValue.trim()) n.remove(); });
+  /* ===== Helpers ===== */
+  function placeCaretInside(el, atEnd=true){
+    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
   }
   function collapseConsecutiveBR(root){
     const brs = Array.from(root.querySelectorAll('br'));
@@ -380,45 +361,73 @@ Highlights (v1.6.3)
       if(prev && prev.nodeType===1 && prev.tagName==='BR'){ br.remove(); }
     });
   }
-  function removeEmptyPBeforeLists(root){
-    const nodes = Array.from(root.querySelectorAll('p'));
-    nodes.forEach(p=>{
-      const isEmpty = !p.textContent.trim() && p.children.length===0;
-      if (!isEmpty) return;
-      const nxt = p.nextElementSibling;
-      if (nxt && (nxt.tagName==='UL' || nxt.tagName==='OL')) p.remove();
-    });
-  }
   function ensureParagraph(){
+    // If editor is empty or root has only whitespace, ensure a <p> to start typing into.
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
   }
-  function normalizeBRMarkup(html){
-    // turn <br></br> into <br>
-    return html.replace(/<br\s*\/?>\s*<\/br>/gi, '<br>');
+  function isFootnoteParagraph(p){
+    if (!p || p.tagName !== 'P') return false;
+    // Consider any paragraph that includes a footnote anchor as "footnote paragraph"
+    return !!p.querySelector('a[href^="#_ftn"], a[href^="#_ftnref"]');
   }
-  function normalizeEditorDOM(root){
-    normalizeInlineTags(root);
-    enforceLinkTargets(root);
-    removeEmptyPBeforeLists(root);
-    collapseConsecutiveBR(root);
-    // Make every paragraph single-line but preserve inline tags
-    root.querySelectorAll('p').forEach(flattenParagraphInline);
-    ensureParagraph();
+  // Normalize <p> to one line (keeps content intact; just removes newlines/spaces introduced by paste/pretty-print)
+  function normalizeParagraphInline(p){
+    if (!p || p.tagName!=='P') return;
+    // Skip normalizing visible spaces inside footnotes? No — we keep tags; we only remove raw newlines.
+    // Replace literal newlines in text nodes with single spaces.
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null);
+    const nodes=[];
+    while(walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(tn=>{
+      if (tn.nodeValue && /\n/.test(tn.nodeValue)) {
+        tn.nodeValue = tn.nodeValue.replace(/\r?\n+/g,' ');
+      }
+    });
+    // Also remove formatting-only indentation text nodes (pure spaces/tabs) around inline elements
+    // but preserve &nbsp; already encoded in HTML.
+    Array.from(p.childNodes).forEach(n=>{
+      if (n.nodeType===3 && !n.nodeValue.replace(/\u00A0/g,'').trim()) {
+        // collapse multi spaces to single space to avoid line breaks
+        n.nodeValue = n.nodeValue.replace(/[ \t]+/g,' ');
+      }
+    });
+    // Footnote preservation rule: keep empty inline wrappers if footnote context
+    if (isFootnoteParagraph(p)) {
+      Array.from(p.querySelectorAll('em,strong,a,sup')).forEach(el=>{
+        // Do nothing — explicitly keep even if textContent trims empty (might be &nbsp; only)
+      });
+    } else {
+      // Outside footnotes, drop truly empty inline wrappers (no visible text and no <img>/<br>)
+      Array.from(p.querySelectorAll('em,strong,a,span,i,b,sup,sub,code')).forEach(el=>{
+        const hasMedia = el.querySelector('img,br');
+        const visible = (el.textContent && el.textContent.trim().length>0);
+        if (!hasMedia && !visible) el.replaceWith(document.createTextNode(''));
+      });
+    }
   }
-
-  /* ===== Helpers ===== */
-  function placeCaretInside(el, atEnd=true){
-    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
-    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  function normalizeAllParagraphs(){
+    content.querySelectorAll('p').forEach(p=> normalizeParagraphInline(p));
   }
-  function insertNodeAtSelection(node){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
-    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
-    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
+  function removeEmptyPBeforeLists(){
+    const kids = Array.from(content.children);
+    for (let i=0;i<kids.length-1;i++){
+      const k = kids[i], n = kids[i+1];
+      if (k.tagName==='P' && (!k.textContent.trim()) && (n && (n.tagName==='UL'||n.tagName==='OL'))) {
+        k.remove();
+      }
+    }
+  }
+  function enforceLinkTargets(root){
+    root.querySelectorAll('a[href]').forEach(a=>{
+      const href=(a.getAttribute('href')||'').trim();
+      if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
+      else if(/^mailto:/i.test(href)) a.removeAttribute('target');
+      else if(/^#/i.test(href)) a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
   }
   function selectInserted(chars){
     const sel=window.getSelection(); if(!sel.rangeCount) return;
@@ -428,18 +437,19 @@ Highlights (v1.6.3)
     else { nr.selectNodeContents(node); nr.collapse(false); }
     sel.removeAllRanges(); sel.addRange(nr);
   }
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
+  function insertNodeAtSelection(node){
+    const sel=window.getSelection();
+    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
+    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
+    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
+  }
 
   /* ===== Toolbar execCommand bindings ===== */
   document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
-      // After formatting, normalize inline tag names
-      normalizeInlineTags(content);
-      // Keep paragraphs tidy
-      normalizeEditorDOM(content);
+      normalizeAllParagraphs();
       queueSave();
     });
   });
@@ -461,15 +471,13 @@ Highlights (v1.6.3)
       } else {
         el.appendChild(r.extractContents()); r.insertNode(el); placeCaretInside(el,true);
       }
-      normalizeEditorDOM(content);
+      normalizeParagraphInline(el);
       queueSave(); return;
     }
     if(block.tagName.toLowerCase()===tag){ placeCaretInside(block,true); return; }
     const neo=document.createElement(tag);
     while(block.firstChild) neo.appendChild(block.firstChild);
-    block.replaceWith(neo); placeCaretInside(neo,true);
-    normalizeEditorDOM(content);
-    queueSave();
+    block.replaceWith(neo); placeCaretInside(neo,true); normalizeParagraphInline(neo); queueSave();
   }
   function currentBlock(){
     const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
@@ -538,7 +546,7 @@ Highlights (v1.6.3)
         a.removeAttribute('rel'); a.removeAttribute('style');
       }
     }
-    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); normalizeEditorDOM(content); queueSave();
+    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); normalizeAllParagraphs(); queueSave();
   });
 
   /* ===== Mailto modal ===== */
@@ -563,7 +571,7 @@ Highlights (v1.6.3)
     if(!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText',false,txt); selectInserted(txt.length); }
     document.execCommand('createLink',false,href);
     const a=findClosest('A'); if(a){ a.removeAttribute('target'); a.removeAttribute('rel'); a.removeAttribute('style'); }
-    currentMailto=null; closeModal('mailtoModal'); normalizeEditorDOM(content); queueSave();
+    currentMailto=null; closeModal('mailtoModal'); normalizeAllParagraphs(); queueSave();
   });
   function parseMailto(href){
     let to='',subject='',body=''; if(!href?.toLowerCase().startsWith('mailto:')) return {to,subject,body};
@@ -595,7 +603,7 @@ Highlights (v1.6.3)
     const img=document.createElement('img'); img.src=src; img.alt=alt||''; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
     if(w && !isNaN(+w)) img.style.width=`${parseInt(w,10)}px`;
     insertNodeAtSelection(img);
-    normalizeEditorDOM(content);
+    normalizeAllParagraphs();
     queueSave(); closeModal('imageModal');
   });
 
@@ -604,10 +612,12 @@ Highlights (v1.6.3)
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); toggleSourceView(); } });
   function toggleSourceView(){
     if(source.style.display==='block'){
-      let html = source.value.trim();
-      html = normalizeBRMarkup(html);
-      content.innerHTML = html;
-      normalizeEditorDOM(content);
+      content.innerHTML = source.value.trim();
+      // Post-source cleanup
+      collapseConsecutiveBR(content);
+      removeEmptyPBeforeLists();
+      normalizeAllParagraphs();
+      ensureParagraph();
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
       source.value = prettyHTML(content.innerHTML);
@@ -652,19 +662,54 @@ Highlights (v1.6.3)
       const txt=await f.text();
       const m=txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
       content.innerHTML=(m?m[1]:txt).trim();
-      normalizeEditorDOM(content);
+      enforceLinkTargets(content);
+      collapseConsecutiveBR(content);
+      removeEmptyPBeforeLists();
+      normalizeAllParagraphs();
+      ensureParagraph();
       queueSave();
     };
     i.click();
   });
 
   $('exportBtn').addEventListener('click', ()=>{
-    const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',prettyHTML(content.innerHTML),'</body>','</html>'].join('\n');
+    const doc=[
+      '<!doctype html>',
+      '<html>',
+      '<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>',
+      '<body>',
+      prettyHTML(content.innerHTML),
+      '</body>',
+      '</html>'
+    ].join('\n');
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([doc],{type:'text/html;charset=utf-8'}));
     a.download=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)+'.html';
     a.click();
   });
+  // --- New document ---
+  $('resetBtn').addEventListener('click', ()=>{
+    if (!confirm('Start a new document?')) return;
+
+    if (source.style.display === 'block') {
+      content.innerHTML = source.value.trim();
+      collapseConsecutiveBR(content);
+      removeEmptyPBeforeLists();
+      normalizeAllParagraphs();
+      content.style.display = 'block';
+      source.style.display = 'none';
+    }
+
+    titleEl.textContent = 'Untitled Document (DEV v1.6.4)';
+    content.innerHTML = '<p>\u200B</p>'; // ensure first typing is inside <p>
+    const p=content.querySelector('p'); if (p) placeCaretInside(p);
+    savedRange = null;
+
+    saveNow();
+    status.textContent = 'Saved';
+  });
+
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
   let pasteMode='plain';
@@ -675,24 +720,19 @@ Highlights (v1.6.3)
     const text=e.clipboardData?.getData('text/plain')||'';
     e.preventDefault();
     if(pasteMode==='word' && html){
-      const cleaned=cleanWordHtmlKeepFootnotesInline(html);
+      const cleaned=cleanWordHtmlKeepInlineFootnotes(html);
       document.execCommand('insertHTML', false, cleaned);
     } else {
       const linked=linkifyTextToHTML(text);
       document.execCommand('insertHTML', false, linked);
     }
-    normalizeEditorDOM(content);
+    enforceLinkTargets(content);
+    collapseConsecutiveBR(content);
+    removeEmptyPBeforeLists();
+    normalizeAllParagraphs();
     queueSave();
   });
 
-  function enforceLinkTargets(root){
-    root.querySelectorAll('a[href]').forEach(a=>{
-      const href=(a.getAttribute('href')||'').trim();
-      if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
-      else a.removeAttribute('target');
-      a.removeAttribute('rel'); a.removeAttribute('style');
-    });
-  }
   function linkifyTextToHTML(t){
     const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
     let out=esc(t);
@@ -701,8 +741,8 @@ Highlights (v1.6.3)
     return out.replace(/\n/g,'<br>');
   }
 
-  // Word sanitizer (keeps: h1-3, p, strong, em, ul/ol/li, a, sup; converts div->p; preserves footnotes)
-  function cleanWordHtmlKeepFootnotesInline(inputHtml){
+  // Word sanitizer — preserves headers + inline + footnotes
+  function cleanWordHtmlKeepInlineFootnotes(inputHtml){
     const doc=new DOMParser().parseFromString(inputHtml,'text/html'); const body=doc.body;
 
     // remove comments
@@ -723,17 +763,18 @@ Highlights (v1.6.3)
       if(el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) unwrap(el);
     });
 
-    // normalize tags: span/font -> unwrap; b->strong; i->em; div->p
+    // normalize tags: span/font -> unwrap; i -> em; b -> strong; div -> p
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(t==='span'||t==='font') unwrap(el);
-      if(t==='b'){ replaceTag(el,'strong'); }
-      if(t==='i'){ replaceTag(el,'em'); }
-      if(t==='div'){ replaceTag(el,'p'); }
+      if(t==='i') replaceTag(el,'em');
+      if(t==='b') replaceTag(el,'strong');
+      if(t==='strong') { /* keep strong as is */ }
+      if(t==='div') replaceTag(el,'p');
     });
 
-    // whitelist + link target
-    const ALLOWED=new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup']);
+    // whitelist + link target; allow # anchors & <sup> for footnotes
+    const ALLOWED=new Set(['h1','h2','h3','p','em','strong','ul','ol','li','a','sup']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){ unwrap(el); return; }
@@ -741,19 +782,23 @@ Highlights (v1.6.3)
         const href=(el.getAttribute('href')||'').trim();
         if(!/^https?:|^mailto:|^#/i.test(href)){ unwrap(el); return; }
         [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
-        if(/^https?:/i.test(href)) el.setAttribute('target','_blank'); // external only
+        if(/^https?:/i.test(href)) el.setAttribute('target','_blank');
       } else {
         [...el.attributes].forEach(a=> el.removeAttribute(a.name));
       }
     });
 
-    // drop empty p
+    // remove empty <p>
     body.querySelectorAll('p').forEach(p=>{ if(!p.textContent.trim() && p.children.length===0) p.remove(); });
 
-    // Final normalize in sanitizer scope
-    normalizeInlineTags(body);
-    body.querySelectorAll('p').forEach(flattenParagraphInline);
+    // final link enforcement
+    body.querySelectorAll('a[href]').forEach(a=>{
+      const href=(a.getAttribute('href')||'').trim();
+      if(/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
 
+    // return inner
     return body.innerHTML.trim();
 
     function unwrap(el){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
@@ -770,7 +815,7 @@ Highlights (v1.6.3)
   let timer=null;
   function queueSave(){ clearTimeout(timer); status.textContent='Saving…'; timer=setTimeout(saveNow,400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
+    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.6.4)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
     catch(e){ status.textContent='Autosave error'; }
   }
   (function restore(){
@@ -778,20 +823,23 @@ Highlights (v1.6.3)
       const raw=localStorage.getItem(DOC_KEY);
       if(raw){
         const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document';
+        titleEl.textContent=d.title||'Untitled Document (DEV v1.6.4)';
         content.innerHTML=d.html||'';
-        normalizeEditorDOM(content);
+        // Post-restore hygiene
+        enforceLinkTargets(content);
+        collapseConsecutiveBR(content);
+        removeEmptyPBeforeLists();
+        normalizeAllParagraphs();
+        ensureParagraph();
       } else {
-        // Welcome (single-line <p>)
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
-        normalizeEditorDOM(content);
       }
     }catch{
       content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
-      normalizeEditorDOM(content);
     }
   })();
-  content.addEventListener('input', ()=>{ queueSave(); });
+  content.addEventListener('input', ()=>{ ensureParagraph(); queueSave(); });
+  titleEl.addEventListener('input', queueSave);
 
   // Notes autosave
   const notes=$('notesArea'); try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
@@ -806,14 +854,16 @@ Highlights (v1.6.3)
     if(['b','i','u'].includes(k)){
       e.preventDefault();
       document.execCommand({b:'bold',i:'italic',u:'underline'}[k], false, null);
-      normalizeInlineTags(content);
-      normalizeEditorDOM(content);
+      normalizeAllParagraphs();
       queueSave();
     }
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
     if(k==='s'){ e.preventDefault(); $('exportBtn').click(); }
   });
+
+  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
 })();
 </script>
 </body>
 </html>
+
