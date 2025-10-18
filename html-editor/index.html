@@ -1,14 +1,14 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.9.html
- Build: v1.9-dev
+ WYSIWYG HTML Editor - Stable Branch
+ File: editor-stable-v2.0.html
+ Build: v2.0-stable
 =========================================================
-Highlights (v1.9)
+Highlights (v2.0, based on your STB behavior)
 - Beautifier applied ONLY in Source view (</>) so the textarea shows nicely
   indented HTML; Copy/Export keep raw innerHTML (no reformat).
-- Keeps v1.8 behavior: Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>,
+- Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>,
   headers, lists, footnote anchors; condenses inline content inside <p> onto one
   logical line; normalizes <br></br> -> <br>; removes empty <p> before lists.
 - Always start typing inside <p>; link targets enforced; notes wording updated.
@@ -19,7 +19,7 @@ Highlights (v1.9)
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.9)</title>
+<title>WYSIWYG HTML Editor</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -228,7 +228,7 @@ Highlights (v1.9)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.9</span>
+          <span class="chip">STB v2.0</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -315,10 +315,10 @@ Highlights (v1.9)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.9)
-  const DOC_KEY='wysi_doc_dev_v19';
-  const NOTES_KEY='wysi_notes_dev_v19';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v19';
+  // Versioned storage (STB v2.0)
+  const DOC_KEY='wysi_doc_stb_v20';
+  const NOTES_KEY='wysi_notes_stb_v20';
+  const THEME_MODE_KEY='wysi_theme_mode_stb_v20';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
