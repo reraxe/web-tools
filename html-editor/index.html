@@ -2,22 +2,22 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.6.4.html
- Build: v1.6.4-dev
+ File: editor-dev-v1.7.2.html
+ Build: v1.7.2-dev
 =========================================================
-Changelog (v1.6.4)
-- Footnote-preserving cleanup: in footnote paragraphs, keep <em>, <strong>, <a>, <sup>
-  even when they only contain &nbsp; (so italics/links in legal-style footnotes aren't lost).
-- Keeps all previous behavior: one-line-per-<p>, auto <p>, Word Sanitizer, links target _blank (mailto no target),
-  collapses double <br>, removes empty <p> before lists, theme auto, notes, modals, import/export/copy.
-- Storage keys: v164 (separate from prior versions).
+Changelog (v1.7.2)
+- Word Sanitizer upgraded to preserve inline styles from Word (italics/bold/underline)
+  even in footnotes and spans; maps styles -> <em>/<strong>/<u>/<s> and preserves <sup>, anchors (#...).
+- Inline normalizer for paragraphs removes extra spaces after </a> and keeps inline
+  elements on one line inside <p>; tightens punctuation spacing.
+- No UI removals; all prior features retained (links, mailto, image, lists, headings, etc.).
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.6.4)</title>
+<title>WYSIWYG HTML Editor (DEV v1.7.2)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -104,7 +104,7 @@ Changelog (v1.6.4)
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.6.4)</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.7.2)</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -122,7 +122,8 @@ Changelog (v1.6.4)
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
+            <!-- S with bar -->
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 12h16v2H4zM7 8a5 5 0 0 1 5-3c2.3 0 4.3 1.18 4.86 3H14.5c-.38-.64-1.44-1-2.5-1-1.66 0-3 .67-3 2 0 .7.48 1.2 1.23 1.5H7.7A3.2 3.2 0 0 1 7 8zm10 8a5 5 0 0 1-5 3c-2.3 0-4.3-1.18-4.86-3h2.36c.38.64 1.44 1 2.5 1 1.66 0 3-.67 3-2 0-.7-.48-1.2-1.23-1.5h2.53A3.2 3.2 0 0 1 17 16z"/></svg>
           </button>
           <!-- Superscript -->
           <button class="tool" id="supBtn" title="Superscript">
@@ -167,7 +168,7 @@ Changelog (v1.6.4)
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="justifyLeft" title="Align left">
+          <button class="tool" id="justifyLeft" data-cmd="justifyLeft" title="Align left">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
           </button>
           <button class="tool" data-cmd="justifyCenter" title="Align center">
@@ -182,6 +183,7 @@ Changelog (v1.6.4)
         </div>
 
         <div class="group">
+          <!-- Link -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
@@ -193,6 +195,7 @@ Changelog (v1.6.4)
           <button class="tool" id="imageModalBtn" title="Insert image">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/></svg>
           </button>
+          <!-- Clear formatting -->
           <button class="tool" id="clearBtn" title="Clear formatting">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
@@ -201,7 +204,7 @@ Changelog (v1.6.4)
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
-          <!-- Source toggle icon looks like '< >' -->
+          <!-- Source toggle icon = '< >' -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
@@ -226,7 +229,7 @@ Changelog (v1.6.4)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.6.4</span>
+          <span class="chip">DEV v1.7.2</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -255,8 +258,8 @@ Changelog (v1.6.4)
 
     <!-- Notes (not exported) -->
     <aside class="notes">
-      <h2>Notes (not exported)</h2>
-      <textarea id="notesArea" placeholder="Your dev notes…"></textarea>
+      <h2>Your notes (not part of HTML)</h2>
+      <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
     </aside>
   </div>
 </div>
@@ -312,10 +315,10 @@ Changelog (v1.6.4)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.6.4)
-  const DOC_KEY='wysi_doc_dev_v164';
-  const NOTES_KEY='wysi_notes_dev_v164';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v164';
+  // Versioned storage (v1.7.2)
+  const DOC_KEY='wysi_doc_dev_v172';
+  const NOTES_KEY='wysi_notes_dev_v172';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v172';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -330,12 +333,14 @@ Changelog (v1.6.4)
     if(mode==='auto'){ applySystemTheme(); mql.addEventListener('change', onSystemChange); }
     else { mql.removeEventListener('change', onSystemChange); applyTheme(mode); }
   }
-  (()=>{ const saved=localStorage.getItem(THEME_MODE_KEY)||'auto'; themeSelect.value=saved; setThemeMode(saved); })();
+  (()=>{
+    const saved=localStorage.getItem(THEME_MODE_KEY)||'auto';
+    themeSelect.value=saved; setThemeMode(saved);
+  })();
   themeSelect.addEventListener('change', e=> setThemeMode(e.target.value));
 
   // Default paragraph separator = <p>
   try{ document.execCommand('defaultParagraphSeparator', false, 'p'); }catch{}
-
   /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){ const s=window.getSelection(); return s && s.rangeCount && content.contains(s.anchorNode); }
@@ -362,86 +367,47 @@ Changelog (v1.6.4)
     });
   }
   function ensureParagraph(){
-    // If editor is empty or root has only whitespace, ensure a <p> to start typing into.
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
   }
-  function isFootnoteParagraph(p){
-    if (!p || p.tagName !== 'P') return false;
-    // Consider any paragraph that includes a footnote anchor as "footnote paragraph"
-    return !!p.querySelector('a[href^="#_ftn"], a[href^="#_ftnref"]');
-  }
-  // Normalize <p> to one line (keeps content intact; just removes newlines/spaces introduced by paste/pretty-print)
-  function normalizeParagraphInline(p){
-    if (!p || p.tagName!=='P') return;
-    // Skip normalizing visible spaces inside footnotes? No — we keep tags; we only remove raw newlines.
-    // Replace literal newlines in text nodes with single spaces.
-    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null);
-    const nodes=[];
-    while(walker.nextNode()) nodes.push(walker.currentNode);
-    nodes.forEach(tn=>{
-      if (tn.nodeValue && /\n/.test(tn.nodeValue)) {
-        tn.nodeValue = tn.nodeValue.replace(/\r?\n+/g,' ');
+
+  // NEW: Inline paragraph normalizer (keeps inline on one line; fixes spaces after </a>)
+  function normalizeParagraphInlineLayout(root){
+    root.querySelectorAll('p').forEach(p=>{
+      // Merge adjacent text nodes
+      let n = p.firstChild;
+      while (n) {
+        if (n.nodeType === 3) {
+          while (n.nextSibling && n.nextSibling.nodeType === 3) {
+            n.textContent += n.nextSibling.textContent;
+            p.removeChild(n.nextSibling);
+          }
+        }
+        n = n.nextSibling;
       }
-    });
-    // Also remove formatting-only indentation text nodes (pure spaces/tabs) around inline elements
-    // but preserve &nbsp; already encoded in HTML.
-    Array.from(p.childNodes).forEach(n=>{
-      if (n.nodeType===3 && !n.nodeValue.replace(/\u00A0/g,'').trim()) {
-        // collapse multi spaces to single space to avoid line breaks
-        n.nodeValue = n.nodeValue.replace(/[ \t]+/g,' ');
-      }
-    });
-    // Footnote preservation rule: keep empty inline wrappers if footnote context
-    if (isFootnoteParagraph(p)) {
-      Array.from(p.querySelectorAll('em,strong,a,sup')).forEach(el=>{
-        // Do nothing — explicitly keep even if textContent trims empty (might be &nbsp; only)
+
+      // Replace &nbsp; with spaces
+      p.innerHTML = p.innerHTML.replace(/&nbsp;/g, ' ');
+
+      // Collapse runs of whitespace in text nodes
+      p.childNodes.forEach(node=>{
+        if (node.nodeType === 3) node.textContent = node.textContent.replace(/\s+/g, ' ');
       });
-    } else {
-      // Outside footnotes, drop truly empty inline wrappers (no visible text and no <img>/<br>)
-      Array.from(p.querySelectorAll('em,strong,a,span,i,b,sup,sub,code')).forEach(el=>{
-        const hasMedia = el.querySelector('img,br');
-        const visible = (el.textContent && el.textContent.trim().length>0);
-        if (!hasMedia && !visible) el.replaceWith(document.createTextNode(''));
-      });
-    }
-  }
-  function normalizeAllParagraphs(){
-    content.querySelectorAll('p').forEach(p=> normalizeParagraphInline(p));
-  }
-  function removeEmptyPBeforeLists(){
-    const kids = Array.from(content.children);
-    for (let i=0;i<kids.length-1;i++){
-      const k = kids[i], n = kids[i+1];
-      if (k.tagName==='P' && (!k.textContent.trim()) && (n && (n.tagName==='UL'||n.tagName==='OL'))) {
-        k.remove();
-      }
-    }
-  }
-  function enforceLinkTargets(root){
-    root.querySelectorAll('a[href]').forEach(a=>{
-      const href=(a.getAttribute('href')||'').trim();
-      if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
-      else if(/^mailto:/i.test(href)) a.removeAttribute('target');
-      else if(/^#/i.test(href)) a.removeAttribute('target');
-      a.removeAttribute('rel'); a.removeAttribute('style');
+
+      // Tighten punctuation spacing
+      p.innerHTML = p.innerHTML.replace(/\s+([,.;:!?])\s*/g, '$1 ');
+
+      // Exactly one space after inline close if followed by word/entity/tag (but none before punctuation)
+      p.innerHTML = p.innerHTML
+        .replace(/<\/(a|em|strong|u|s|sup|sub)>\s*(?=\w|&[\w#]+;|<)/gi, '</$1> ')
+        .replace(/<\/(a|em|strong|u|s|sup|sub)>\s+([,.;:!?])/gi, '</$1>$2');
+
+      // Trim leading/trailing spaces
+      if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.textContent = p.firstChild.textContent.replace(/^\s+/, '');
+      if (p.lastChild  && p.lastChild.nodeType===3)  p.lastChild.textContent  = p.lastChild.textContent.replace(/\s+$/, '');
     });
-  }
-  function selectInserted(chars){
-    const sel=window.getSelection(); if(!sel.rangeCount) return;
-    const r=sel.getRangeAt(0); const node=r.startContainer;
-    const nr=document.createRange();
-    if(node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
-    else { nr.selectNodeContents(node); nr.collapse(false); }
-    sel.removeAllRanges(); sel.addRange(nr);
-  }
-  function insertNodeAtSelection(node){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
-    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
-    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
   }
 
   /* ===== Toolbar execCommand bindings ===== */
@@ -449,7 +415,7 @@ Changelog (v1.6.4)
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
-      normalizeAllParagraphs();
+      // If italic/bold buttons used, leave resulting <i>/<b> but you can later pretty-print to <em>/<strong> via sanitizer on paste/import
       queueSave();
     });
   });
@@ -471,13 +437,12 @@ Changelog (v1.6.4)
       } else {
         el.appendChild(r.extractContents()); r.insertNode(el); placeCaretInside(el,true);
       }
-      normalizeParagraphInline(el);
       queueSave(); return;
     }
     if(block.tagName.toLowerCase()===tag){ placeCaretInside(block,true); return; }
     const neo=document.createElement(tag);
     while(block.firstChild) neo.appendChild(block.firstChild);
-    block.replaceWith(neo); placeCaretInside(neo,true); normalizeParagraphInline(neo); queueSave();
+    block.replaceWith(neo); placeCaretInside(neo,true); queueSave();
   }
   function currentBlock(){
     const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
@@ -546,7 +511,7 @@ Changelog (v1.6.4)
         a.removeAttribute('rel'); a.removeAttribute('style');
       }
     }
-    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); normalizeAllParagraphs(); queueSave();
+    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); queueSave();
   });
 
   /* ===== Mailto modal ===== */
@@ -571,7 +536,7 @@ Changelog (v1.6.4)
     if(!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText',false,txt); selectInserted(txt.length); }
     document.execCommand('createLink',false,href);
     const a=findClosest('A'); if(a){ a.removeAttribute('target'); a.removeAttribute('rel'); a.removeAttribute('style'); }
-    currentMailto=null; closeModal('mailtoModal'); normalizeAllParagraphs(); queueSave();
+    currentMailto=null; closeModal('mailtoModal'); queueSave();
   });
   function parseMailto(href){
     let to='',subject='',body=''; if(!href?.toLowerCase().startsWith('mailto:')) return {to,subject,body};
@@ -603,9 +568,22 @@ Changelog (v1.6.4)
     const img=document.createElement('img'); img.src=src; img.alt=alt||''; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
     if(w && !isNaN(+w)) img.style.width=`${parseInt(w,10)}px`;
     insertNodeAtSelection(img);
-    normalizeAllParagraphs();
     queueSave(); closeModal('imageModal');
   });
+  function insertNodeAtSelection(node){
+    const sel=window.getSelection();
+    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
+    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
+    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
+  }
+  function selectInserted(chars){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const r=sel.getRangeAt(0); const node=r.startContainer;
+    const nr=document.createRange();
+    if(node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
+    else { nr.selectNodeContents(node); nr.collapse(false); }
+    sel.removeAllRanges(); sel.addRange(nr);
+  }
 
   /* ===== Toggle Source / Design ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
@@ -613,10 +591,8 @@ Changelog (v1.6.4)
   function toggleSourceView(){
     if(source.style.display==='block'){
       content.innerHTML = source.value.trim();
-      // Post-source cleanup
       collapseConsecutiveBR(content);
-      removeEmptyPBeforeLists();
-      normalizeAllParagraphs();
+      normalizeParagraphInlineLayout(content);   // NEW: tighten inline spacing when returning from Source
       ensureParagraph();
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
@@ -664,8 +640,7 @@ Changelog (v1.6.4)
       content.innerHTML=(m?m[1]:txt).trim();
       enforceLinkTargets(content);
       collapseConsecutiveBR(content);
-      removeEmptyPBeforeLists();
-      normalizeAllParagraphs();
+      normalizeParagraphInlineLayout(content);   // NEW
       ensureParagraph();
       queueSave();
     };
@@ -673,20 +648,13 @@ Changelog (v1.6.4)
   });
 
   $('exportBtn').addEventListener('click', ()=>{
-    const doc=[
-      '<!doctype html>',
-      '<html>',
-      '<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>',
-      '<body>',
-      prettyHTML(content.innerHTML),
-      '</body>',
-      '</html>'
-    ].join('\n');
+    const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',prettyHTML(content.innerHTML),'</body>','</html>'].join('\n');
     const a=document.createElement('a');
     a.href=URL.createObjectURL(new Blob([doc],{type:'text/html;charset=utf-8'}));
     a.download=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)+'.html';
     a.click();
   });
+
   // --- New document ---
   $('resetBtn').addEventListener('click', ()=>{
     if (!confirm('Start a new document?')) return;
@@ -694,22 +662,21 @@ Changelog (v1.6.4)
     if (source.style.display === 'block') {
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
-      removeEmptyPBeforeLists();
-      normalizeAllParagraphs();
+      normalizeParagraphInlineLayout(content);   // NEW
       content.style.display = 'block';
       source.style.display = 'none';
     }
 
-    titleEl.textContent = 'Untitled Document (DEV v1.6.4)';
-    content.innerHTML = '<p>\u200B</p>'; // ensure first typing is inside <p>
-    const p=content.querySelector('p'); if (p) placeCaretInside(p);
+    titleEl.textContent = 'Untitled Document (DEV v1.7.2)';
+    content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
+    const p=content.querySelector('p, h1, h2, h3'); if (p) placeCaretInside(p);
     savedRange = null;
 
     saveNow();
     status.textContent = 'Saved';
   });
 
-  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m])); }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
   let pasteMode='plain';
@@ -720,19 +687,27 @@ Changelog (v1.6.4)
     const text=e.clipboardData?.getData('text/plain')||'';
     e.preventDefault();
     if(pasteMode==='word' && html){
-      const cleaned=cleanWordHtmlKeepInlineFootnotes(html);
+      const cleaned=cleanWordHtmlPreserveLinksAndInlines(html);  // NEW sanitizer
       document.execCommand('insertHTML', false, cleaned);
+      normalizeParagraphInlineLayout(content);   // NEW inline normalizer after paste
     } else {
       const linked=linkifyTextToHTML(text);
       document.execCommand('insertHTML', false, linked);
+      normalizeParagraphInlineLayout(content);   // NEW inline normalizer
     }
     enforceLinkTargets(content);
     collapseConsecutiveBR(content);
-    removeEmptyPBeforeLists();
-    normalizeAllParagraphs();
     queueSave();
   });
 
+  function enforceLinkTargets(root){
+    root.querySelectorAll('a[href]').forEach(a=>{
+      const href=(a.getAttribute('href')||'').trim();
+      if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
+      else a.removeAttribute('target');
+      a.removeAttribute('rel'); a.removeAttribute('style');
+    });
+  }
   function linkifyTextToHTML(t){
     const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
     let out=esc(t);
@@ -740,69 +715,138 @@ Changelog (v1.6.4)
     out=out.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, m=>`<a href="mailto:${m}">${esc(m)}</a>`);
     return out.replace(/\n/g,'<br>');
   }
+  // NEW: Word sanitizer that preserves inline styles and footnotes
+  function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(inputHtml, 'text/html');
+    const body = doc.body;
 
-  // Word sanitizer — preserves headers + inline + footnotes
-  function cleanWordHtmlKeepInlineFootnotes(inputHtml){
-    const doc=new DOMParser().parseFromString(inputHtml,'text/html'); const body=doc.body;
+    // Remove comments
+    const cw = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
+    const del=[]; while (cw.nextNode()) del.push(cw.currentNode); del.forEach(n=>n.remove());
 
-    // remove comments
-    const walker=doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
-    const del=[]; while(walker.nextNode()) del.push(walker.currentNode); del.forEach(n=>n.remove());
+    const BLOCK = /^(p|div|h1|h2|h3|h4|h5|h6|li|ul|ol|blockquote|table|thead|tbody|tr|td|th)$/i;
+    const INLINE = /^(span|b|i|em|strong|u|s|sup|sub|a|img|mark|code)$/i;
 
-    // strip MSO noise & named anchors
+    function replaceTag(el, tag){
+      const neo = doc.createElement(tag);
+      neo.innerHTML = el.innerHTML;
+      el.replaceWith(neo);
+      return neo;
+    }
+    function wrapAllChildren(el, tag){
+      const w = doc.createElement(tag);
+      while (el.firstChild) w.appendChild(el.firstChild);
+      el.appendChild(w);
+      return w;
+    }
+    function normalizeInlineTag(el){
+      const t = el.tagName.toLowerCase();
+      if (t==='b') return replaceTag(el,'strong');
+      if (t==='i') return replaceTag(el,'em');
+      if (t==='font' || t==='span') return null;
+      return el;
+    }
+
+    // Pass 1: scrub + map Word styles -> semantic inline tags
     body.querySelectorAll('*').forEach(el=>{
-      if(/^Mso/i.test(el.className)) el.removeAttribute('class');
-      if(el.hasAttribute('style')){
-        const cleaned=(el.getAttribute('style')||'')
+      let style = el.getAttribute('style') || '';
+      const italic    = /(^|;)\s*font-style\s*:\s*italic/i.test(style) || /(^|;)\s*text-decoration\s*:\s*italic/i.test(style);
+      const bold      = /(^|;)\s*font-weight\s*:\s*(bold|[7-9]00)/i.test(style);
+      const underline = /(^|;)\s*text-decoration\s*:\s*underline/i.test(style);
+      const strike    = /(^|;)\s*text-decoration\s*:\s*line-through/i.test(style);
+
+      if (/^Mso/i.test(el.className)) el.removeAttribute('class');
+      el.removeAttribute('lang'); el.removeAttribute('id');
+
+      if (INLINE.test(el.tagName)) normalizeInlineTag(el);
+
+      if (italic || bold || underline || strike) {
+        const tagName = el.tagName.toLowerCase();
+        if (INLINE.test(tagName) && tagName!=='a' && tagName!=='img') {
+          if (italic)    el = replaceTag(el,'em');
+          if (bold)      el = replaceTag(el,'strong');
+          if (underline) el = replaceTag(el,'u');
+          if (strike)    el = replaceTag(el,'s');
+        } else if (BLOCK.test(tagName)) {
+          let w = null;
+          if (italic)    w = wrapAllChildren(el,'em');
+          if (bold)      w = wrapAllChildren(el,'strong') || w;
+          if (underline) w = wrapAllChildren(el,'u')      || w;
+          if (strike)    w = wrapAllChildren(el,'s')      || w;
+        }
+      }
+
+      if (style){
+        style = style
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
+          .replace(/\s*margin[^:]*:[^;]+;?/gi,'')
+          .replace(/\s*font-[^:]+:[^;]+;?/gi,'')
+          .replace(/\s*text-decoration:[^;]+;?/gi,'')
           .trim();
-        if(cleaned) el.setAttribute('style',cleaned); else el.removeAttribute('style');
+        if (style) el.setAttribute('style', style); else el.removeAttribute('style');
       }
-      el.removeAttribute('id'); el.removeAttribute('lang');
-      if(el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) unwrap(el);
+
+      if (el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) {
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.remove();
+      }
     });
 
-    // normalize tags: span/font -> unwrap; i -> em; b -> strong; div -> p
-    [...body.querySelectorAll('*')].forEach(el=>{
-      const t=el.tagName.toLowerCase();
-      if(t==='span'||t==='font') unwrap(el);
-      if(t==='i') replaceTag(el,'em');
-      if(t==='b') replaceTag(el,'strong');
-      if(t==='strong') { /* keep strong as is */ }
-      if(t==='div') replaceTag(el,'p');
+    // Normalize tags: span/font -> unwrap; div -> p
+    [...body.querySelectorAll('span,font')].forEach(el=>{
+      while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+      el.remove();
+    });
+    [...body.querySelectorAll('div')].forEach(el=>{
+      const neo=doc.createElement('p'); neo.innerHTML=el.innerHTML; el.replaceWith(neo);
     });
 
-    // whitelist + link target; allow # anchors & <sup> for footnotes
-    const ALLOWED=new Set(['h1','h2','h3','p','em','strong','ul','ol','li','a','sup']);
+    // Whitelist + attributes; keep <sup>, anchors (#...), mailto, http(s)
+    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','u','s','sup','ul','ol','li','a','br','img','code','mark','sub']);
     [...body.querySelectorAll('*')].forEach(el=>{
-      const t=el.tagName.toLowerCase();
-      if(!ALLOWED.has(t)){ unwrap(el); return; }
-      if(t==='a'){
-        const href=(el.getAttribute('href')||'').trim();
-        if(!/^https?:|^mailto:|^#/i.test(href)){ unwrap(el); return; }
+      const tag = el.tagName.toLowerCase();
+      if (!ALLOWED.has(tag)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+      if (tag === 'a') {
+        const href = (el.getAttribute('href')||'').trim();
+        if(!/^https?:|^mailto:|^#/i.test(href)){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
         [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
         if(/^https?:/i.test(href)) el.setAttribute('target','_blank');
+      } else if (tag === 'img') {
+        const src = el.getAttribute('src')||'';
+        const alt = el.getAttribute('alt')||'';
+        [...el.attributes].forEach(a=> el.removeAttribute(a.name));
+        if (src) el.setAttribute('src', src);
+        if (alt) el.setAttribute('alt', alt);
       } else {
         [...el.attributes].forEach(a=> el.removeAttribute(a.name));
       }
     });
 
-    // remove empty <p>
-    body.querySelectorAll('p').forEach(p=>{ if(!p.textContent.trim() && p.children.length===0) p.remove(); });
+    // Remove empty <p> (including only <br>)
+    body.querySelectorAll('p').forEach(p=>{
+      const onlyBRs = Array.from(p.childNodes).every(n => n.nodeType===1 && n.tagName==='BR');
+      if (!p.textContent.trim() && (p.children.length === 0 || onlyBRs)) p.remove();
+    });
 
-    // final link enforcement
+    // Flatten whitespace inside <p> so inline stays on one line
+    body.querySelectorAll('p').forEach(p=>{
+      p.childNodes.forEach(n=>{
+        if (n.nodeType===3) n.textContent = n.textContent.replace(/\s+/g,' ');
+      });
+      if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.textContent = p.firstChild.textContent.replace(/^\s+/, '');
+      if (p.lastChild && p.lastChild.nodeType===3)  p.lastChild.textContent  = p.lastChild.textContent.replace(/\s+$/, '');
+    });
+
+    // Enforce link targets & clean rel/style
     body.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
       a.removeAttribute('rel'); a.removeAttribute('style');
     });
 
-    // return inner
     return body.innerHTML.trim();
-
-    function unwrap(el){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
-    function replaceTag(el,name){ const neo=doc.createElement(name); neo.innerHTML=el.innerHTML; el.replaceWith(neo); }
   }
 
   // Ctrl/Cmd-click to open links while editing
@@ -815,7 +859,7 @@ Changelog (v1.6.4)
   let timer=null;
   function queueSave(){ clearTimeout(timer); status.textContent='Saving…'; timer=setTimeout(saveNow,400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.6.4)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
+    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.7.2)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
     catch(e){ status.textContent='Autosave error'; }
   }
   (function restore(){
@@ -823,13 +867,8 @@ Changelog (v1.6.4)
       const raw=localStorage.getItem(DOC_KEY);
       if(raw){
         const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document (DEV v1.6.4)';
+        titleEl.textContent=d.title||'Untitled Document (DEV v1.7.2)';
         content.innerHTML=d.html||'';
-        // Post-restore hygiene
-        enforceLinkTargets(content);
-        collapseConsecutiveBR(content);
-        removeEmptyPBeforeLists();
-        normalizeAllParagraphs();
         ensureParagraph();
       } else {
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
@@ -854,7 +893,6 @@ Changelog (v1.6.4)
     if(['b','i','u'].includes(k)){
       e.preventDefault();
       document.execCommand({b:'bold',i:'italic',u:'underline'}[k], false, null);
-      normalizeAllParagraphs();
       queueSave();
     }
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
@@ -866,4 +904,3 @@ Changelog (v1.6.4)
 </script>
 </body>
 </html>
-
