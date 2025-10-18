@@ -2,22 +2,22 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.7.2.html
- Build: v1.7.2-dev
+ File: editor-dev-v1.8.html
+ Build: v1.8-dev
 =========================================================
-Changelog (v1.7.2)
-- Word Sanitizer upgraded to preserve inline styles from Word (italics/bold/underline)
-  even in footnotes and spans; maps styles -> <em>/<strong>/<u>/<s> and preserves <sup>, anchors (#...).
-- Inline normalizer for paragraphs removes extra spaces after </a> and keeps inline
-  elements on one line inside <p>; tightens punctuation spacing.
-- No UI removals; all prior features retained (links, mailto, image, lists, headings, etc.).
+Highlights (v1.8)
+- Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, headers, lists, footnote anchors.
+- Inline-in-<p> cleanup keeps content on one line; trims extra spaces after </a>, etc.
+- Normalizes <br></br> -> <br>; removes empty <p> before <ul>/<ol>.
+- Always start typing inside <p>; link targets enforced; notes wording updated.
+- Source icon = </>.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.7.2)</title>
+<title>WYSIWYG HTML Editor (DEV v1.8)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -104,7 +104,7 @@ Changelog (v1.7.2)
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document (DEV v1.7.2)</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document</h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -122,10 +122,8 @@ Changelog (v1.7.2)
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <!-- S with bar -->
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 12h16v2H4zM7 8a5 5 0 0 1 5-3c2.3 0 4.3 1.18 4.86 3H14.5c-.38-.64-1.44-1-2.5-1-1.66 0-3 .67-3 2 0 .7.48 1.2 1.23 1.5H7.7A3.2 3.2 0 0 1 7 8zm10 8a5 5 0 0 1-5 3c-2.3 0-4.3-1.18-4.86-3h2.36c.38.64 1.44 1 2.5 1 1.66 0 3-.67 3-2 0-.7-.48-1.2-1.23-1.5h2.53A3.2 3.2 0 0 1 17 16z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
           </button>
-          <!-- Superscript -->
           <button class="tool" id="supBtn" title="Superscript">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
@@ -168,7 +166,7 @@ Changelog (v1.7.2)
         </div>
 
         <div class="group">
-          <button class="tool" id="justifyLeft" data-cmd="justifyLeft" title="Align left">
+          <button class="tool" data-cmd="justifyLeft" title="Align left">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
           </button>
           <button class="tool" data-cmd="justifyCenter" title="Align center">
@@ -183,7 +181,6 @@ Changelog (v1.7.2)
         </div>
 
         <div class="group">
-          <!-- Link -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
@@ -195,7 +192,6 @@ Changelog (v1.7.2)
           <button class="tool" id="imageModalBtn" title="Insert image">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/></svg>
           </button>
-          <!-- Clear formatting -->
           <button class="tool" id="clearBtn" title="Clear formatting">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
@@ -204,7 +200,7 @@ Changelog (v1.7.2)
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
-          <!-- Source toggle icon = '< >' -->
+          <!-- Source toggle icon = </> -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
@@ -229,7 +225,7 @@ Changelog (v1.7.2)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.7.2</span>
+          <span class="chip">DEV v1.8</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -315,10 +311,10 @@ Changelog (v1.7.2)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.7.2)
-  const DOC_KEY='wysi_doc_dev_v172';
-  const NOTES_KEY='wysi_notes_dev_v172';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v172';
+  // Versioned storage (v1.8)
+  const DOC_KEY='wysi_doc_dev_v18';
+  const NOTES_KEY='wysi_notes_dev_v18';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v18';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -341,6 +337,7 @@ Changelog (v1.7.2)
 
   // Default paragraph separator = <p>
   try{ document.execCommand('defaultParagraphSeparator', false, 'p'); }catch{}
+
   /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){ const s=window.getSelection(); return s && s.rangeCount && content.contains(s.anchorNode); }
@@ -359,12 +356,9 @@ Changelog (v1.7.2)
     const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
   }
   function collapseConsecutiveBR(root){
-    const brs = Array.from(root.querySelectorAll('br'));
-    brs.forEach(br=>{
-      let prev=br.previousSibling;
-      while(prev && prev.nodeType===3 && !prev.textContent.trim()) prev=prev.previousSibling;
-      if(prev && prev.nodeType===1 && prev.tagName==='BR'){ br.remove(); }
-    });
+    root.querySelectorAll('br + br').forEach(br => br.remove());
+    // Normalize </br> to <br>
+    root.innerHTML = root.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
@@ -372,41 +366,33 @@ Changelog (v1.7.2)
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
   }
-
-  // NEW: Inline paragraph normalizer (keeps inline on one line; fixes spaces after </a>)
-  function normalizeParagraphInlineLayout(root){
-    root.querySelectorAll('p').forEach(p=>{
-      // Merge adjacent text nodes
-      let n = p.firstChild;
-      while (n) {
-        if (n.nodeType === 3) {
-          while (n.nextSibling && n.nextSibling.nodeType === 3) {
-            n.textContent += n.nextSibling.textContent;
-            p.removeChild(n.nextSibling);
-          }
-        }
-        n = n.nextSibling;
+  function removeEmptyPBeforeLists(root){
+    root.querySelectorAll('ul,ol').forEach(list=>{
+      let prev = list.previousSibling;
+      while (prev && prev.nodeType===3 && !prev.textContent.trim()) prev = prev.previousSibling;
+      if (prev && prev.nodeType===1 && prev.tagName.toLowerCase()==='p' && prev.textContent.replace(/\u200B/g,'').trim()==='' && prev.children.length===0) {
+        prev.remove();
       }
-
-      // Replace &nbsp; with spaces
-      p.innerHTML = p.innerHTML.replace(/&nbsp;/g, ' ');
-
-      // Collapse runs of whitespace in text nodes
-      p.childNodes.forEach(node=>{
-        if (node.nodeType === 3) node.textContent = node.textContent.replace(/\s+/g, ' ');
-      });
-
-      // Tighten punctuation spacing
-      p.innerHTML = p.innerHTML.replace(/\s+([,.;:!?])\s*/g, '$1 ');
-
-      // Exactly one space after inline close if followed by word/entity/tag (but none before punctuation)
-      p.innerHTML = p.innerHTML
-        .replace(/<\/(a|em|strong|u|s|sup|sub)>\s*(?=\w|&[\w#]+;|<)/gi, '</$1> ')
-        .replace(/<\/(a|em|strong|u|s|sup|sub)>\s+([,.;:!?])/gi, '</$1>$2');
-
-      // Trim leading/trailing spaces
-      if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.textContent = p.firstChild.textContent.replace(/^\s+/, '');
-      if (p.lastChild  && p.lastChild.nodeType===3)  p.lastChild.textContent  = p.lastChild.textContent.replace(/\s+$/, '');
+    });
+  }
+  function condenseParagraphInlines(root){
+    root.querySelectorAll('p').forEach(p=>{
+      // Work on a string level but keep tags; remove &nbsp; and newlines, collapse spaces.
+      let html = p.innerHTML;
+      html = html.replace(/&nbsp;/g, ' ');
+      html = html.replace(/\s*\n+\s*/g,' ');
+      // Trim spaces right inside inline tags
+      html = html.replace(/\s+<\/(em|strong|a|sup|sub)>/gi, '</$1>');
+      html = html.replace(/<(em|strong|a|sup|sub)>\s+/gi, '<$1>');
+      // Ensure single space between inline closing tag and following text/inline if needed
+      html = html.replace(/<\/(em|strong|a|sup|sub)>(?!\s|<)/gi, '</$1> ');
+      // Collapse multiple spaces
+      html = html.replace(/\s{2,}/g,' ');
+      // Remove space right before punctuation
+      html = html.replace(/\s+([,.;:!?])/g,'$1');
+      // Trim overall
+      html = html.trim();
+      p.innerHTML = html;
     });
   }
 
@@ -415,7 +401,6 @@ Changelog (v1.7.2)
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
-      // If italic/bold buttons used, leave resulting <i>/<b> but you can later pretty-print to <em>/<strong> via sanitizer on paste/import
       queueSave();
     });
   });
@@ -584,7 +569,6 @@ Changelog (v1.7.2)
     else { nr.selectNodeContents(node); nr.collapse(false); }
     sel.removeAllRanges(); sel.addRange(nr);
   }
-
   /* ===== Toggle Source / Design ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); toggleSourceView(); } });
@@ -592,7 +576,8 @@ Changelog (v1.7.2)
     if(source.style.display==='block'){
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
-      normalizeParagraphInlineLayout(content);   // NEW: tighten inline spacing when returning from Source
+      removeEmptyPBeforeLists(content);
+      condenseParagraphInlines(content);
       ensureParagraph();
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
@@ -601,8 +586,10 @@ Changelog (v1.7.2)
     }
   }
   function prettyHTML(html){
-    try{ const tmp=document.createElement('div'); tmp.innerHTML=html; return serialize(tmp,0).trim(); }
-    catch{ return html }
+    try{
+      const tmp=document.createElement('div'); tmp.innerHTML=html;
+      return serialize(tmp,0).trim();
+    } catch { return html }
   }
   const BLOCKS=new Set(['p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre','table','thead','tbody','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
   function serialize(node,level){
@@ -614,10 +601,21 @@ Changelog (v1.7.2)
       const attrs=[...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
       const open=`<${tag}${attrs}>`, close=`</${tag}>`;
       const hasBlock = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
-      if(BLOCKS.has(tag) || hasBlock){ out += `${indent}${open}\n${serialize(el,level+1)}${indent}${close}\n`; }
-      else{ out += `${indent}${open}${el.innerHTML}${close}\n`; }
+      if(BLOCKS.has(tag) || hasBlock){
+        out += `${indent}${open}\n${serialize(el,level+1)}${indent}${close}\n`;
+      } else {
+        // inline-on-one-line for <p> contents, etc.
+        out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
+      }
     });
     return out;
+  }
+  function getInlineHTML(el){
+    let s=''; el.childNodes.forEach(n=>{
+      if (n.nodeType===3) { s += n.textContent.replace(/\s+/g,' '); }
+      else if (n.nodeType===1) { s += n.outerHTML; }
+    });
+    return s.trim();
   }
 
   /* ===== Copy / Import / Export ===== */
@@ -640,7 +638,8 @@ Changelog (v1.7.2)
       content.innerHTML=(m?m[1]:txt).trim();
       enforceLinkTargets(content);
       collapseConsecutiveBR(content);
-      normalizeParagraphInlineLayout(content);   // NEW
+      removeEmptyPBeforeLists(content);
+      condenseParagraphInlines(content);
       ensureParagraph();
       queueSave();
     };
@@ -662,14 +661,15 @@ Changelog (v1.7.2)
     if (source.style.display === 'block') {
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
-      normalizeParagraphInlineLayout(content);   // NEW
+      removeEmptyPBeforeLists(content);
+      condenseParagraphInlines(content);
       content.style.display = 'block';
       source.style.display = 'none';
     }
 
-    titleEl.textContent = 'Untitled Document (DEV v1.7.2)';
-    content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
-    const p=content.querySelector('p, h1, h2, h3'); if (p) placeCaretInside(p);
+    titleEl.textContent = 'Untitled Document';
+    content.innerHTML = '<p>\u200B</p>';
+    const p=content.querySelector('p'); if (p) placeCaretInside(p);
     savedRange = null;
 
     saveNow();
@@ -686,20 +686,24 @@ Changelog (v1.7.2)
     const html=e.clipboardData?.getData('text/html')||'';
     const text=e.clipboardData?.getData('text/plain')||'';
     e.preventDefault();
+
     if(pasteMode==='word' && html){
-      const cleaned=cleanWordHtmlPreserveLinksAndInlines(html);  // NEW sanitizer
+      const cleaned=cleanWordHtmlPreserveLinksAndInlines(html);
       document.execCommand('insertHTML', false, cleaned);
-      normalizeParagraphInlineLayout(content);   // NEW inline normalizer after paste
     } else {
       const linked=linkifyTextToHTML(text);
       document.execCommand('insertHTML', false, linked);
-      normalizeParagraphInlineLayout(content);   // NEW inline normalizer
     }
+
     enforceLinkTargets(content);
     collapseConsecutiveBR(content);
+    removeEmptyPBeforeLists(content);
+    condenseParagraphInlines(content);
+    ensureParagraph();
     queueSave();
   });
 
+  // Enforce link targets (http/https => _blank; mailto => no target)
   function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
@@ -708,6 +712,7 @@ Changelog (v1.7.2)
       a.removeAttribute('rel'); a.removeAttribute('style');
     });
   }
+  // Plain-text linkify
   function linkifyTextToHTML(t){
     const esc=s=>s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
     let out=esc(t);
@@ -715,138 +720,85 @@ Changelog (v1.7.2)
     out=out.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, m=>`<a href="mailto:${m}">${esc(m)}</a>`);
     return out.replace(/\n/g,'<br>');
   }
-  // NEW: Word sanitizer that preserves inline styles and footnotes
+
+  // ===== Word sanitizer: preserve links, inline <em>/<strong>, <sup>/<sub>, headers, lists, footnote anchors
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
     const body = doc.body;
 
     // Remove comments
-    const cw = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
-    const del=[]; while (cw.nextNode()) del.push(cw.currentNode); del.forEach(n=>n.remove());
+    const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
+    const rm=[]; while(walker.nextNode()) rm.push(walker.currentNode);
+    rm.forEach(n=>n.remove());
 
-    const BLOCK = /^(p|div|h1|h2|h3|h4|h5|h6|li|ul|ol|blockquote|table|thead|tbody|tr|td|th)$/i;
-    const INLINE = /^(span|b|i|em|strong|u|s|sup|sub|a|img|mark|code)$/i;
-
-    function replaceTag(el, tag){
-      const neo = doc.createElement(tag);
-      neo.innerHTML = el.innerHTML;
-      el.replaceWith(neo);
-      return neo;
-    }
-    function wrapAllChildren(el, tag){
-      const w = doc.createElement(tag);
-      while (el.firstChild) w.appendChild(el.firstChild);
-      el.appendChild(w);
-      return w;
-    }
-    function normalizeInlineTag(el){
-      const t = el.tagName.toLowerCase();
-      if (t==='b') return replaceTag(el,'strong');
-      if (t==='i') return replaceTag(el,'em');
-      if (t==='font' || t==='span') return null;
-      return el;
-    }
-
-    // Pass 1: scrub + map Word styles -> semantic inline tags
+    // Strip MSO/inline junk + convert tags
     body.querySelectorAll('*').forEach(el=>{
-      let style = el.getAttribute('style') || '';
-      const italic    = /(^|;)\s*font-style\s*:\s*italic/i.test(style) || /(^|;)\s*text-decoration\s*:\s*italic/i.test(style);
-      const bold      = /(^|;)\s*font-weight\s*:\s*(bold|[7-9]00)/i.test(style);
-      const underline = /(^|;)\s*text-decoration\s*:\s*underline/i.test(style);
-      const strike    = /(^|;)\s*text-decoration\s*:\s*line-through/i.test(style);
-
-      if (/^Mso/i.test(el.className)) el.removeAttribute('class');
-      el.removeAttribute('lang'); el.removeAttribute('id');
-
-      if (INLINE.test(el.tagName)) normalizeInlineTag(el);
-
-      if (italic || bold || underline || strike) {
-        const tagName = el.tagName.toLowerCase();
-        if (INLINE.test(tagName) && tagName!=='a' && tagName!=='img') {
-          if (italic)    el = replaceTag(el,'em');
-          if (bold)      el = replaceTag(el,'strong');
-          if (underline) el = replaceTag(el,'u');
-          if (strike)    el = replaceTag(el,'s');
-        } else if (BLOCK.test(tagName)) {
-          let w = null;
-          if (italic)    w = wrapAllChildren(el,'em');
-          if (bold)      w = wrapAllChildren(el,'strong') || w;
-          if (underline) w = wrapAllChildren(el,'u')      || w;
-          if (strike)    w = wrapAllChildren(el,'s')      || w;
-        }
-      }
-
-      if (style){
-        style = style
+      // drop MS Office classes and junk styles
+      if(/^Mso/i.test(el.className)) el.removeAttribute('class');
+      if(el.hasAttribute('style')){
+        const cleaned = el.getAttribute('style')
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
-          .replace(/\s*margin[^:]*:[^;]+;?/gi,'')
-          .replace(/\s*font-[^:]+:[^;]+;?/gi,'')
-          .replace(/\s*text-decoration:[^;]+;?/gi,'')
           .trim();
-        if (style) el.setAttribute('style', style); else el.removeAttribute('style');
+        if (cleaned) el.setAttribute('style', cleaned); else el.removeAttribute('style');
       }
+      el.removeAttribute('id'); // named anchors via id are noisy, keep href-based anchors
+      el.removeAttribute('lang');
 
-      if (el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) {
-        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
-        el.remove();
+      // convert presentational to semantic
+      const t = (el.tagName||'').toLowerCase();
+      if (t==='b') { replaceTag(el,'strong'); }
+      if (t==='i') { replaceTag(el,'em'); }
+      if (t==='font' || t==='span') {
+        // unwrap spans/fonts unless they carry href (they shouldn't)
+        if (!el.attributes.length) unwrap(el);
+        else {
+          // if only dir or data-* etc—unwrap
+          const attrs=[...el.attributes].map(a=>a.name.toLowerCase());
+          if (attrs.every(a=>/^data-|^dir$/.test(a))) unwrap(el);
+        }
       }
+      if (t==='div') { replaceTag(el,'p'); }
+      // keep <sup>/<sub> as-is for footnotes
     });
 
-    // Normalize tags: span/font -> unwrap; div -> p
-    [...body.querySelectorAll('span,font')].forEach(el=>{
-      while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
-      el.remove();
-    });
-    [...body.querySelectorAll('div')].forEach(el=>{
-      const neo=doc.createElement('p'); neo.innerHTML=el.innerHTML; el.replaceWith(neo);
-    });
-
-    // Whitelist + attributes; keep <sup>, anchors (#...), mailto, http(s)
-    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','u','s','sup','ul','ol','li','a','br','img','code','mark','sub']);
+    // Whitelist
+    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup','sub','br']);
     [...body.querySelectorAll('*')].forEach(el=>{
-      const tag = el.tagName.toLowerCase();
-      if (!ALLOWED.has(tag)) { while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
-      if (tag === 'a') {
-        const href = (el.getAttribute('href')||'').trim();
-        if(!/^https?:|^mailto:|^#/i.test(href)){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); return; }
+      const t=el.tagName.toLowerCase();
+      if(!ALLOWED.has(t)){ unwrap(el); return; }
+      if(t==='a'){
+        const href=(el.getAttribute('href')||'').trim();
+        // Keep internal anchors (#...), http(s), mailto:
+        if(!/^#|^https?:|^mailto:/i.test(href)){ unwrap(el); return; }
+        // strip all but href
         [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
-        if(/^https?:/i.test(href)) el.setAttribute('target','_blank');
-      } else if (tag === 'img') {
-        const src = el.getAttribute('src')||'';
-        const alt = el.getAttribute('alt')||'';
-        [...el.attributes].forEach(a=> el.removeAttribute(a.name));
-        if (src) el.setAttribute('src', src);
-        if (alt) el.setAttribute('alt', alt);
       } else {
+        // strip attributes from other tags
         [...el.attributes].forEach(a=> el.removeAttribute(a.name));
       }
     });
 
-    // Remove empty <p> (including only <br>)
+    // Remove empty <p>
     body.querySelectorAll('p').forEach(p=>{
-      const onlyBRs = Array.from(p.childNodes).every(n => n.nodeType===1 && n.tagName==='BR');
-      if (!p.textContent.trim() && (p.children.length === 0 || onlyBRs)) p.remove();
+      if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
     });
 
-    // Flatten whitespace inside <p> so inline stays on one line
-    body.querySelectorAll('p').forEach(p=>{
-      p.childNodes.forEach(n=>{
-        if (n.nodeType===3) n.textContent = n.textContent.replace(/\s+/g,' ');
-      });
-      if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.textContent = p.firstChild.textContent.replace(/^\s+/, '');
-      if (p.lastChild && p.lastChild.nodeType===3)  p.lastChild.textContent  = p.lastChild.textContent.replace(/\s+$/, '');
-    });
+    // Normalize <br></br> -> <br>
+    body.innerHTML = body.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
 
-    // Enforce link targets & clean rel/style
+    // Enforce link targets
     body.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank'); else a.removeAttribute('target');
-      a.removeAttribute('rel'); a.removeAttribute('style');
     });
 
+    // Return inner HTML
     return body.innerHTML.trim();
+
+    function unwrap(el){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
+    function replaceTag(el,name){ const neo=doc.createElement(name); while(el.firstChild) neo.appendChild(el.firstChild); el.replaceWith(neo); }
   }
 
   // Ctrl/Cmd-click to open links while editing
@@ -859,7 +811,7 @@ Changelog (v1.7.2)
   let timer=null;
   function queueSave(){ clearTimeout(timer); status.textContent='Saving…'; timer=setTimeout(saveNow,400); }
   function saveNow(){
-    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document (DEV v1.7.2)', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
+    try{ localStorage.setItem(DOC_KEY, JSON.stringify({title:titleEl.textContent||'Untitled Document', html:content.innerHTML, ts:Date.now()})); status.textContent='Saved'; }
     catch(e){ status.textContent='Autosave error'; }
   }
   (function restore(){
@@ -867,10 +819,14 @@ Changelog (v1.7.2)
       const raw=localStorage.getItem(DOC_KEY);
       if(raw){
         const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document (DEV v1.7.2)';
+        titleEl.textContent=d.title||'Untitled Document';
         content.innerHTML=d.html||'';
+        collapseConsecutiveBR(content);
+        removeEmptyPBeforeLists(content);
+        condenseParagraphInlines(content);
         ensureParagraph();
       } else {
+        // Welcome remains intact
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
       }
     }catch{
