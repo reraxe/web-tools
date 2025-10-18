@@ -2,23 +2,22 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - Developer Branch
- File: editor-dev-v1.6.1.html
- Build: v1.6.1-dev
+ File: editor-dev-v1.6.3.html
+ Build: v1.6.3-dev
 =========================================================
-Changelog (v1.6.1)
-- Source View formatting: keep inline elements (<em>, <strong>, <a>, etc.) on the same line.
-  Only true block elements (<p>, <ul>, <ol>, headings, etc.) are line-separated.
-- Lightweight semantic normalization: <b> -> <strong>, <i> -> <em> on input/paste.
-- No behavioral or UI changes otherwise. 
-
-(Dev lineage based on STB v1.4.1 visuals & behaviors)
+Highlights (v1.6.3)
+- Single-line <p> normalization (no random wraps inside <p>), keeps inline <em>/<strong>/<a>/<sup>.
+- Word Sanitizer preserves footnotes (#_ftn*/#_ftnref*), converts <b>/<i> to <strong>/<em>.
+- Cleans <br></br> to <br>, removes empty <p> directly before <ul>/<ol>.
+- External links => target="_blank"; mailto/# anchors => no target.
+- Notes panel text updated.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v1.6.1)</title>
+<title>WYSIWYG HTML Editor (DEV v1.6.3)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -88,8 +87,6 @@ Changelog (v1.6.1)
   .notes h2{font-size:16px;margin:0;opacity:.9}
   .notes textarea{flex:1;resize:vertical;min-height:200px;border:1px dashed var(--border);background:color-mix(in srgb, var(--bg) 95%, #fff);color:inherit;border-radius:8px;padding:10px;font-family:Inter,system-ui,Arial}
   [data-theme="dark"] .notes textarea{background:#0b0f1d;color:#cfe3ff}
-  .notes .row{display:flex;gap:8px;align-items:center}
-  .notes .row .btn-flat{height:30px;padding:0 8px}
 
   /* Modals */
   .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
@@ -116,7 +113,7 @@ Changelog (v1.6.1)
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
           <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.79 4.79 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
           </button>
           <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
@@ -125,7 +122,7 @@ Changelog (v1.6.1)
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 7c0-2 2.5-3 6-3s6 1 6 3c0 1.1-.7 1.9-2 2.4l-2.3-.5c.9-.2 1.3-.6 1.3-1.1 0-.9-1.6-1.5-3-1.5S9 6 9 7c0 .6.5 1 1.5 1.3H6.9C6.3 7.9 6 7.5 6 7zM3 12h18v2H3zm7.2 3.5-2.2-.5c-1 .4-1.5.9-1.5 1.5 0 1.1 2.1 2 5.5 2s5.5-.9 5.5-2c0-.7-.7-1.2-2-1.5l-2.3.5c1 .2 1.3.6 1.3 1 0 .9-1.7 1.5-3.5 1.5S9 17.9 9 17c0-.4.4-.8 1.2-1.5z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 8c0-2.2 2.1-4 6-4 2.5 0 4.7.7 6 1.8l-1.2 1.6C15.7 6.5 14.1 6 12 6c-2.7 0-4 .9-4 2h12v2H4V8h2zm12 4v2c0 2.2-2.1 4-6 4-2.5 0-4.7-.7-6-1.8l1.2-1.6c1.1.9 2.7 1.4 4.8 1.4 2.7 0 4-.9 4-2H6v-2h12z"/></svg>
           </button>
           <button class="tool" id="supBtn" title="Superscript">
             <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -169,7 +166,7 @@ Changelog (v1.6.1)
         </div>
 
         <div class="group">
-          <button class="tool" id="justifyLeft" data-cmd="justifyLeft" title="Align left">
+          <button class="tool" data-cmd="justifyLeft" title="Align left">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
           </button>
           <button class="tool" data-cmd="justifyCenter" title="Align center">
@@ -203,10 +200,10 @@ Changelog (v1.6.1)
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
-          <!-- Source toggle icon = '< >' -->
+          <!-- Source toggle icon = '</>' (industry style) -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
+              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12l4.5-4.5L18.5 6l-6 6 6 6 1.5-1.5z"/>
             </svg>
           </button>
           <button class="tool" data-cmd="undo" title="Undo">
@@ -228,7 +225,7 @@ Changelog (v1.6.1)
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v1.6.1</span>
+          <span class="chip">DEV v1.6.3</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -257,10 +254,7 @@ Changelog (v1.6.1)
 
     <!-- Notes (not exported) -->
     <aside class="notes">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <h2 style="margin:0">Your notes (not part of HTML)</h2>
-        <button class="btn-flat" id="clearNotesBtn" title="Clear notes">Clear notes</button>
-      </div>
+      <h2>Your notes (not part of HTML)</h2>
       <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
     </aside>
   </div>
@@ -308,7 +302,6 @@ Changelog (v1.6.1)
     <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
   </div>
 </div>
-
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -318,10 +311,10 @@ Changelog (v1.6.1)
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v1.6.1)
-  const DOC_KEY='wysi_doc_dev_v161';
-  const NOTES_KEY='wysi_notes_dev_v161';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v161';
+  // Versioned storage (v1.6.3)
+  const DOC_KEY='wysi_doc_dev_v163';
+  const NOTES_KEY='wysi_notes_dev_v163';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v163';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -357,10 +350,27 @@ Changelog (v1.6.1)
   }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
 
-  /* ===== Helpers ===== */
-  function placeCaretInside(el, atEnd=true){
-    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
-    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  /* ===== Normalizers / Cleanup ===== */
+  function normalizeInlineTags(root){
+    // Convert <b> -> <strong>, <i> -> <em>
+    root.querySelectorAll('b').forEach(b=>{ const s=document.createElement('strong'); s.innerHTML=b.innerHTML; b.replaceWith(s); });
+    root.querySelectorAll('i').forEach(i=>{ const e=document.createElement('em'); e.innerHTML=i.innerHTML; i.replaceWith(e); });
+  }
+  function flattenParagraphInline(p){
+    // Remove <br> inside <p>
+    p.querySelectorAll('br').forEach(br=> br.remove());
+    // Collapse whitespace in text nodes
+    const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
+    const texts = [];
+    while (walker.nextNode()) texts.push(walker.currentNode);
+    texts.forEach(n=>{
+      n.nodeValue = n.nodeValue.replace(/\u00A0/g,' ').replace(/\s+/g,' ');
+    });
+    // Trim edges
+    if (p.firstChild && p.firstChild.nodeType===3) p.firstChild.nodeValue = p.firstChild.nodeValue.replace(/^\s+/, '');
+    if (p.lastChild && p.lastChild.nodeType===3)  p.lastChild.nodeValue  = p.lastChild.nodeValue.replace(/\s+$/, '');
+    // Remove empty text nodes
+    Array.from(p.childNodes).forEach(n=>{ if(n.nodeType===3 && !n.nodeValue.trim()) n.remove(); });
   }
   function collapseConsecutiveBR(root){
     const brs = Array.from(root.querySelectorAll('br'));
@@ -370,28 +380,66 @@ Changelog (v1.6.1)
       if(prev && prev.nodeType===1 && prev.tagName==='BR'){ br.remove(); }
     });
   }
+  function removeEmptyPBeforeLists(root){
+    const nodes = Array.from(root.querySelectorAll('p'));
+    nodes.forEach(p=>{
+      const isEmpty = !p.textContent.trim() && p.children.length===0;
+      if (!isEmpty) return;
+      const nxt = p.nextElementSibling;
+      if (nxt && (nxt.tagName==='UL' || nxt.tagName==='OL')) p.remove();
+    });
+  }
   function ensureParagraph(){
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
   }
-  function normalizeBI(root){
-    // Convert <b> to <strong>, <i> to <em> (lightweight, non-destructive)
-    root.querySelectorAll('b').forEach(b=>{
-      const st = document.createElement('strong'); st.innerHTML = b.innerHTML; b.replaceWith(st);
-    });
-    root.querySelectorAll('i').forEach(i=>{
-      const em = document.createElement('em'); em.innerHTML = i.innerHTML; i.replaceWith(em);
-    });
+  function normalizeBRMarkup(html){
+    // turn <br></br> into <br>
+    return html.replace(/<br\s*\/?>\s*<\/br>/gi, '<br>');
   }
+  function normalizeEditorDOM(root){
+    normalizeInlineTags(root);
+    enforceLinkTargets(root);
+    removeEmptyPBeforeLists(root);
+    collapseConsecutiveBR(root);
+    // Make every paragraph single-line but preserve inline tags
+    root.querySelectorAll('p').forEach(flattenParagraphInline);
+    ensureParagraph();
+  }
+
+  /* ===== Helpers ===== */
+  function placeCaretInside(el, atEnd=true){
+    const r=document.createRange(); r.selectNodeContents(el); r.collapse(atEnd);
+    const s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }
+  function insertNodeAtSelection(node){
+    const sel=window.getSelection();
+    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
+    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
+    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
+  }
+  function selectInserted(chars){
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
+    const r=sel.getRangeAt(0); const node=r.startContainer;
+    const nr=document.createRange();
+    if(node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
+    else { nr.selectNodeContents(node); nr.collapse(false); }
+    sel.removeAllRanges(); sel.addRange(nr);
+  }
+  function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
 
   /* ===== Toolbar execCommand bindings ===== */
   document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
-      normalizeBI(content);
+      // After formatting, normalize inline tag names
+      normalizeInlineTags(content);
+      // Keep paragraphs tidy
+      normalizeEditorDOM(content);
       queueSave();
     });
   });
@@ -413,12 +461,15 @@ Changelog (v1.6.1)
       } else {
         el.appendChild(r.extractContents()); r.insertNode(el); placeCaretInside(el,true);
       }
+      normalizeEditorDOM(content);
       queueSave(); return;
     }
     if(block.tagName.toLowerCase()===tag){ placeCaretInside(block,true); return; }
     const neo=document.createElement(tag);
     while(block.firstChild) neo.appendChild(block.firstChild);
-    block.replaceWith(neo); placeCaretInside(neo,true); queueSave();
+    block.replaceWith(neo); placeCaretInside(neo,true);
+    normalizeEditorDOM(content);
+    queueSave();
   }
   function currentBlock(){
     const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
@@ -487,7 +538,7 @@ Changelog (v1.6.1)
         a.removeAttribute('rel'); a.removeAttribute('style');
       }
     }
-    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); queueSave();
+    currentLink=null; closeModal('linkModal'); enforceLinkTargets(content); normalizeEditorDOM(content); queueSave();
   });
 
   /* ===== Mailto modal ===== */
@@ -512,7 +563,7 @@ Changelog (v1.6.1)
     if(!sel.rangeCount || sel.toString().length===0){ document.execCommand('insertText',false,txt); selectInserted(txt.length); }
     document.execCommand('createLink',false,href);
     const a=findClosest('A'); if(a){ a.removeAttribute('target'); a.removeAttribute('rel'); a.removeAttribute('style'); }
-    currentMailto=null; closeModal('mailtoModal'); queueSave();
+    currentMailto=null; closeModal('mailtoModal'); normalizeEditorDOM(content); queueSave();
   });
   function parseMailto(href){
     let to='',subject='',body=''; if(!href?.toLowerCase().startsWith('mailto:')) return {to,subject,body};
@@ -544,78 +595,41 @@ Changelog (v1.6.1)
     const img=document.createElement('img'); img.src=src; img.alt=alt||''; img.style.maxWidth='100%'; img.loading='lazy'; img.decoding='async';
     if(w && !isNaN(+w)) img.style.width=`${parseInt(w,10)}px`;
     insertNodeAtSelection(img);
+    normalizeEditorDOM(content);
     queueSave(); closeModal('imageModal');
   });
-  function insertNodeAtSelection(node){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount){ content.appendChild(node); return; }
-    const r=sel.getRangeAt(0); r.deleteContents(); r.insertNode(node);
-    r.setStartAfter(node); r.setEndAfter(node); sel.removeAllRanges(); sel.addRange(r);
-  }
-  function selectInserted(chars){
-    const sel=window.getSelection(); if(!sel.rangeCount) return;
-    const r=sel.getRangeAt(0); const node=r.startContainer;
-    const nr=document.createRange();
-    if(node.nodeType===3){ nr.setStart(node, Math.max(0,node.length-chars)); nr.setEnd(node,node.length); }
-    else { nr.selectNodeContents(node); nr.collapse(false); }
-    sel.removeAllRanges(); sel.addRange(nr);
-  }
 
   /* ===== Toggle Source / Design ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); toggleSourceView(); } });
   function toggleSourceView(){
     if(source.style.display==='block'){
-      content.innerHTML = source.value.trim();
-      collapseConsecutiveBR(content);
-      ensureParagraph();
-      normalizeBI(content);
+      let html = source.value.trim();
+      html = normalizeBRMarkup(html);
+      content.innerHTML = html;
+      normalizeEditorDOM(content);
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
       source.value = prettyHTML(content.innerHTML);
       content.style.display='none'; source.style.display='block'; source.focus();
     }
   }
-
-  // Pretty-printer: keep inlines on the same line; only block elements on new lines.
   function prettyHTML(html){
-    try{
-      const tmp=document.createElement('div');
-      tmp.innerHTML=html;
-      return serialize(tmp, 0).trim();
-    }catch{ return html }
+    try{ const tmp=document.createElement('div'); tmp.innerHTML=html; return serialize(tmp,0).trim(); }
+    catch{ return html }
   }
-  const BLOCKS = new Set([
-    'p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre',
-    'table','thead','tbody','tfoot','tr','td','th','hr','div','section','article',
-    'nav','header','footer','aside','figure','figcaption'
-  ]);
-  const INLINE = new Set([
-    'a','em','strong','span','b','i','u','s','sup','sub','img','code','mark','small','br'
-  ]);
-  function serialize(node, level){
-    let out = '';
-    const indent = '  '.repeat(level);
+  const BLOCKS=new Set(['p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre','table','thead','tbody','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
+  function serialize(node,level){
+    let out=''; const indent='  '.repeat(level);
     node.childNodes.forEach(ch=>{
-      if(ch.nodeType === 3){
-        const t = ch.textContent.replace(/\s+/g,' ');
-        if(t.trim()) out += t;
-        return;
-      }
-      if(ch.nodeType !== 1) return;
-
-      const el = ch;
-      const tag = el.tagName.toLowerCase();
-      const attrs = [...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
-      const open = `<${tag}${attrs}>`;
-      const close = `</${tag}>`;
-      const isBlock = BLOCKS.has(tag);
-
-      if(isBlock){
-        out += `${indent}${open}\n${serialize(el, level+1)}${indent}${close}\n`;
-      } else {
-        out += open + serialize(el, level) + close;
-      }
+      if(ch.nodeType===3){ const t=ch.textContent.replace(/\s+/g,' ').trim(); if(t) out+=indent+t+'\n'; return; }
+      if(ch.nodeType!==1) return;
+      const el=ch; const tag=el.tagName.toLowerCase();
+      const attrs=[...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
+      const open=`<${tag}${attrs}>`, close=`</${tag}>`;
+      const hasBlock = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
+      if(BLOCKS.has(tag) || hasBlock){ out += `${indent}${open}\n${serialize(el,level+1)}${indent}${close}\n`; }
+      else{ out += `${indent}${open}${el.innerHTML}${close}\n`; }
     });
     return out;
   }
@@ -638,10 +652,7 @@ Changelog (v1.6.1)
       const txt=await f.text();
       const m=txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
       content.innerHTML=(m?m[1]:txt).trim();
-      enforceLinkTargets(content);
-      collapseConsecutiveBR(content);
-      ensureParagraph();
-      normalizeBI(content);
+      normalizeEditorDOM(content);
       queueSave();
     };
     i.click();
@@ -655,28 +666,6 @@ Changelog (v1.6.1)
     a.click();
   });
 
-  // --- New document ---
-  $('resetBtn').addEventListener('click', ()=>{
-    if (!confirm('Start a new document?')) return;
-
-    if (source.style.display === 'block') {
-      content.innerHTML = source.value.trim();
-      collapseConsecutiveBR(content);
-      content.style.display = 'block';
-      source.style.display = 'none';
-    }
-
-    titleEl.textContent = 'Untitled Document';
-    content.innerHTML = '<p>\u200B</p>';
-    const p=content.querySelector('p'); if (p) placeCaretInside(p);
-    savedRange = null;
-
-    saveNow();
-    status.textContent = 'Saved';
-  });
-
-  function escapeHtml(s){ return s.replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
-
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
   let pasteMode='plain';
   const pasteModeEl=$('pasteMode'); pasteModeEl?.addEventListener('change', e=> pasteMode=e.target.value);
@@ -686,15 +675,13 @@ Changelog (v1.6.1)
     const text=e.clipboardData?.getData('text/plain')||'';
     e.preventDefault();
     if(pasteMode==='word' && html){
-      const cleaned=cleanWordHtmlStrictKeepLinksAndHeaders(html);
+      const cleaned=cleanWordHtmlKeepFootnotesInline(html);
       document.execCommand('insertHTML', false, cleaned);
     } else {
       const linked=linkifyTextToHTML(text);
       document.execCommand('insertHTML', false, linked);
     }
-    enforceLinkTargets(content);
-    collapseConsecutiveBR(content);
-    normalizeBI(content);
+    normalizeEditorDOM(content);
     queueSave();
   });
 
@@ -713,16 +700,20 @@ Changelog (v1.6.1)
     out=out.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, m=>`<a href="mailto:${m}">${esc(m)}</a>`);
     return out.replace(/\n/g,'<br>');
   }
-  function cleanWordHtmlStrictKeepLinksAndHeaders(inputHtml){
+
+  // Word sanitizer (keeps: h1-3, p, strong, em, ul/ol/li, a, sup; converts div->p; preserves footnotes)
+  function cleanWordHtmlKeepFootnotesInline(inputHtml){
     const doc=new DOMParser().parseFromString(inputHtml,'text/html'); const body=doc.body;
+
     // remove comments
     const walker=doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
     const del=[]; while(walker.nextNode()) del.push(walker.currentNode); del.forEach(n=>n.remove());
+
     // strip MSO noise & named anchors
     body.querySelectorAll('*').forEach(el=>{
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
       if(el.hasAttribute('style')){
-        const cleaned=el.getAttribute('style')
+        const cleaned=(el.getAttribute('style')||'')
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
           .trim();
@@ -731,31 +722,38 @@ Changelog (v1.6.1)
       el.removeAttribute('id'); el.removeAttribute('lang');
       if(el.tagName==='A' && el.hasAttribute('name') && !el.hasAttribute('href')) unwrap(el);
     });
-    // normalize tags
+
+    // normalize tags: span/font -> unwrap; b->strong; i->em; div->p
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(t==='span'||t==='font') unwrap(el);
-      if(t==='strong'){ replaceTag(el,'strong'); }
-      if(t==='i'){ replaceTag(el,'em'); }
       if(t==='b'){ replaceTag(el,'strong'); }
+      if(t==='i'){ replaceTag(el,'em'); }
       if(t==='div'){ replaceTag(el,'p'); }
     });
+
     // whitelist + link target
-    const ALLOWED=new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a']);
+    const ALLOWED=new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){ unwrap(el); return; }
       if(t==='a'){
         const href=(el.getAttribute('href')||'').trim();
-        if(!/^https?:|^mailto:/i.test(href)){ unwrap(el); return; }
+        if(!/^https?:|^mailto:|^#/i.test(href)){ unwrap(el); return; }
         [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
-        if(/^https?:/i.test(href)) el.setAttribute('target','_blank');
+        if(/^https?:/i.test(href)) el.setAttribute('target','_blank'); // external only
       } else {
         [...el.attributes].forEach(a=> el.removeAttribute(a.name));
       }
     });
+
+    // drop empty p
     body.querySelectorAll('p').forEach(p=>{ if(!p.textContent.trim() && p.children.length===0) p.remove(); });
-    enforceLinkTargets(body);
+
+    // Final normalize in sanitizer scope
+    normalizeInlineTags(body);
+    body.querySelectorAll('p').forEach(flattenParagraphInline);
+
     return body.innerHTML.trim();
 
     function unwrap(el){ while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el); el.remove(); }
@@ -782,27 +780,22 @@ Changelog (v1.6.1)
         const d=JSON.parse(raw);
         titleEl.textContent=d.title||'Untitled Document';
         content.innerHTML=d.html||'';
-        ensureParagraph();
-        normalizeBI(content);
+        normalizeEditorDOM(content);
       } else {
-        // One-line welcome content inside a single <p>
+        // Welcome (single-line <p>)
         content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
+        normalizeEditorDOM(content);
       }
     }catch{
       content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
+      normalizeEditorDOM(content);
     }
   })();
-  content.addEventListener('input', ()=>{ ensureParagraph(); normalizeBI(content); queueSave(); });
-  titleEl.addEventListener('input', queueSave);
+  content.addEventListener('input', ()=>{ queueSave(); });
 
-  // Notes autosave + clear
+  // Notes autosave
   const notes=$('notesArea'); try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
   notes.addEventListener('input', ()=>{ try{ localStorage.setItem(NOTES_KEY, notes.value); }catch{} });
-  $('clearNotesBtn').addEventListener('click', ()=>{
-    if(!confirm('Clear all notes?')) return;
-    notes.value = '';
-    try{ localStorage.setItem(NOTES_KEY, ''); }catch{}
-  });
 
   // Shortcuts
   document.addEventListener('keydown', e=>{
@@ -813,14 +806,13 @@ Changelog (v1.6.1)
     if(['b','i','u'].includes(k)){
       e.preventDefault();
       document.execCommand({b:'bold',i:'italic',u:'underline'}[k], false, null);
-      normalizeBI(content);
+      normalizeInlineTags(content);
+      normalizeEditorDOM(content);
       queueSave();
     }
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
     if(k==='s'){ e.preventDefault(); $('exportBtn').click(); }
   });
-
-  function flash(msg){ status.textContent=msg; setTimeout(()=>status.textContent='Saved',1200); }
 })();
 </script>
 </body>
