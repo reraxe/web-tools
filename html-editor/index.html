@@ -1,23 +1,28 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.1.1.html
- Build: v2.1.1-dev
+ WYSIWYG HTML Editor - Stable Branch
+ File: editor-stb-v2.1.1.html
+ Build: v2.1.1-stable
 =========================================================
-Changes in v2.1.1 (vs STB v2.0)
-- Toolbar Bold/Italic now normalize to <strong>/<em> (not <b>/<i>).
-- Selection behavior patched so Bold/Italic behave like Underline:
-  selection remains active (no jump to start of word).
-- Welcome behaves like a placeholder (disappears when user types,
-  reappears if doc is fully cleared). No other UI changes.
+Highlights (v2.1.1)
+- Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>,
+  headers, lists, and footnote anchors.
+- Inline-in-<p> cleanup keeps content on one logical line;
+  trims extra spaces after </a>, etc.
+- Normalizes <br></br> -> <br>; removes empty <p> before lists.
+- Always start typing inside <p>; link targets enforced.
+- Notes panel: "Your notes (not part of HTML)" with
+  "Keep temporary notes or code here…".
+- Source icon = </>.
+- Source view shows beautified HTML; Copy/Export use raw innerHTML.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v2.1.1)</title>
+<title>WYSIWYG HTML Editor (v2.1.1)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -64,11 +69,7 @@ Changes in v2.1.1 (vs STB v2.0)
   }
 
   .content{min-height:380px;padding:18px 20px;outline:none;line-height:1.6}
-  .content:empty:before{
-    content:attr(data-placeholder);
-    color:var(--muted);
-    white-space:pre-wrap;
-  }
+  .content:empty:before{content:attr(data-placeholder);color:var(--muted)}
   .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
   .content img{max-width:100%;border-radius:8px}
 
@@ -116,10 +117,10 @@ Changes in v2.1.1 (vs STB v2.0)
     <div class="editor" id="editor">
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
-          <button class="tool" id="boldBtn" data-cmd="bold" title="Bold (Ctrl+B)">
+          <button class="tool" data-cmd="bold" title="Bold (Ctrl+B)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
           </button>
-          <button class="tool" id="italicBtn" data-cmd="italic" title="Italic (Ctrl+I)">
+          <button class="tool" data-cmd="italic" title="Italic (Ctrl+I)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
           </button>
           <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">
@@ -224,16 +225,13 @@ Changes in v2.1.1 (vs STB v2.0)
         </div>
       </div>
 
-      <div id="content" class="content" contenteditable="true"
-           data-placeholder="Welcome 👋
-Use the toolbar to format text, insert links, images, and more.
-Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
+      <div id="content" class="content" contenteditable="true" data-placeholder="Start typing…"></div>
       <textarea id="source" class="source" aria-label="HTML source view"></textarea>
 
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v2.1.1</span>
+          <span class="chip">STB v2.1.1</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -296,6 +294,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Save</button></footer>
   </div>
 </div>
+
 <!-- Image Modal -->
 <div class="modal-backdrop" id="imageModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
@@ -319,10 +318,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.1.1)
-  const DOC_KEY='wysi_doc_dev_v211';
-  const NOTES_KEY='wysi_notes_dev_v211';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v211';
+  // Versioned storage (STB v2.1.1)
+  const DOC_KEY='wysi_doc_stb_v211';
+  const NOTES_KEY='wysi_notes_stb_v211';
+  const THEME_MODE_KEY='wysi_theme_mode_stb_v211';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -346,13 +345,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){ const s=window.getSelection(); return s && s.rangeCount && content.contains(s.anchorNode); }
-  function saveSelection(){
-    const s=window.getSelection();
-    if(s && s.rangeCount && content.contains(s.anchorNode)){ savedRange = s.getRangeAt(0).cloneRange(); }
-  }
-  function restoreSelection(){
-    if(!savedRange) return; const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
-  }
+  function saveSelection(){ const s=window.getSelection(); if(s && s.rangeCount && content.contains(s.anchorNode)){ savedRange = s.getRangeAt(0).cloneRange(); } }
+  function restoreSelection(){ if(!savedRange) return; const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
 
   /* ===== Helpers ===== */
@@ -362,15 +356,11 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
   function collapseConsecutiveBR(root){
     root.querySelectorAll('br + br').forEach(br => br.remove());
-    // Normalize </br> -> <br> and self-closing to <br>
+    // Normalize </br> -> <br>
     root.innerHTML = root.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
-    // If empty, keep real DOM empty to show placeholder; when first input arrives,
-    // browser will create a <div> or <p>. We enforce <p> below on input.
-    if (!content.innerHTML.trim()) { return; }
-    // When content is non-empty, ensure there's at least one block to type into
-    if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
+    if (!content.textContent.trim() && content.innerHTML.trim() === '') {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
@@ -400,37 +390,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
-  /* ===== ExecCommand bindings (with STRONG/EM normalization + selection keep) ===== */
-  function execAndNormalize(cmd){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount) return;
-    const pre = sel.getRangeAt(0).cloneRange();
-
-    document.execCommand(cmd,false,null);
-
-    // Replace any <b>/<i> with <strong>/<em> inside current block
-    const block = currentBlock() || content;
-    replaceInlineTag(block,'B','STRONG');
-    replaceInlineTag(block,'I','EM');
-
-    // Keep selection (like underline behavior)
-    sel.removeAllRanges();
-    sel.addRange(pre);
-  }
-  function replaceInlineTag(scope, from, to){
-    const nodes = scope.querySelectorAll(from);
-    nodes.forEach(n=>{
-      const neo=document.createElement(to);
-      // copy children only; drop inline styles MSO might add
-      while(n.firstChild) neo.appendChild(n.firstChild);
-      n.replaceWith(neo);
-    });
-  }
-
-  document.getElementById('boldBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('bold'); queueSave(); });
-  document.getElementById('italicBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('italic'); queueSave(); });
-
-  document.querySelectorAll('button.tool[data-cmd]:not(#boldBtn):not(#italicBtn)').forEach(btn=>{
+  /* ===== Toolbar execCommand bindings ===== */
+  document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
@@ -603,11 +564,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     sel.removeAllRanges(); sel.addRange(nr);
   }
 
-  /* ===== Toggle Source / Design (beautify only for source textarea) ===== */
+  /* ===== Toggle Source / Design ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); toggleSourceView(); } });
   function toggleSourceView(){
     if(source.style.display==='block'){
+      // Back to design: use beautified text as HTML
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
@@ -615,6 +577,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       ensureParagraph();
       content.style.display='block'; source.style.display='none'; content.focus();
     } else {
+      // To Source: beautify only for display
       source.value = prettyHTML(content.innerHTML);
       content.style.display='none'; source.style.display='block'; source.focus();
     }
@@ -665,7 +628,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       ta.select(); document.execCommand('copy'); ta.remove(); flash('Copied HTML');
     }
   }
-  // Copy (RAW, per request)
+  // Copy RAW (per stable behavior)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -686,7 +649,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
-  // Export (RAW, per request)
+  // Export RAW (per stable behavior)
   $('exportBtn').addEventListener('click', ()=>{
     const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',content.innerHTML,'</body>','</html>'].join('\n');
     const a=document.createElement('a');
@@ -709,13 +672,14 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
 
     titleEl.textContent = 'Untitled Document';
-    // leave content empty to show placeholder "Welcome…" (vanishes on typing)
-    content.innerHTML = '';
+    content.innerHTML = '<p>\u200B</p>';
+    const p=content.querySelector('p'); if (p) placeCaretInside(p);
     savedRange = null;
 
     saveNow();
     status.textContent = 'Saved';
   });
+
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
@@ -743,7 +707,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  // Enforce link targets (http/https => _blank; mailto => no target)
+  // Enforce link targets (http/https => _blank; mailto + #anchors => no target)
   function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
@@ -797,7 +761,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         }
       }
       if (t==='div') { replaceTag(el,'p'); }
-      // keep <sup>/<sub> for footnotes
+      // keep <sup>/<sub>
     });
 
     // Whitelist
@@ -858,21 +822,14 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         removeEmptyPBeforeLists(content);
         condenseParagraphInlines(content);
         ensureParagraph();
-      } // else leave empty to show placeholder "Welcome…"
+      } else {
+        content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
+      }
     }catch{
-      // leave empty to show placeholder
+      content.innerHTML = '<h1>Welcome 👋</h1><p>Use the toolbar to format text, insert <strong>links</strong>, <em>images</em>, and more. Try the Link/Image/Mailto pop-ins.</p>';
     }
   })();
-  content.addEventListener('input', ()=>{
-    // On first input if browser inserts <div>, convert it to <p>
-    Array.from(content.children).forEach(ch=>{
-      if(ch.tagName==='DIV'){
-        const p=document.createElement('p'); while(ch.firstChild) p.appendChild(ch.firstChild); ch.replaceWith(p);
-      }
-    });
-    ensureParagraph();
-    queueSave();
-  });
+  content.addEventListener('input', ()=>{ ensureParagraph(); queueSave(); });
   titleEl.addEventListener('input', queueSave);
 
   // Notes autosave
@@ -887,9 +844,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     const k=e.key.toLowerCase();
     if(['b','i','u'].includes(k)){
       e.preventDefault();
-      if(k==='b') execAndNormalize('bold');
-      else if(k==='i') execAndNormalize('italic');
-      else document.execCommand('underline', false, null);
+      document.execCommand({b:'bold',i:'italic',u:'underline'}[k], false, null);
       queueSave();
     }
     if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
@@ -901,4 +856,3 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 </script>
 </body>
 </html>
-
