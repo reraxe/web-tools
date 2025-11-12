@@ -1,23 +1,23 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - STABLE Branch
- File: editor-stb-v2.1.1.html
- Build: v2.1.1-stb
+ WYSIWYG HTML Editor - DEV Branch
+ File: editor-dev-v2.2.html
+ Build: v2.2-dev
 =========================================================
-Based on DEV v2.1.1:
-- Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
-- Selection behavior patched so Bold/Italic behave like Underline:
-  selection remains active (no jump to start of word).
-- Welcome behaves like a placeholder (disappears when user types,
-  reappears if doc is fully cleared). No other UI changes.
+Delta in v2.2 vs STB v2.1.1:
+- Inline spacing patch on paste/beautify:
+  • No stray space before ) ] , . ; : ! ?
+  • No stray space after ( [
+  • Keeps a single space between adjoining inline runs only when needed.
+- Everything else remains STB v2.1.1 behavior.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (STB v2.1.1)</title>
+<title>WYSIWYG HTML Editor (DEV v2.2)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -224,7 +224,7 @@ Based on DEV v2.1.1:
         </div>
       </div>
 
-      <div id="content" class="content" contenteditable="true"
+<div id="content" class="content" contenteditable="true"
            data-placeholder="Welcome 👋
 Use the toolbar to format text, insert links, images, and more.
 Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
@@ -233,7 +233,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">STB v2.1.1</span>
+          <span class="chip">DEV v2.2</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -320,12 +320,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.1.1 STABLE)
-  const DOC_KEY='wysi_doc_stb_v211';
-  const NOTES_KEY='wysi_notes_stb_v211';
-  const THEME_MODE_KEY='wysi_theme_mode_stb_v211';
+  // Versioned storage (v2.2)
+  const DOC_KEY='wysi_doc_dev_v22';
+  const NOTES_KEY='wysi_notes_dev_v22';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v22';
 
-  /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
+  /* ===== Theme: Light/Dark/Auto ===== */
   const themeSelect=$('themeMode');
   const mql=window.matchMedia('(prefers-color-scheme: dark)');
   let themeMode='auto';
@@ -367,10 +367,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     root.innerHTML = root.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
-    // If empty, keep real DOM empty to show placeholder; when first input arrives,
-    // browser will create a <div> or <p>. We enforce <p> below on input.
-    if (!content.innerHTML.trim()) { return; }
-    // When content is non-empty, ensure there's at least one block to type into
+    // Keep empty to show placeholder until first input
+    if (!content.innerHTML.trim()) return;
+    // Ensure at least a block
     if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
       content.innerHTML = '<p>\u200B</p>';
       const p = content.querySelector('p'); if (p) placeCaretInside(p);
@@ -386,22 +385,42 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
   }
+  // Core inline condenser with v2.2 spacing rules
   function condenseParagraphInlines(root){
     root.querySelectorAll('p').forEach(p=>{
       let html = p.innerHTML;
+
+      // Normalize spacing sources
       html = html.replace(/&nbsp;/g, ' ');
       html = html.replace(/\s*\n+\s*/g,' ');
+
+      // Trim spaces at inline boundaries
       html = html.replace(/\s+<\/(em|strong|a|sup|sub)>/gi, '</$1>');
       html = html.replace(/<(em|strong|a|sup|sub)>\s+/gi, '<$1>');
-      html = html.replace(/<\/(em|strong|a|sup|sub)>(?!\s|<)/gi, '</$1> ');
+
+      // v2.2: punctuation + bracket spacing rules
+      // 1) No space before ) ] , . ; : ! ?
+      html = html.replace(/\s+([)\]],?|\)|,|\.|;|:|!|\?)/g, '$1');
+      // 2) No space right after ( or [
+      html = html.replace(/([(\[])\s+/g, '$1');
+
+      // Re-add single space between adjacent inline closes/opens when text would smash:
+      // e.g., </em><strong> -> </em> <strong>
+      html = html.replace(/<\/(em|strong|a|sup|sub)>(?=<(?:em|strong|a|sup|sub)\b)/gi, '</$1> ');
+
+      // Collapse multiple spaces
       html = html.replace(/\s{2,}/g,' ');
+
+      // Remove space right before punctuation again (in case previous step reintroduced)
       html = html.replace(/\s+([,.;:!?])/g,'$1');
+
+      // Trim overall
       html = html.trim();
       p.innerHTML = html;
     });
   }
 
-  /* ===== ExecCommand bindings (with STRONG/EM normalization + selection keep) ===== */
+  /* ===== ExecCommand bindings (STRONG/EM normalization + selection keep) ===== */
   function execAndNormalize(cmd){
     const sel=window.getSelection();
     if(!sel || !sel.rangeCount) return;
@@ -409,12 +428,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
     document.execCommand(cmd,false,null);
 
-    // Replace any <b>/<i> with <strong>/<em> inside current block
+    // Replace any <b>/<i> with semantic <strong>/<em> inside current block
     const block = currentBlock() || content;
     replaceInlineTag(block,'B','STRONG');
     replaceInlineTag(block,'I','EM');
 
-    // Keep selection (like underline behavior)
+    // Keep selection (underline-like behavior)
     sel.removeAllRanges();
     sel.addRange(pre);
   }
@@ -422,7 +441,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     const nodes = scope.querySelectorAll(from);
     nodes.forEach(n=>{
       const neo=document.createElement(to);
-      // copy children only; drop inline styles MSO might add
       while(n.firstChild) neo.appendChild(n.firstChild);
       n.replaceWith(neo);
     });
@@ -604,7 +622,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     sel.removeAllRanges(); sel.addRange(nr);
   }
 
-  /* ===== Toggle Source / Design (beautify only for source textarea) ===== */
+  /* ===== Toggle Source / Design (beautify only in Source textarea) ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ e.preventDefault(); toggleSourceView(); } });
   function toggleSourceView(){
@@ -666,7 +684,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       ta.select(); document.execCommand('copy'); ta.remove(); flash('Copied HTML');
     }
   }
-  // Copy (RAW, per request)
+  // Copy (RAW, per your stable behavior)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -687,7 +705,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
-  // Export (RAW, per request)
+  // Export (RAW, per your stable behavior)
   $('exportBtn').addEventListener('click', ()=>{
     const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',content.innerHTML,'</body>','</html>'].join('\n');
     const a=document.createElement('a');
@@ -695,7 +713,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     a.download=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)+'.html';
     a.click();
   });
-
   // --- New document ---
   $('resetBtn').addEventListener('click', ()=>{
     if (!confirm('Start a new document?')) return;
@@ -710,13 +727,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
 
     titleEl.textContent = 'Untitled Document';
-    // leave content empty to show placeholder "Welcome…" (vanishes on typing)
-    content.innerHTML = '';
+    content.innerHTML = ''; // show placeholder welcome again
     savedRange = null;
 
     saveNow();
     status.textContent = 'Saved';
   });
+
   function escapeHtml(s){ return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
@@ -739,7 +756,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     enforceLinkTargets(content);
     collapseConsecutiveBR(content);
     removeEmptyPBeforeLists(content);
-    condenseParagraphInlines(content);
+    condenseParagraphInlines(content); // <- v2.2 spacing rules applied
     ensureParagraph();
     queueSave();
   });
@@ -763,7 +780,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return out.replace(/\n/g,'<br>');
   }
 
-  // ===== Word sanitizer: preserve links, inline <em>/<strong>, <sup>/<sub>, headers, lists, footnote anchors
+  // ===== Word sanitizer: preserve links, <em>/<strong>, <sup>/<sub>, headers, lists, footnote anchors
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
@@ -859,13 +876,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         removeEmptyPBeforeLists(content);
         condenseParagraphInlines(content);
         ensureParagraph();
-      } // else leave empty to show placeholder "Welcome…"
+      } // else keep empty to show placeholder
     }catch{
-      // leave empty to show placeholder
+      // keep empty to show placeholder
     }
   })();
   content.addEventListener('input', ()=>{
-    // On first input if browser inserts <div>, convert it to <p>
+    // If browser inserts <div>, convert to <p> (keeps welcome placeholder logic)
     Array.from(content.children).forEach(ch=>{
       if(ch.tagName==='DIV'){
         const p=document.createElement('p'); while(ch.firstChild) p.appendChild(ch.firstChild); ch.replaceWith(p);
