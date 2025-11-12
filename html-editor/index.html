@@ -1,23 +1,23 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.2.html
- Build: v2.2-dev
+ WYSIWYG HTML Editor - STABLE Branch
+ File: editor-stb-v2.2.html
+ Build: v2.2-stable
 =========================================================
-Delta in v2.2 vs STB v2.1.1:
+Delta vs STB v2.1.1:
 - Inline spacing patch on paste/beautify:
   • No stray space before ) ] , . ; : ! ?
   • No stray space after ( [
-  • Keeps a single space between adjoining inline runs only when needed.
-- Everything else remains STB v2.1.1 behavior.
+  • Keeps a single space between adjacent inline runs only when needed.
+- Everything else remains the v2.1.1 behavior.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v2.2)</title>
+<title>WYSIWYG HTML Editor (STB v2.2)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -223,8 +223,7 @@ Delta in v2.2 vs STB v2.1.1:
           </button>
         </div>
       </div>
-
-<div id="content" class="content" contenteditable="true"
+      <div id="content" class="content" contenteditable="true"
            data-placeholder="Welcome 👋
 Use the toolbar to format text, insert links, images, and more.
 Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
@@ -233,7 +232,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v2.2</span>
+          <span class="chip">STB v2.2</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -320,10 +319,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.2)
-  const DOC_KEY='wysi_doc_dev_v22';
-  const NOTES_KEY='wysi_notes_dev_v22';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v22';
+  // Versioned storage (STB v2.2)
+  const DOC_KEY='wysi_doc_stb_v22';
+  const NOTES_KEY='wysi_notes_stb_v22';
+  const THEME_MODE_KEY='wysi_theme_mode_stb_v22';
 
   /* ===== Theme: Light/Dark/Auto ===== */
   const themeSelect=$('themeMode');
@@ -405,13 +404,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       html = html.replace(/([(\[])\s+/g, '$1');
 
       // Re-add single space between adjacent inline closes/opens when text would smash:
-      // e.g., </em><strong> -> </em> <strong>
       html = html.replace(/<\/(em|strong|a|sup|sub)>(?=<(?:em|strong|a|sup|sub)\b)/gi, '</$1> ');
 
       // Collapse multiple spaces
       html = html.replace(/\s{2,}/g,' ');
 
-      // Remove space right before punctuation again (in case previous step reintroduced)
+      // Guard again before punctuation
       html = html.replace(/\s+([,.;:!?])/g,'$1');
 
       // Trim overall
@@ -684,7 +682,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       ta.select(); document.execCommand('copy'); ta.remove(); flash('Copied HTML');
     }
   }
-  // Copy (RAW, per your stable behavior)
+  // Copy (RAW, stable behavior)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -705,7 +703,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
-  // Export (RAW, per your stable behavior)
+  // Export (RAW, stable behavior)
   $('exportBtn').addEventListener('click', ()=>{
     const doc=['<!doctype html>','<html>','<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>','<body>',content.innerHTML,'</body>','</html>'].join('\n');
     const a=document.createElement('a');
@@ -756,7 +754,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     enforceLinkTargets(content);
     collapseConsecutiveBR(content);
     removeEmptyPBeforeLists(content);
-    condenseParagraphInlines(content); // <- v2.2 spacing rules applied
+    condenseParagraphInlines(content); // v2.2 spacing rules applied
     ensureParagraph();
     queueSave();
   });
