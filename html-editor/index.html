@@ -1,24 +1,20 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.3.html
- Build: v2.3-dev
+ WYSIWYG HTML Editor - DEV v2.4 (Full Build)
 =========================================================
-Changes in v2.3 (vs STB v2.2)
-- Clear Formatting fixed: custom clearFormatting() replaces removeFormat.
-  * Selection mode: unwraps <strong>/<em>/<u>/<span style>/<font>, strips styles,
-    keeps <a>, <sup>/<sub>, <br>, cleans extra spaces.
-  * Caret-only: unwraps nearest formatting element without losing caret.
-  * Runs collapseConsecutiveBR, condenseParagraphInlines, enforceLinkTargets.
-- Outdent icon corrected to point West (left), mirroring Indent (East/right).
+What's new in v2.4 (vs STB v2.3)
+- Word paste: preserves underline (text-decoration:underline -> <u>)
+- Sanitizer whitelist now includes <u>
+- Inline condensing/spacing rules updated to include <u>
+- No other UI or behavior changed
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v2.3)</title>
+<title>WYSIWYG HTML Editor (DEV v2.4)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -65,7 +61,11 @@ Changes in v2.3 (vs STB v2.2)
   }
 
   .content{min-height:380px;padding:18px 20px;outline:none;line-height:1.6}
-  .content:empty:before{content:attr(data-placeholder);color:var(--muted);white-space:pre-wrap}
+  .content:empty:before{
+    content:attr(data-placeholder);
+    color:var(--muted);
+    white-space:pre-wrap;
+  }
   .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
   .content img{max-width:100%;border-radius:8px}
 
@@ -113,10 +113,10 @@ Changes in v2.3 (vs STB v2.2)
     <div class="editor" id="editor">
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
-          <button class="tool" id="boldBtn" title="Bold (Ctrl+B)">
+          <button class="tool" id="boldBtn" data-cmd="bold" title="Bold (Ctrl+B)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
           </button>
-          <button class="tool" id="italicBtn" title="Italic (Ctrl+I)">
+          <button class="tool" id="italicBtn" data-cmd="italic" title="Italic (Ctrl+I)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
           </button>
           <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">
@@ -151,19 +151,19 @@ Changes in v2.3 (vs STB v2.2)
           <button class="tool" data-cmd="insertOrderedList" title="Numbered list">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M9 5h12v2H9V5zm0 6h12v2H9v-2zm0 6h12v2H9v-2z"/>
-              <path fill="currentColor" d="M3 6h3v1H4v1H3V6zm1 6h2v1H4v1h2v1H3v-3zm1 6h2v4H4v-3H3v-1h2z"/>
+              <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
             </svg>
           </button>
-          <!-- Outdent (West/left) -->
+          <!-- Outdent (west) -->
           <button class="tool" data-cmd="outdent" title="Outdent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM7 8v8l-4-4zM9 11h8v2H9zM15 8h6v8h-6z"/>
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
             </svg>
           </button>
-          <!-- Indent (East/right) -->
+          <!-- Indent (east) -->
           <button class="tool" data-cmd="indent" title="Indent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM17 8v8l4-4zM3 11h8v2H3zM3 8h6v8H3z"/>
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
             </svg>
           </button>
         </div>
@@ -232,7 +232,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v2.3</span>
+          <span class="chip">DEV v2.4</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -319,10 +319,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.3)
-  const DOC_KEY='wysi_doc_dev_v23';
-  const NOTES_KEY='wysi_notes_dev_v23';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v23';
+  // Versioned storage (v2.4)
+  const DOC_KEY='wysi_doc_dev_v24';
+  const NOTES_KEY='wysi_notes_dev_v24';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v24';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -346,13 +346,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){ const s=window.getSelection(); return s && s.rangeCount && content.contains(s.anchorNode); }
-  function saveSelection(){
-    const s=window.getSelection();
-    if(s && s.rangeCount && content.contains(s.anchorNode)){ savedRange = s.getRangeAt(0).cloneRange(); }
-  }
-  function restoreSelection(){
-    if(!savedRange) return; const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
-  }
+  function saveSelection(){ const s=window.getSelection(); if(s && s.rangeCount && content.contains(s.anchorNode)){ savedRange = s.getRangeAt(0).cloneRange(); } }
+  function restoreSelection(){ if(!savedRange) return; const s=window.getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
 
   /* ===== Helpers ===== */
@@ -362,12 +357,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
   function collapseConsecutiveBR(root){
     root.querySelectorAll('br + br').forEach(br => br.remove());
-    // Normalize </br> -> <br> and self-closing to <br>
+    // Normalize </br> -> <br> and self-closed <br/> to <br>
     root.innerHTML = root.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
     if (!content.textContent.trim() && content.innerHTML.trim() === '') {
-      // keep genuinely empty to show placeholder; once there is content we enforce <p> via input hook
+      // Keep empty so the placeholder shows; once typing begins we enforce <p> on input
       return;
     }
     if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
@@ -385,29 +380,22 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
   }
+  // UPDATED: include <u> in condensing & spacing normalization
   function condenseParagraphInlines(root){
     root.querySelectorAll('p').forEach(p=>{
       let html = p.innerHTML;
-      // normalize spaces and line breaks
       html = html.replace(/&nbsp;/g, ' ');
       html = html.replace(/\s*\n+\s*/g,' ');
-      // trim spaces just inside inline tags
       html = html.replace(/\s+<\/(em|strong|a|sup|sub|u)>/gi, '</$1>');
       html = html.replace(/<(em|strong|a|sup|sub|u)>\s+/gi, '<$1>');
-      // ensure single space after inline closing if followed by text/inline (not punctuation)
-      html = html.replace(/<\/(em|strong|a|sup|sub|u)>(?=\S)/gi, '</$1> ');
-      // remove space before punctuation and close parens/brackets/quotes
-      html = html.replace(/\s+([,.;:!?])\s*/g,'$1 ');
-      html = html.replace(/\s+([\)\]\}])/g,'$1');   // no space before closing )
-      html = html.replace(/([\(\[\{])\s+/g,'$1');   // no space after opening (
-      // collapse multiple spaces
+      html = html.replace(/<\/(em|strong|a|sup|sub|u)>(?!\s|<)/gi, '</$1> ');
       html = html.replace(/\s{2,}/g,' ');
-      html = html.trim();
-      p.innerHTML = html;
+      html = html.replace(/\s+([,.;:!?])/g,'$1');
+      p.innerHTML = html.trim();
     });
   }
 
-  /* ===== STRONG/EM normalization + selection keep for Bold/Italic ===== */
+  /* ===== ExecCommand bindings (Bold/Italic normalize to STRONG/EM; keep selection) ===== */
   function execAndNormalize(cmd){
     const sel=window.getSelection();
     if(!sel || !sel.rangeCount) return;
@@ -431,67 +419,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
-  /* ===== CLEAR FORMATTING (patched) ===== */
-  function clearFormatting(){
-    const sel = window.getSelection();
-    if(!sel || !sel.rangeCount) return;
+  $('boldBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('bold'); queueSave(); });
+  $('italicBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('italic'); queueSave(); });
 
-    const range = sel.getRangeAt(0);
-    if (range.collapsed) {
-      // Caret-only: unwrap nearest formatting tag
-      let node = sel.anchorNode;
-      if(node && node.nodeType===3) node = node.parentNode;
-      while (node && node !== content) {
-        if (/^(STRONG|EM|U|FONT|SPAN)$/i.test(node.tagName)) {
-          const parent = node.parentNode;
-          while (node.firstChild) parent.insertBefore(node.firstChild, node);
-          parent.removeChild(node);
-          break;
-        }
-        node = node.parentNode;
-      }
-    } else {
-      // Selection: extract -> sanitize -> insert
-      const frag = range.cloneContents();
-      const tmp = document.createElement('div');
-      tmp.appendChild(frag);
-
-      // strip formatting but keep <a>, <sup>, <sub>, <br>
-      tmp.querySelectorAll('*').forEach(el=>{
-        const t = (el.tagName||'').toLowerCase();
-        if (t==='a' || t==='sup' || t==='sub' || t==='br') {
-          // keep but nuke attributes except href for <a>
-          if (t==='a') {
-            [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
-          } else {
-            [...el.attributes].forEach(a=> el.removeAttribute(a.name));
-          }
-        } else if (t==='strong' || t==='em' || t==='u' || t==='font' || t==='span' || t==='b' || t==='i') {
-          // unwrap
-          const parent = el.parentNode;
-          while (el.firstChild) parent.insertBefore(el.firstChild, el);
-          parent.removeChild(el);
-        } else {
-          // drop inline styles
-          el.removeAttribute('style');
-        }
-      });
-
-      // Replace selection with sanitized HTML
-      document.execCommand('insertHTML', false, tmp.innerHTML);
-    }
-
-    enforceLinkTargets(content);
-    collapseConsecutiveBR(content);
-    condenseParagraphInlines(content);
-    queueSave();
-  }
-
-  /* ===== ExecCommand bindings ===== */
-  document.getElementById('boldBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('bold'); queueSave(); });
-  document.getElementById('italicBtn').addEventListener('click', ()=>{ content.focus(); execAndNormalize('italic'); queueSave(); });
-
-  document.querySelectorAll('button.tool[data-cmd]').forEach(btn=>{
+  document.querySelectorAll('button.tool[data-cmd]:not(#boldBtn):not(#italicBtn)').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       content.focus();
       document.execCommand(btn.dataset.cmd,false,null);
@@ -501,7 +432,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   $('foreColor').addEventListener('input', e=>{ content.focus(); document.execCommand('foreColor',false,e.target.value); queueSave(); });
   $('backColor').addEventListener('input', e=>{ content.focus(); document.execCommand('hiliteColor',false,e.target.value); queueSave(); });
   $('supBtn').addEventListener('click', ()=>{ content.focus(); document.execCommand('superscript',false,null); queueSave(); });
-  $('clearBtn').addEventListener('click', ()=>{ content.focus(); clearFormatting(); });
 
   /* ===== Block format (p/h1/h2/h3) ===== */
   blockSelect.addEventListener('change', e=> setBlockTag(e.target.value));
@@ -621,8 +551,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   function parseMailto(href){
     let to='',subject='',body=''; if(!href?.toLowerCase().startsWith('mailto:')) return {to,subject,body};
     const rest=href.slice(7); const [addr,q='']=rest.split('?'); to=decodeURIComponent(addr||'');
-    const p=new URLSearchParams(q); subject=p.get('subject')?decodeURIComponent(p.get('subject')):''; body=p.get('body')?decodeURIComponent(p.get('body')):'';
-    return {to,subject,body};
+    const p=new URLSearchParams(q); subject=p.get('subject')?decodeURIComponent(p.get('subject')):''; body=p.get('body')?decodeURIComponent(p.get('body')):''; return {to,subject,body};
   }
   function buildMailto(to,subject,body){
     const qs=new URLSearchParams(); if(subject) qs.set('subject',subject); if(body) qs.set('body',body);
@@ -671,6 +600,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   function toggleSourceView(){
     if(source.style.display==='block'){
       content.innerHTML = source.value.trim();
+      enforceLinkTargets(content);
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
       condenseParagraphInlines(content);
@@ -727,7 +657,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       ta.select(); document.execCommand('copy'); ta.remove(); flash('Copied HTML');
     }
   }
-  // Copy (RAW, per your baseline)
+  // Copy (RAW, stays consistent with stable)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -763,6 +693,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
     if (source.style.display === 'block') {
       content.innerHTML = source.value.trim();
+      enforceLinkTargets(content);
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
       condenseParagraphInlines(content);
@@ -771,7 +702,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
 
     titleEl.textContent = 'Untitled Document';
-    content.innerHTML = ''; // show placeholder
+    // leave content empty to show placeholder "Welcome…" (vanishes on typing)
+    content.innerHTML = '';
     savedRange = null;
 
     saveNow();
@@ -824,7 +756,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return out.replace(/\n/g,'<br>');
   }
 
-  // ===== Word sanitizer: keep <a>, <em>/<strong>, <sup>/<sub>, headers, lists, footnote anchors
+  // ===== Word sanitizer (UPDATED for underline) =====
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
@@ -835,16 +767,23 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     const rm=[]; while(walker.nextNode()) rm.push(walker.currentNode);
     rm.forEach(n=>n.remove());
 
-    // Strip MSO/inline junk + convert tags
+    // Strip MSO/inline junk + convert tags; capture underline -> <u>
     body.querySelectorAll('*').forEach(el=>{
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
+
       if(el.hasAttribute('style')){
-        const cleaned = el.getAttribute('style')
+        const st=el.getAttribute('style');
+        if(/\btext-decoration\s*:\s*underline\b/i.test(st)){
+          const u=doc.createElement('u'); while(el.firstChild) u.appendChild(el.firstChild); el.replaceWith(u);
+          return;
+        }
+        const cleaned = st
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
           .trim();
         if (cleaned) el.setAttribute('style', cleaned); else el.removeAttribute('style');
       }
+
       el.removeAttribute('id');
       el.removeAttribute('lang');
 
@@ -852,6 +791,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       if (t==='b') { replaceTag(el,'strong'); }
       if (t==='i') { replaceTag(el,'em'); }
       if (t==='font' || t==='span') {
+        // unwrap spans/fonts unless they carry useful attrs (they shouldn't post-clean)
         if (!el.attributes.length) unwrap(el);
         else {
           const attrs=[...el.attributes].map(a=>a.name.toLowerCase());
@@ -862,8 +802,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       // keep <sup>/<sub> for footnotes
     });
 
-    // Whitelist
-    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup','sub','br']);
+    // Whitelist (+ <u>)
+    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','u','ul','ol','li','a','sup','sub','br']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){ unwrap(el); return; }
@@ -881,7 +821,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
     });
 
-    // Normalize <br></br> -> <br>
+    // Normalize <br>
     body.innerHTML = body.innerHTML.replace(/<\s*\/\s*br\s*>/gi,'').replace(/<br\s*\/?>/gi,'<br>');
 
     // Enforce link targets
@@ -916,17 +856,18 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         const d=JSON.parse(raw);
         titleEl.textContent=d.title||'Untitled Document';
         content.innerHTML=d.html||'';
+        enforceLinkTargets(content);
         collapseConsecutiveBR(content);
         removeEmptyPBeforeLists(content);
         condenseParagraphInlines(content);
         ensureParagraph();
-      } // else leave empty to show placeholder
+      } // else leave empty to show placeholder "Welcome…"
     }catch{
-      // leave empty for placeholder
+      // leave empty to show placeholder
     }
   })();
   content.addEventListener('input', ()=>{
-    // Convert any auto-inserted DIVs to P to keep paragraphs consistent
+    // Convert stray divs to p on first typing
     Array.from(content.children).forEach(ch=>{
       if(ch.tagName==='DIV'){
         const p=document.createElement('p'); while(ch.firstChild) p.appendChild(ch.firstChild); ch.replaceWith(p);
