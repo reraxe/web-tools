@@ -1,25 +1,32 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - STABLE Branch
- File: editor-stb-v2.4.html
- Build: v2.4-stb
+ WYSIWYG HTML Editor - DEV Branch
+ File: editor-dev-v2.5.html
+ Build: v2.5-dev
 =========================================================
-Highlights in STB v2.4 (vs STB v2.3)
-- Word sanitized paste: fixes spaces around inline tags so "(test)" from Word
-  with italic/bold/underline becomes "(<em>test</em>)" in HTML (no extra spaces).
-- Affects <em>, <strong>, <u>, <a>, <sup>, <sub> inside <p> lines.
-- Word sanitized paste preserves underline (<u>) from Word where possible.
-- Indent / Outdent icons updated to MS Word-style arrows (east / west).
-- Keeps all prior behavior: strong/em toolbar, welcome placeholder, beautified
-  source view only, raw Copy/Export, link/mail/image modals, autosave, etc.
+Base from: DEV v2.1.1 (your “good” build)
+- Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
+- Selection behavior so Bold/Italic behave like Underline:
+  selection remains active (no jump to start of word).
+- Welcome text behaves like a placeholder: disappears when
+  user types, reappears only if doc fully cleared.
+- Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, <u>,
+  headers, lists, footnote anchors, and cleans MSO junk.
+- Beautifier only used for Source view, Copy/Export keep raw HTML.
+
+New in v2.5
+- Footer chip shows DEV v2.5.
+- Developer icons added in footer:
+  • LinkedIn  → https://www.linkedin.com/in/lincuna
+  • GitHub    → https://github.com/reraxe/web-tools
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (STB v2.4)</title>
+<title>WYSIWYG HTML Editor (DEV v2.5)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -91,7 +98,8 @@ Highlights in STB v2.4 (vs STB v2.3)
   button.tool:hover{filter:brightness(0.97)}
   [data-theme="dark"] button.tool:hover{background:#252a42;filter:none}
   .tool svg{width:16px;height:16px;opacity:.9}
-  select.tool, input[type="color"].tool{
+  select.tool,
+  input[type="color"].tool{
     height:36px;
     border:1px solid var(--border);
     background:var(--panel-2);
@@ -234,6 +242,31 @@ Highlights in STB v2.4 (vs STB v2.3)
   }
   .modal textarea{height:90px;padding:10px;resize:vertical}
   .close-x{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
+
+  /* Dev social icons */
+  .dev-links{
+    display:inline-flex;
+    gap:6px;
+    align-items:center;
+  }
+  .dev-links a{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:18px;
+    height:18px;
+    border-radius:999px;
+    color:var(--muted);
+    text-decoration:none;
+  }
+  .dev-links a:hover{
+    background:var(--panel-2);
+    color:var(--accent);
+  }
+  .dev-links svg{
+    width:14px;
+    height:14px;
+  }
 </style>
 </head>
 <body>
@@ -248,7 +281,7 @@ Highlights in STB v2.4 (vs STB v2.3)
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
           <button class="tool" id="boldBtn" data-cmd="bold" title="Bold (Ctrl+B)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.79 4.79 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
+            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
           </button>
           <button class="tool" id="italicBtn" data-cmd="italic" title="Italic (Ctrl+I)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
@@ -288,16 +321,16 @@ Highlights in STB v2.4 (vs STB v2.3)
               <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
             </svg>
           </button>
-          <!-- Outdent (arrow west, Word-style) -->
+          <!-- Outdent (arrow pointing West) -->
           <button class="tool" data-cmd="outdent" title="Outdent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M4 4h16v2H4zM4 18h16v2H4zM11 9v6l-4-3zM4 11h7v2H4zM14 8h6v8h-6z"/>
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
             </svg>
           </button>
-          <!-- Indent (arrow east, Word-style) -->
+          <!-- Indent (arrow pointing East) -->
           <button class="tool" data-cmd="indent" title="Indent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M4 4h16v2H4zM4 18h16v2H4zM13 9v6l4-3zM4 11h7v2H4zM4 8h6v8H4z"/>
+              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
             </svg>
           </button>
         </div>
@@ -366,7 +399,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">STB v2.4</span>
+          <span class="chip">DEV v2.5</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -383,6 +416,25 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
             </select>
           </label>
           <span class="chip">Tip: Ctrl/Cmd + click a link to open</span>
+          <!-- NEW: Dev links chip -->
+          <span class="chip" title="Developer links">
+            <span>Dev:</span>
+            <span class="dev-links">
+              <a href="https://www.linkedin.com/in/lincuna" target="_blank" aria-label="LinkedIn">
+                <!-- Simple LinkedIn icon -->
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="currentColor" opacity="0.15"></rect>
+                  <path fill="currentColor" d="M8.34 17.5H6.03V9.5h2.31v8zM7.18 8.45c-.74 0-1.34-.61-1.34-1.36 0-.76.6-1.36 1.34-1.36.74 0 1.34.6 1.34 1.36 0 .75-.6 1.36-1.34 1.36zM18 17.5h-2.3v-4.2c0-1-.02-2.29-1.4-2.29-1.4 0-1.62 1.09-1.62 2.22v4.27H10.4V9.5h2.21v1.09h.03c.31-.58 1.06-1.19 2.18-1.19 2.33 0 2.76 1.54 2.76 3.55v4.55z"/>
+                </svg>
+              </a>
+              <a href="https://github.com/reraxe/web-tools" target="_blank" aria-label="GitHub">
+                <!-- Simple GitHub icon -->
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.26c0 4.52 2.87 8.35 6.84 9.7.5.09.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.61-3.37-1.37-3.37-1.37-.45-1.18-1.12-1.5-1.12-1.5-.92-.64.07-.63.07-.63 1.02.07 1.56 1.07 1.56 1.07.9 1.57 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.27 2.75 1.05A9.18 9.18 0 0 1 12 6.37c.85 0 1.71.12 2.51.34 1.9-1.32 2.74-1.05 2.74-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.01 10.01 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/>
+                </svg>
+              </a>
+            </span>
+          </span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML (raw)">Copy HTML</button>
@@ -404,65 +456,43 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 <!-- Link Modal -->
 <div class="modal-backdrop" id="linkModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
-    <header>
-      <h3 id="linkTitle">Insert/edit link</h3>
-      <button class="close-x" data-close="linkModal">✕</button>
-    </header>
+    <header><h3 id="linkTitle">Insert/edit link</h3><button class="close-x" data-close="linkModal">✕</button></header>
     <div class="fields">
       <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text"/></div>
       <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com"/></div>
-      <div class="row">
-        <label for="linkTarget">Open in</label>
-        <select id="linkTarget">
-          <option value="_blank">New tab</option>
-          <option value="_self">Same tab</option>
-        </select>
+      <div class="row"><label for="linkTarget">Open in</label>
+        <select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
       </div>
     </div>
-    <footer>
-      <button class="btn-flat" data-close="linkModal">Cancel</button>
-      <button class="btn-accent" id="linkInsertBtn">Save</button>
-    </footer>
+    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Save</button></footer>
   </div>
 </div>
 
 <!-- Mailto Modal -->
 <div class="modal-backdrop" id="mailtoModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
-    <header>
-      <h3 id="mailtoTitle">Insert/edit mailto link</h3>
-      <button class="close-x" data-close="mailtoModal">✕</button>
-    </header>
+    <header><h3 id="mailtoTitle">Insert/edit mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
     <div class="fields">
       <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com"/></div>
       <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello"/></div>
       <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
       <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us"/></div>
     </div>
-    <footer>
-      <button class="btn-flat" data-close="mailtoModal">Cancel</button>
-      <button class="btn-accent" id="mailtoInsertBtn">Save</button>
-    </footer>
+    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Save</button></footer>
   </div>
 </div>
 
 <!-- Image Modal -->
 <div class="modal-backdrop" id="imageModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
-    <header>
-      <h3 id="imageTitle">Insert image</h3>
-      <button class="close-x" data-close="imageModal">✕</button>
-    </header>
+    <header><h3 id="imageTitle">Insert image</h3><button class="close-x" data-close="imageModal">✕</button></header>
     <div class="fields">
       <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…"/></div>
       <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description"/></div>
       <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*"/></div>
       <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)"/></div>
     </div>
-    <footer>
-      <button class="btn-flat" data-close="imageModal">Cancel</button>
-      <button class="btn-accent" id="imageInsertBtn">Insert</button>
-    </footer>
+    <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
   </div>
 </div>
 
@@ -475,10 +505,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (STB v2.4)
-  const DOC_KEY='wysi_doc_stb_v24';
-  const NOTES_KEY='wysi_notes_stb_v24';
-  const THEME_MODE_KEY='wysi_theme_mode_stb_v24';
+  // Versioned storage (v2.5)
+  const DOC_KEY='wysi_doc_dev_v25';
+  const NOTES_KEY='wysi_notes_dev_v25';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v25';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -537,16 +567,17 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
   function collapseConsecutiveBR(root){
     root.querySelectorAll('br + br').forEach(br => br.remove());
+    // Normalize </br> -> <br> and self-closing forms
     root.innerHTML = root.innerHTML
       .replace(/<\s*\/\s*br\s*>/gi,'')
       .replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
+    // If empty, keep empty so placeholder text shows
     if (!content.innerHTML.trim()) return;
     if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
       content.innerHTML = '<p>\u200B</p>';
-      const p = content.querySelector('p');
-      if (p) placeCaretInside(p);
+      const p = content.querySelector('p'); if (p) placeCaretInside(p);
     }
   }
   function removeEmptyPBeforeLists(root){
@@ -565,20 +596,21 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   function condenseParagraphInlines(root){
     root.querySelectorAll('p').forEach(p=>{
       let html = p.innerHTML;
-
       html = html.replace(/&nbsp;/g, ' ');
       html = html.replace(/\s*\n+\s*/g,' ');
 
+      // Remove stray whitespace around inline tags
       html = html.replace(/\s+<\/(em|strong|a|sup|sub|u)>/gi, '</$1>');
       html = html.replace(/<(em|strong|a|sup|sub|u)>\s+/gi, '<$1>');
-
       html = html.replace(/<\/(em|strong|a|sup|sub|u)>(?!\s|<)/gi, '</$1> ');
 
-      html = html.replace(/([(\[])\s+(<(em|strong|a|sup|sub|u)[^>]*>)/gi, '$1$2');
-      html = html.replace(/<\/(em|strong|a|sup|sub|u)>\s+([)\]])/gi, '</$1>$2');
-
+      // Collapse multiple spaces
       html = html.replace(/\s{2,}/g,' ');
+
+      // Clean spaces around punctuation and parentheses
       html = html.replace(/\s+([,.;:!?])/g,'$1');
+      html = html.replace(/\(\s+/g, '(');
+      html = html.replace(/\s+\)/g, ')');
 
       html = html.trim();
       p.innerHTML = html;
@@ -586,25 +618,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
 
   /* ===== ExecCommand bindings (with STRONG/EM normalization + selection keep) ===== */
-  function currentBlock(){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount) return null;
-    let n=sel.anchorNode;
-    if(n && n.nodeType===3) n=n.parentNode;
-    while(n && n!==content){
-      if(n.nodeType===1 && /^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)) return n;
-      n=n.parentNode;
-    }
-    return content;
-  }
-  function replaceInlineTag(scope, from, to){
-    const nodes = scope.querySelectorAll(from);
-    nodes.forEach(n=>{
-      const neo=document.createElement(to);
-      while(n.firstChild) neo.appendChild(n.firstChild);
-      n.replaceWith(neo);
-    });
-  }
   function execAndNormalize(cmd){
     const sel=window.getSelection();
     if(!sel || !sel.rangeCount) return;
@@ -618,6 +631,14 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
     sel.removeAllRanges();
     sel.addRange(pre);
+  }
+  function replaceInlineTag(scope, from, to){
+    const nodes = scope.querySelectorAll(from);
+    nodes.forEach(n=>{
+      const neo=document.createElement(to);
+      while(n.firstChild) neo.appendChild(n.firstChild);
+      n.replaceWith(neo);
+    });
   }
 
   $('boldBtn').addEventListener('click', ()=>{
@@ -657,40 +678,40 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   /* ===== Block format (p/h1/h2/h3) ===== */
   blockSelect.addEventListener('change', e=> setBlockTag(e.target.value));
   function setBlockTag(tag){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount) return;
+    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return;
     const r=sel.getRangeAt(0);
     let block=currentBlock();
     if(!block || block===content){
       const el=document.createElement(tag);
       if(r.collapsed){
         el.appendChild(document.createTextNode('\u200B'));
-        r.insertNode(el);
-        placeCaretInside(el,true);
+        r.insertNode(el); placeCaretInside(el,true);
       } else {
         el.appendChild(r.extractContents());
-        r.insertNode(el);
-        placeCaretInside(el,true);
+        r.insertNode(el); placeCaretInside(el,true);
       }
-      queueSave();
-      return;
+      queueSave(); return;
     }
     if(block.tagName.toLowerCase()===tag){
-      placeCaretInside(block,true);
-      return;
+      placeCaretInside(block,true); return;
     }
     const neo=document.createElement(tag);
     while(block.firstChild) neo.appendChild(block.firstChild);
-    block.replaceWith(neo);
-    placeCaretInside(neo,true);
-    queueSave();
+    block.replaceWith(neo); placeCaretInside(neo,true); queueSave();
+  }
+  function currentBlock(){
+    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
+    let n=sel.anchorNode; if(n && n.nodeType===3) n=n.parentNode;
+    while(n && n!==content){
+      if(n.nodeType===1 && /^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)) return n;
+      n=n.parentNode;
+    }
+    return content;
   }
   document.addEventListener('selectionchange', ()=>{
-    const sel=window.getSelection();
-    let v='p';
+    const sel=window.getSelection(); let v='p';
     if(sel && sel.rangeCount){
-      let n=sel.anchorNode;
-      if(n && n.nodeType===3) n=n.parentNode;
+      let n=sel.anchorNode; if(n && n.nodeType===3) n=n.parentNode;
       while(n && n!==content){
         const t=(n.tagName||'').toLowerCase();
         if(t==='p'||t==='h1'||t==='h2'||t==='h3'){ v=t; break; }
@@ -711,16 +732,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     $(id).style.display='none';
     content.focus();
   }
-  document.querySelectorAll('[data-close]').forEach(b=>
-    b.addEventListener('click', ()=> closeModal(b.dataset.close))
-  );
-  ['linkModal','mailtoModal','imageModal'].forEach(id=>
-    $(id).addEventListener('click',e=>{ if(e.target.id===id) closeModal(id); })
-  );
+  document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click', ()=> closeModal(b.dataset.close)));
+  ['linkModal','mailtoModal','imageModal'].forEach(id=>{
+    $(id).addEventListener('click',e=>{ if(e.target.id===id) closeModal(id); });
+  });
 
   function findClosest(tag){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount) return null;
+    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
     let n=sel.anchorNode;
     while(n && n!==content){
       if(n.nodeType===1 && n.tagName===tag) return n;
@@ -741,18 +759,15 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     showModal('linkModal');
   });
   $('linkInsertBtn').addEventListener('click', ()=>{
-    restoreSelection();
-    content.focus();
+    restoreSelection(); content.focus();
     const t=($('linkText').value||'link').trim();
     const u=($('linkUrl').value||'#').trim();
     const trg=$('linkTarget').value;
 
     if(currentLink && document.body.contains(currentLink)){
       currentLink.setAttribute('href', u);
-      if(trg==='_blank') currentLink.setAttribute('target','_blank');
-      else currentLink.removeAttribute('target');
-      currentLink.removeAttribute('rel');
-      currentLink.removeAttribute('style');
+      if(trg==='_blank') currentLink.setAttribute('target','_blank'); else currentLink.removeAttribute('target');
+      currentLink.removeAttribute('rel'); currentLink.removeAttribute('style');
       if(currentLink.textContent!==t) currentLink.textContent=t;
     } else {
       const sel=window.getSelection();
@@ -763,10 +778,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       document.execCommand('createLink',false,u);
       const a=findClosest('A');
       if(a){
-        if(trg==='_blank') a.setAttribute('target','_blank');
-        else a.removeAttribute('target');
-        a.removeAttribute('rel');
-        a.removeAttribute('style');
+        if(trg==='_blank') a.setAttribute('target','_blank'); else a.removeAttribute('target');
+        a.removeAttribute('rel'); a.removeAttribute('style');
       }
     }
     currentLink=null;
@@ -795,8 +808,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     showModal('mailtoModal');
   });
   $('mailtoInsertBtn').addEventListener('click', ()=>{
-    restoreSelection();
-    content.focus();
+    restoreSelection(); content.focus();
     const to=$('mailTo').value.trim(),
           sub=$('mailSubject').value.trim(),
           body=$('mailBody').value.trim();
@@ -857,16 +869,11 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     if(insertingImage) return;
     insertingImage=true;
     setTimeout(()=>insertingImage=false,250);
-
-    restoreSelection();
-    content.focus();
+    restoreSelection(); content.focus();
     const src=$('imgUrl').value.trim() || uploadedDataURL || '';
     const alt=$('imgAlt').value.trim();
     const w=$('imgWidth').value.trim();
-    if(!src){
-      alert('Provide an image URL or upload a file.');
-      return;
-    }
+    if(!src){ alert('Provide an image URL or upload a file.'); return; }
     const img=document.createElement('img');
     img.src=src;
     img.alt=alt||'';
@@ -893,8 +900,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     sel.addRange(r);
   }
   function selectInserted(chars){
-    const sel=window.getSelection();
-    if(!sel.rangeCount) return;
+    const sel=window.getSelection(); if(!sel.rangeCount) return;
     const r=sel.getRangeAt(0);
     const node=r.startContainer;
     const nr=document.createRange();
@@ -912,30 +918,11 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   /* ===== Toggle Source / Design (beautify only for source textarea) ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{
-    const meta=e.ctrlKey||e.metaKey;
     if(e.key==='Escape'){
       e.preventDefault();
-      $('toggleSource').click();
-    }
-    if(!meta) return;
-    const k=e.key.toLowerCase();
-    if(['b','i','u'].includes(k)){
-      e.preventDefault();
-      if(k==='b') execAndNormalize('bold');
-      else if(k==='i') execAndNormalize('italic');
-      else document.execCommand('underline', false, null);
-      queueSave();
-    }
-    if(k==='k'){
-      e.preventDefault();
-      $('linkModalBtn').click();
-    }
-    if(k==='s'){
-      e.preventDefault();
-      $('exportBtn').click();
+      toggleSourceView();
     }
   });
-
   function toggleSourceView(){
     if(source.style.display==='block'){
       content.innerHTML = source.value.trim();
@@ -964,7 +951,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       return html;
     }
   }
-  const BLOCKS=new Set(['p','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre','table','thead','tbody','tr','td','th','hr','div','section','article','nav','header','footer','aside','figure','figcaption']);
+  const BLOCKS=new Set([
+    'p','h1','h2','h3','h4','h5','h6','ul','ol','li',
+    'blockquote','pre','table','thead','tbody','tr','td','th',
+    'hr','div','section','article','nav','header','footer',
+    'aside','figure','figcaption'
+  ]);
   function serialize(node,level){
     let out='';
     const indent='  '.repeat(level);
@@ -1001,12 +993,30 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return s.trim();
   }
 
+  /* ===== Clear formatting ===== */
+  const clearBtn = $('clearBtn');
+  clearBtn.addEventListener('click', ()=>{
+    content.focus();
+    document.execCommand('removeFormat', false, null);
+
+    // Extra cleanup: remove style attributes & span wrappers in selection block
+    const block = currentBlock() || content;
+    block.querySelectorAll('*').forEach(el=>{
+      el.removeAttribute('style');
+      if(el.tagName.toLowerCase()==='span' && !el.attributes.length){
+        while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.remove();
+      }
+    });
+    queueSave();
+  });
+
   /* ===== Copy / Import / Export ===== */
   async function copy(text){
     try{
       await navigator.clipboard.writeText(text);
       flash('Copied HTML');
-    } catch {
+    } catch{
       const ta=document.createElement('textarea');
       ta.value=text;
       document.body.appendChild(ta);
@@ -1016,6 +1026,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       flash('Copied HTML');
     }
   }
+  // Copy (RAW)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -1024,8 +1035,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.type='file';
     i.accept='.html,.htm,text/html';
     i.onchange=async()=>{
-      const f=i.files[0];
-      if(!f) return;
+      const f=i.files[0]; if(!f) return;
       const txt=await f.text();
       const m=txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
       content.innerHTML=(m?m[1]:txt).trim();
@@ -1039,6 +1049,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
+  // Export (RAW)
   $('exportBtn').addEventListener('click', ()=>{
     const doc=[
       '<!doctype html>',
@@ -1069,7 +1080,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
 
     titleEl.textContent = 'Untitled Document';
-    content.innerHTML = '';
+    content.innerHTML = ''; // empty: show placeholder "Welcome…"
     savedRange = null;
 
     saveNow();
@@ -1108,6 +1119,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
+  // Enforce link targets (http/https => _blank; mailto => no target)
   function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
@@ -1118,6 +1130,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
+  // Plain-text linkify
   function linkifyTextToHTML(t){
     const esc=s=>s.replace(/[&<>"]/g,m=>(
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]
@@ -1128,55 +1141,48 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return out.replace(/\n/g,'<br>');
   }
 
+  // ===== Word sanitizer: preserve links, inline <em>/<strong>, <sup>/<sub>, <u>, headers, lists, footnote anchors
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
     const body = doc.body;
 
+    // Remove comments
     const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
     const rm=[];
     while(walker.nextNode()) rm.push(walker.currentNode);
     rm.forEach(n=>n.remove());
 
+    // Strip MSO/inline junk + convert tags
     body.querySelectorAll('*').forEach(el=>{
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
       if(el.hasAttribute('style')){
-        const styleStr = el.getAttribute('style') || '';
-        const isUnderline = /text-decoration:\s*underline/i.test(styleStr);
-
-        let cleaned = styleStr
+        const cleaned = el.getAttribute('style')
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
           .trim();
-
         if (cleaned) el.setAttribute('style', cleaned);
         else el.removeAttribute('style');
-
-        if(isUnderline && (el.tagName.toLowerCase()==='span' || el.tagName.toLowerCase()==='font')){
-          const u = doc.createElement('u');
-          while(el.firstChild) u.appendChild(el.firstChild);
-          el.replaceWith(u);
-          return;
-        }
       }
       el.removeAttribute('id');
       el.removeAttribute('lang');
 
       const t = (el.tagName||'').toLowerCase();
-      if (t==='b') { replaceTag(el,'strong'); return; }
-      if (t==='i') { replaceTag(el,'em'); return; }
+      if (t==='b') { replaceTag(el,'strong'); }
+      if (t==='i') { replaceTag(el,'em'); }
       if (t==='font' || t==='span') {
         if (!el.attributes.length) unwrap(el);
         else {
           const attrs=[...el.attributes].map(a=>a.name.toLowerCase());
           if (attrs.every(a=>/^data-|^dir$/.test(a))) unwrap(el);
         }
-        return;
       }
-      if (t==='div') { replaceTag(el,'p'); return; }
+      if (t==='div') { replaceTag(el,'p'); }
+      // keep <sup>/<sub>/<u> as is for footnotes/underline
     });
 
-    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','u','ul','ol','li','a','sup','sub','br']);
+    // Whitelist including <u>
+    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup','sub','br','u']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){
@@ -1195,14 +1201,17 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
 
+    // Remove empty <p>
     body.querySelectorAll('p').forEach(p=>{
       if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
     });
 
+    // Normalize <br></br> -> <br>
     body.innerHTML = body.innerHTML
       .replace(/<\s*\/\s*br\s*>/gi,'')
       .replace(/<br\s*\/?>/gi,'<br>');
 
+    // Enforce link targets
     body.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
@@ -1222,6 +1231,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
   }
 
+  // Ctrl/Cmd-click to open links while editing
   content.addEventListener('click', e=>{
     const a=e.target.closest('a');
     if(!a || !content.contains(a)) return;
@@ -1231,16 +1241,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
   });
 
-  $('clearBtn').addEventListener('click', ()=>{
-    content.focus();
-    document.execCommand('removeFormat', false, null);
-    document.execCommand('unlink', false, null);
-    collapseConsecutiveBR(content);
-    condenseParagraphInlines(content);
-    ensureParagraph();
-    queueSave();
-  });
-
+  /* ===== Autosave ===== */
   let timer=null;
   function queueSave(){
     clearTimeout(timer);
@@ -1274,11 +1275,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         condenseParagraphInlines(content);
         ensureParagraph();
       }
+      // else: leave empty to show placeholder
     }catch{
       // leave empty to show placeholder
     }
   })();
   content.addEventListener('input', ()=>{
+    // Convert DIVs to P on first typing
     Array.from(content.children).forEach(ch=>{
       if(ch.tagName==='DIV'){
         const p=document.createElement('p');
@@ -1291,21 +1294,33 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   });
   titleEl.addEventListener('input', queueSave);
 
+  // Notes autosave
   const notes=$('notesArea');
   try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
   notes.addEventListener('input', ()=>{
     try{ localStorage.setItem(NOTES_KEY, notes.value); }catch{}
   });
 
-  function prettyHTML(html){
-    try{
-      const tmp=document.createElement('div');
-      tmp.innerHTML=html;
-      return serialize(tmp,0).trim();
-    } catch {
-      return html;
+  // Shortcuts
+  document.addEventListener('keydown', e=>{
+    const meta=e.ctrlKey||e.metaKey;
+    if(e.key==='Escape'){
+      e.preventDefault();
+      $('toggleSource').click();
     }
-  }
+    if(!meta) return;
+    const k=e.key.toLowerCase();
+    if(['b','i','u'].includes(k)){
+      e.preventDefault();
+      if(k==='b') execAndNormalize('bold');
+      else if(k==='i') execAndNormalize('italic');
+      else document.execCommand('underline', false, null);
+      queueSave();
+    }
+    if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
+    if(k==='s'){ e.preventDefault(); $('exportBtn').click(); }
+  });
+
   function flash(msg){
     status.textContent=msg;
     setTimeout(()=>status.textContent='Saved',1200);
