@@ -1,278 +1,362 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.5.html
- Build: v2.5-dev
-=========================================================
-Base from: DEV v2.1.1 (your “good” build)
-- Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
-- Selection behavior so Bold/Italic behave like Underline:
-  selection remains active (no jump to start of word).
-- Welcome text behaves like a placeholder: disappears when
-  user types, reappears only if doc fully cleared.
-- Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, <u>,
-  headers, lists, footnote anchors, and cleans MSO junk.
-- Beautifier only used for Source view, Copy/Export keep raw HTML.
+ WYSIWYG HTML Editor - STABLE
+ File: editor-stb-v2.5.html
+ Build: v2.5-stable
 
-New in v2.5
-- Footer chip shows DEV v2.5.
-- Developer icons added in footer:
-  • LinkedIn  → https://www.linkedin.com/in/lincuna
-  • GitHub    → https://github.com/reraxe/web-tools
+Baseline:
+- Based on DEV v2.1.1 + later fixes.
+- Word sanitizer preserves <a>, <em>/<strong>, <u>, <sup>/<sub>, headings, lists,
+  and footnote anchors; normalizes <br></br> -> <br>; removes empty <p> before lists.
+- Inline content inside <p> is condensed to one logical line (no random spaces
+  before ) or punctuation).
+- Bold/Italic toolbar buttons normalize to <strong>/<em> and keep selection active.
+- Welcome text is a placeholder (disappears when user types, reappears if empty).
+- Source view uses a beautified/indented HTML view; Copy/Export use raw innerHTML.
+- Indent/Outdent icons oriented West/East similar to Word.
+- Clear formatting uses removeFormat/unlink.
+- LinkedIn & GitHub icon buttons in footer (right side).
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (DEV v2.5)</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WYSIWYG HTML Editor (STB v2.5)</title>
 
-<style>
-  /* ===== THEME VARS ===== */
-  :root{
-    --bg:#f6f7fb; --panel:#ffffff; --panel-2:#f1f3f9; --text:#101321; --muted:#5a6279;
-    --accent:#2563eb; --border:#dfe3ee; --danger:#dc2626;
-  }
-  [data-theme="dark"]{
-    --bg:#0f1220; --panel:#171a2a; --panel-2:#1f2336; --text:#e7e9f3; --muted:#a8afc4;
-    --accent:#6ea8fe; --border:#2a2f45; --danger:#ff6b6b;
-  }
+  <style>
+    /* ===== THEME VARS ===== */
+    :root{
+      --bg:#f6f7fb;
+      --panel:#ffffff;
+      --panel-2:#f1f3f9;
+      --text:#101321;
+      --muted:#5a6279;
+      --accent:#2563eb;
+      --border:#dfe3ee;
+      --danger:#dc2626;
+    }
+    [data-theme="dark"]{
+      --bg:#0f1220;
+      --panel:#171a2a;
+      --panel-2:#1f2336;
+      --text:#e7e9f3;
+      --muted:#a8afc4;
+      --accent:#6ea8fe;
+      --border:#2a2f45;
+      --danger:#ff6b6b;
+    }
 
-  /* ===== LAYOUT ===== */
-  *{box-sizing:border-box}
-  body{
-    margin:0;
-    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial;
-    background:var(--bg);
-    color:var(--text);
-  }
-  .wrap{max-width:1100px;margin:32px auto;padding:16px}
-  .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-  .titlebar h1{font-size:18px;margin:0;opacity:.9}
-  .status{margin-left:auto;font-size:12px;color:var(--muted)}
-  .layout{display:grid;grid-template-columns:1fr 320px;gap:16px}
-  @media(max-width:1024px){.layout{grid-template-columns:1fr}}
+    /* ===== LAYOUT ===== */
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Inter,Roboto,Arial;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .wrap{max-width:1100px;margin:32px auto;padding:16px}
+    .titlebar{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .titlebar h1{font-size:18px;margin:0;opacity:.9}
+    .status{margin-left:auto;font-size:12px;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:1fr 320px;gap:16px}
+    @media(max-width:1024px){.layout{grid-template-columns:1fr}}
 
-  .editor{
-    border:1px solid var(--border);
-    border-radius:12px;
-    overflow:hidden;
-    background:var(--panel);
-    box-shadow:0 8px 36px rgba(0,0,0,.08), inset 0 1px 0 rgba(255,255,255,.4);
-  }
-  [data-theme="dark"] .editor{
-    box-shadow:0 8px 36px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03);
-  }
+    .editor{
+      border:1px solid var(--border);
+      border-radius:12px;
+      overflow:hidden;
+      background:var(--panel);
+      box-shadow:
+        0 8px 36px rgba(0,0,0,.08),
+        inset 0 1px 0 rgba(255,255,255,.4);
+    }
+    [data-theme="dark"] .editor{
+      box-shadow:
+        0 8px 36px rgba(0,0,0,.35),
+        inset 0 1px 0 rgba(255,255,255,.03);
+    }
 
-  .toolbar{
-    display:flex;
-    gap:6px;
-    flex-wrap:wrap;
-    padding:10px;
-    border-bottom:1px solid var(--border);
-    background:linear-gradient(180deg,rgba(0,0,0,.02),transparent);
-    position:sticky;
-    top:0;
-    z-index:5;
-  }
-  [data-theme="dark"] .toolbar{
-    background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
-  }
-  .group{display:flex;gap:6px;padding-right:8px;border-right:1px solid var(--border)}
-  .group:last-child{border-right:none;padding-right:0}
-  button.tool{
-    appearance:none;
-    border:1px solid var(--border);
-    background:var(--panel-2);
-    color:var(--text);
-    height:36px;
-    padding:0 10px;
-    border-radius:9px;
-    cursor:pointer;
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    font-size:13px;
-  }
-  button.tool:hover{filter:brightness(0.97)}
-  [data-theme="dark"] button.tool:hover{background:#252a42;filter:none}
-  .tool svg{width:16px;height:16px;opacity:.9}
-  select.tool,
-  input[type="color"].tool{
-    height:36px;
-    border:1px solid var(--border);
-    background:var(--panel-2);
-    color:var(--text);
-    border-radius:9px;
-    padding:0 8px;
-    font-size:13px;
-    cursor:pointer;
-  }
+    .toolbar{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+      padding:10px;
+      border-bottom:1px solid var(--border);
+      background:linear-gradient(180deg,rgba(0,0,0,.02),transparent);
+      position:sticky;
+      top:0;
+      z-index:5;
+    }
+    [data-theme="dark"] .toolbar{
+      background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);
+    }
+    .group{
+      display:flex;
+      gap:6px;
+      padding-right:8px;
+      border-right:1px solid var(--border);
+    }
+    .group:last-child{border-right:none;padding-right:0}
 
-  .content{
-    min-height:380px;
-    padding:18px 20px;
-    outline:none;
-    line-height:1.6;
-  }
-  .content:empty:before{
-    content:attr(data-placeholder);
-    color:var(--muted);
-    white-space:pre-wrap;
-  }
-  .content h1,.content h2,.content h3{line-height:1.25;margin:1.1em 0 .4em}
-  .content img{max-width:100%;border-radius:8px}
+    button.tool{
+      appearance:none;
+      border:1px solid var(--border);
+      background:var(--panel-2);
+      color:var(--text);
+      height:36px;
+      padding:0 10px;
+      border-radius:9px;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      font-size:13px;
+    }
+    button.tool:hover{filter:brightness(0.97)}
+    [data-theme="dark"] button.tool:hover{
+      background:#252a42;
+      filter:none;
+    }
+    .tool svg{
+      width:16px;
+      height:16px;
+      opacity:.9;
+      flex-shrink:0;
+    }
+    select.tool,
+    input[type="color"].tool{
+      height:36px;
+      border:1px solid var(--border);
+      background:var(--panel-2);
+      color:var(--text);
+      border-radius:9px;
+      padding:0 8px;
+      font-size:13px;
+      cursor:pointer;
+    }
 
-  .source{
-    width:100%;
-    min-height:380px;
-    display:none;
-    border:0;
-    outline:none;
-    background:color-mix(in srgb, var(--bg) 95%, #fff);
-    color:inherit;
-    padding:18px 20px;
-    font-family:ui-monospace,Menlo,Consolas,monospace;
-  }
-  [data-theme="dark"] .source{background:#0a0d1a;color:#dbe1ff}
+    .content{
+      min-height:380px;
+      padding:18px 20px;
+      outline:none;
+      line-height:1.6;
+    }
+    .content:empty:before{
+      content:attr(data-placeholder);
+      color:var(--muted);
+      white-space:pre-wrap;
+    }
+    .content h1,.content h2,.content h3{
+      line-height:1.25;
+      margin:1.1em 0 .4em;
+    }
+    .content img{
+      max-width:100%;
+      border-radius:8px;
+    }
 
-  .footerbar{
-    display:flex;
-    gap:8px;
-    align-items:center;
-    justify-content:space-between;
-    padding:10px;
-    border-top:1px solid var(--border);
-    background:linear-gradient(0deg,rgba(0,0,0,.02),transparent);
-    color:var(--muted);
-    font-size:12px;
-  }
-  [data-theme="dark"] .footerbar{
-    background:linear-gradient(0deg,rgba(255,255,255,.03),transparent);
-  }
-  .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .chip{
-    border:1px dashed var(--border);
-    padding:6px 8px;
-    border-radius:8px;
-    display:inline-flex;
-    gap:6px;
-    align-items:center;
-  }
-  .btn-flat{
-    background:transparent;
-    color:var(--muted);
-    border:1px solid var(--border);
-    border-radius:8px;
-    height:32px;
-    padding:0 10px;
-    cursor:pointer;
-  }
-  .btn-accent{
-    background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 60%, #000));
-    border:0;
-    color:#ffffff;
-    font-weight:600;
-    border-radius:9px;
-    height:36px;
-    padding:0 12px;
-    cursor:pointer;
-  }
-  [data-theme="dark"] .btn-accent{color:#0b1020}
-  .btn-danger{background:linear-gradient(180deg,#ff8383,var(--danger));color:#1a0d0d}
+    .source{
+      width:100%;
+      min-height:380px;
+      display:none;
+      border:0;
+      outline:none;
+      background:color-mix(in srgb, var(--bg) 95%, #fff);
+      color:inherit;
+      padding:18px 20px;
+      font-family:ui-monospace,Menlo,Consolas,monospace;
+      font-size:13px;
+      line-height:1.5;
+    }
+    [data-theme="dark"] .source{
+      background:#0a0d1a;
+      color:#dbe1ff;
+    }
 
-  /* NOTES */
-  .notes{
-    border:1px solid var(--border);
-    border-radius:12px;
-    background:var(--panel);
-    padding:12px;
-    display:flex;
-    flex-direction:column;
-    gap:10px;
-    height:min(560px,70vh);
-  }
-  .notes h2{font-size:16px;margin:0;opacity:.9}
-  .notes textarea{
-    flex:1;
-    resize:vertical;
-    min-height:200px;
-    border:1px dashed var(--border);
-    background:color-mix(in srgb, var(--bg) 95%, #fff);
-    color:inherit;
-    border-radius:8px;
-    padding:10px;
-    font-family:Inter,system-ui,Arial;
-  }
-  [data-theme="dark"] .notes textarea{background:#0b0f1d;color:#cfe3ff}
+    .footerbar{
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:space-between;
+      padding:10px;
+      border-top:1px solid var(--border);
+      background:linear-gradient(0deg,rgba(0,0,0,.02),transparent);
+      color:var(--muted);
+      font-size:12px;
+    }
+    [data-theme="dark"] .footerbar{
+      background:linear-gradient(0deg,rgba(255,255,255,.03),transparent);
+    }
+    .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .chip{
+      border:1px dashed var(--border);
+      padding:6px 8px;
+      border-radius:8px;
+      display:inline-flex;
+      gap:6px;
+      align-items:center;
+    }
+    .btn-flat{
+      background:transparent;
+      color:var(--muted);
+      border:1px solid var(--border);
+      border-radius:8px;
+      height:32px;
+      padding:0 10px;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+    .btn-accent{
+      background:linear-gradient(
+        180deg,
+        var(--accent),
+        color-mix(in srgb,var(--accent) 60%, #000)
+      );
+      border:0;
+      color:#ffffff;
+      font-weight:600;
+      border-radius:9px;
+      height:36px;
+      padding:0 12px;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+    [data-theme="dark"] .btn-accent{color:#0b1020}
+    .btn-danger{
+      background:linear-gradient(180deg,#ff8383,var(--danger));
+      color:#1a0d0d;
+    }
 
-  /* Modals */
-  .modal-backdrop{
-    position:fixed;
-    inset:0;
-    background:rgba(0,0,0,.45);
-    display:none;
-    align-items:center;
-    justify-content:center;
-    z-index:50;
-  }
-  .modal{
-    width:min(560px,92vw);
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:12px;
-    box-shadow:0 20px 60px rgba(0,0,0,.25);
-    padding:16px;
-  }
-  .modal header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
-  .modal h3{margin:0;font-size:16px}
-  .modal .fields{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:center}
-  .modal .row{display:contents}
-  .modal footer{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
-  .modal input,.modal textarea,.modal select{
-    width:100%;
-    height:36px;
-    border:1px solid var(--border);
-    background:var(--panel-2);
-    color:var(--text);
-    border-radius:8px;
-    padding:0 10px;
-    font-size:14px;
-  }
-  .modal textarea{height:90px;padding:10px;resize:vertical}
-  .close-x{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
+    /* Icon-only footer buttons (LinkedIn / GitHub) */
+    .btn-icon{
+      width:32px;
+      height:32px;
+      border-radius:999px;
+      padding:0;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border:1px solid var(--border);
+      background:var(--panel-2);
+      color:var(--muted);
+      text-decoration:none;
+    }
+    .btn-icon svg{
+      width:16px;
+      height:16px;
+      opacity:.9;
+    }
+    .btn-icon:hover{
+      filter:brightness(.97);
+      color:var(--accent);
+    }
 
-  /* Dev social icons */
-  .dev-links{
-    display:inline-flex;
-    gap:6px;
-    align-items:center;
-  }
-  .dev-links a{
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    width:18px;
-    height:18px;
-    border-radius:999px;
-    color:var(--muted);
-    text-decoration:none;
-  }
-  .dev-links a:hover{
-    background:var(--panel-2);
-    color:var(--accent);
-  }
-  .dev-links svg{
-    width:14px;
-    height:14px;
-  }
-</style>
+    /* NOTES */
+    .notes{
+      border:1px solid var(--border);
+      border-radius:12px;
+      background:var(--panel);
+      padding:12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      height:min(560px,70vh);
+    }
+    .notes h2{font-size:16px;margin:0;opacity:.9}
+    .notes textarea{
+      flex:1;
+      resize:vertical;
+      min-height:200px;
+      border:1px dashed var(--border);
+      background:color-mix(in srgb, var(--bg) 95%, #fff);
+      color:inherit;
+      border-radius:8px;
+      padding:10px;
+      font-family:Inter,system-ui,Arial;
+      font-size:13px;
+    }
+    [data-theme="dark"] .notes textarea{
+      background:#0b0f1d;
+      color:#cfe3ff;
+    }
+
+    /* Modals */
+    .modal-backdrop{
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.45);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:50;
+    }
+    .modal{
+      width:min(560px,92vw);
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:12px;
+      box-shadow:0 20px 60px rgba(0,0,0,.25);
+      padding:16px;
+    }
+    .modal header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      margin-bottom:10px;
+    }
+    .modal h3{margin:0;font-size:16px}
+    .modal .fields{
+      display:grid;
+      grid-template-columns:120px 1fr;
+      gap:10px;
+      align-items:center;
+    }
+    .modal .row{display:contents}
+    .modal footer{
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      margin-top:12px;
+    }
+    .modal input,
+    .modal textarea,
+    .modal select{
+      width:100%;
+      height:36px;
+      border:1px solid var(--border);
+      background:var(--panel-2);
+      color:var(--text);
+      border-radius:8px;
+      padding:0 10px;
+      font-size:14px;
+    }
+    .modal textarea{
+      height:90px;
+      padding:10px;
+      resize:vertical;
+    }
+    .close-x{
+      background:none;
+      border:0;
+      color:var(--muted);
+      font-size:18px;
+      cursor:pointer;
+    }
+  </style>
 </head>
+
 <body>
 <div class="wrap">
   <div class="titlebar">
-    <h1 id="docTitle" contenteditable="true" aria-label="Document title">Untitled Document</h1>
+    <h1 id="docTitle" contenteditable="true" aria-label="Document title">
+      Untitled Document
+    </h1>
     <span class="status" id="status">Saved</span>
   </div>
 
@@ -281,21 +365,35 @@ New in v2.5
       <div class="toolbar" role="toolbar" aria-label="Formatting toolbar">
         <div class="group">
           <button class="tool" id="boldBtn" data-cmd="bold" title="Bold (Ctrl+B)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M15.6 10.79A4.792 4.792 0 0 0 12 3H7v18h7a4 4 0 0 0 1.6-7.21zM9 5h3a2 2 0 0 1 0 4H9zm4 12H9v-4h4a2 2 0 0 1 0 4z"/>
+            </svg>
           </button>
           <button class="tool" id="italicBtn" data-cmd="italic" title="Italic (Ctrl+I)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M10 4v3h2.21l-3.42 10H6v3h8v-3h-2.21l3.42-10H18V4z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="underline" title="Underline (Ctrl+U)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M12 17a5 5 0 0 0 5-5V4h-2v8a3 3 0 0 1-6 0V4H7v8a5 5 0 0 0 5 5zM5 20h14v-2H5z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="strikeThrough" title="Strikethrough">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M7 7h10v2H7zm-4 5h18v2H3zm4 5h10v2H7z"/>
+            </svg>
           </button>
           <button class="tool" id="supBtn" title="Superscript">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
-              <path fill="currentColor" d="M18 5h4v1.5h-2.5V8H22v1.5h-4z"/>
+              <path fill="currentColor"
+                d="M5 5h2l3 4 3-4h2l-4 6 4 6h-2l-3-4-3 4H5l4-6z"/>
+              <path fill="currentColor"
+                d="M18 5h4v1.5h-2.5V8H22v1.5h-4z"/>
             </svg>
           </button>
         </div>
@@ -307,83 +405,92 @@ New in v2.5
             <option value="h2">Heading 2</option>
             <option value="h3">Heading 3</option>
           </select>
-          <input class="tool" type="color" id="foreColor" title="Text color" value="#222222"/>
-          <input class="tool" type="color" id="backColor" title="Highlight color" value="#fff59d"/>
+          <input class="tool" type="color" id="foreColor"
+                 title="Text color" value="#222222" />
+          <input class="tool" type="color" id="backColor"
+                 title="Highlight color" value="#fff59d" />
         </div>
 
         <div class="group">
           <button class="tool" data-cmd="insertUnorderedList" title="Bulleted list">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M7 5h14v2H7zM7 11h14v2H7zM7 17h14v2H7zM3 5h2v2H3zM3 11h2v2H3zM3 17h2v2H3z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="insertOrderedList" title="Numbered list">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M9 5h12v2H9V5zm0 6h12v2H9v-2zm0 6h12v2H9v-2z"/>
-              <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
+              <path fill="currentColor"
+                d="M9 5h12v2H9V5zm0 6h12v2H9v-2zm0 6h12v2H9v-2z"/>
+              <path fill="currentColor"
+                d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
             </svg>
           </button>
-          <!-- Outdent (arrow pointing West) -->
+
+          <!-- Outdent = arrow West, indent = arrow East (Word-like icons) -->
           <button class="tool" data-cmd="outdent" title="Outdent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
+              <path fill="currentColor"
+                d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM11 11H3v2h8zM15 8h6v8h-6z"/>
             </svg>
           </button>
-          <!-- Indent (arrow pointing East) -->
           <button class="tool" data-cmd="indent" title="Indent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
+              <path fill="currentColor"
+                d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
             </svg>
           </button>
         </div>
 
         <div class="group">
-          <button class="tool" data-cmd="justifyLeft" title="Align left">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h10v2H3zM3 12h18v2H3zM3 16h10v2H3zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyCenter" title="Align center">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM7 8h10v2H7zM3 12h18v2H3zM7 16h10v2H7zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyRight" title="Align right">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM11 8h10v2H11zM3 12h18v2H3zM11 16h10v2H11zM3 20h18v2H3z"/></svg>
-          </button>
-          <button class="tool" data-cmd="justifyFull" title="Justify">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 4h18v2H3zM3 8h18v2H3zM3 12h18v2H3zM3 16h18v2H3zM3 20h18v2H3z"/></svg>
-          </button>
-        </div>
-
-        <div class="group">
-          <!-- Link / mail / image -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
+              <path fill="currentColor"
+                d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
             </svg>
           </button>
           <button class="tool" id="mailtoModalBtn" title="Insert/edit mailto link">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M20 4H4c-1.11 0-2 .89-2 2v12c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/>
+            </svg>
           </button>
           <button class="tool" id="imageModalBtn" title="Insert image">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5 11 17l2.5-3.22L17.5 19H5z"/>
+            </svg>
           </button>
           <button class="tool" id="clearBtn" title="Clear formatting">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
+              <path fill="currentColor"
+                d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
             </svg>
           </button>
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML (raw)">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/>
+            </svg>
           </button>
           <!-- Source toggle icon = </> -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
+              <path fill="currentColor"
+                d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
             </svg>
           </button>
           <button class="tool" data-cmd="undo" title="Undo">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/></svg>
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
+            </svg>
           </button>
           <button class="tool" data-cmd="redo" title="Redo">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <g transform="translate(24,0) scale(-1,1)">
-                <path fill="currentColor" d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
+                <path fill="currentColor"
+                  d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6a6 6 0 0 1-6 6c-2.67 0-5.16-1.64-5.82-4H4.26c.72 4.12 4.29 7 8.74 7 4.97 0 9-4.03 9-9s-4.03-9-9-9z"/>
               </g>
             </svg>
           </button>
@@ -393,13 +500,14 @@ New in v2.5
       <div id="content" class="content" contenteditable="true"
            data-placeholder="Welcome 👋
 Use the toolbar to format text, insert links, images, and more.
-Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
+Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes.">
+      </div>
       <textarea id="source" class="source" aria-label="HTML source view"></textarea>
 
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">DEV v2.5</span>
+          <span class="chip">STB v2.5</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -416,31 +524,35 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
             </select>
           </label>
           <span class="chip">Tip: Ctrl/Cmd + click a link to open</span>
-          <!-- NEW: Dev links chip -->
-          <span class="chip" title="Developer links">
-            <span>Dev:</span>
-            <span class="dev-links">
-              <a href="https://www.linkedin.com/in/lincuna" target="_blank" aria-label="LinkedIn">
-                <!-- Simple LinkedIn icon -->
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="currentColor" opacity="0.15"></rect>
-                  <path fill="currentColor" d="M8.34 17.5H6.03V9.5h2.31v8zM7.18 8.45c-.74 0-1.34-.61-1.34-1.36 0-.76.6-1.36 1.34-1.36.74 0 1.34.6 1.34 1.36 0 .75-.6 1.36-1.34 1.36zM18 17.5h-2.3v-4.2c0-1-.02-2.29-1.4-2.29-1.4 0-1.62 1.09-1.62 2.22v4.27H10.4V9.5h2.21v1.09h.03c.31-.58 1.06-1.19 2.18-1.19 2.33 0 2.76 1.54 2.76 3.55v4.55z"/>
-                </svg>
-              </a>
-              <a href="https://github.com/reraxe/web-tools" target="_blank" aria-label="GitHub">
-                <!-- Simple GitHub icon -->
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.26c0 4.52 2.87 8.35 6.84 9.7.5.09.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.61-3.37-1.37-3.37-1.37-.45-1.18-1.12-1.5-1.12-1.5-.92-.64.07-.63.07-.63 1.02.07 1.56 1.07 1.56 1.07.9 1.57 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.27 2.75 1.05A9.18 9.18 0 0 1 12 6.37c.85 0 1.71.12 2.51.34 1.9-1.32 2.74-1.05 2.74-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.01 10.01 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/>
-                </svg>
-              </a>
-            </span>
-          </span>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML (raw)">Copy HTML</button>
-          <button class="btn-flat" id="importBtn" title="Import HTML">Import</button>
-          <button class="btn-accent" id="exportBtn" title="Download HTML (raw)">Export</button>
-          <button class="btn-accent btn-danger" id="resetBtn" title="Clear document">New</button>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn-flat" id="copyHtmlBtn"
+                  title="Copy formatted HTML (raw)">Copy HTML</button>
+          <button class="btn-flat" id="importBtn"
+                  title="Import HTML">Import</button>
+          <button class="btn-accent" id="exportBtn"
+                  title="Download HTML (raw)">Export</button>
+          <button class="btn-accent btn-danger" id="resetBtn"
+                  title="Clear document">New</button>
+
+          <!-- LinkedIn / GitHub icon buttons -->
+          <a class="btn-icon" href="https://www.linkedin.com/in/lincuna"
+             target="_blank" rel="noopener noreferrer"
+             title="LinkedIn profile">
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M19 3A2 2 0 0 1 21 5V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V5A2 2 0 0 1 5 3H19M8.34 17.34V10.5H6V17.34H8.34M7.17 9.5A1.34 1.34 0 1 0 7.17 6.82A1.34 1.34 0 1 0 7.17 9.5M18 17.34V13.5C18 11.36 16.84 10.34 15.25 10.34C14.12 10.34 13.5 10.96 13.19 11.44V10.5H10.84C10.87 11.12 10.84 17.34 10.84 17.34H13.19V13.59C13.19 13.4 13.2 13.21 13.26 13.08C13.43 12.71 13.77 12.33 14.32 12.33C15.05 12.33 15.34 12.88 15.34 13.71V17.34H18Z"/>
+            </svg>
+          </a>
+          <a class="btn-icon" href="https://github.com/reraxe/web-tools"
+             target="_blank" rel="noopener noreferrer"
+             title="GitHub repo">
+            <svg viewBox="0 0 24 24">
+              <path fill="currentColor"
+                d="M12 2A10 10 0 0 0 2 12C2 16.42 4.87 20.17 8.84 21.5C9.34 21.58 9.5 21.27 9.5 21V19.5C6.73 20.1 6.14 18.24 6.14 18.24C5.68 17.03 5.03 16.7 5.03 16.7C4.12 16.08 5.1 16.09 5.1 16.09C6.1 16.17 6.63 17.13 6.63 17.13C7.5 18.66 8.97 18.21 9.54 17.94C9.62 17.29 9.88 16.84 10.17 16.57C7.95 16.32 5.62 15.44 5.62 11.5C5.62 10.39 6 9.5 6.65 8.79C6.55 8.53 6.2 7.5 6.75 6.15C6.75 6.15 7.59 5.88 9.5 7.17C10.29 6.95 11.15 6.84 12 6.84C12.85 6.84 13.71 6.95 14.5 7.17C16.41 5.88 17.25 6.15 17.25 6.15C17.8 7.5 17.45 8.53 17.35 8.79C18 9.5 18.38 10.39 18.38 11.5C18.38 15.45 16.04 16.31 13.81 16.56C14.17 16.9 14.5 17.55 14.5 18.5V21C14.5 21.27 14.66 21.59 15.17 21.5C19.13 20.16 22 16.42 22 12A10 10 0 0 0 12 2Z"/>
+            </svg>
+          </a>
         </div>
       </div>
     </div>
@@ -448,7 +560,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     <!-- Notes (not exported) -->
     <aside class="notes">
       <h2>Your notes (not part of HTML)</h2>
-      <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
+      <textarea id="notesArea"
+                placeholder="Keep temporary notes or code here…"></textarea>
     </aside>
   </div>
 </div>
@@ -456,73 +569,129 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 <!-- Link Modal -->
 <div class="modal-backdrop" id="linkModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
-    <header><h3 id="linkTitle">Insert/edit link</h3><button class="close-x" data-close="linkModal">✕</button></header>
+    <header>
+      <h3 id="linkTitle">Insert/edit link</h3>
+      <button class="close-x" data-close="linkModal">✕</button>
+    </header>
     <div class="fields">
-      <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text"/></div>
-      <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com"/></div>
-      <div class="row"><label for="linkTarget">Open in</label>
-        <select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
+      <div class="row">
+        <label for="linkText">Text</label>
+        <input id="linkText" placeholder="Link text" />
+      </div>
+      <div class="row">
+        <label for="linkUrl">URL</label>
+        <input id="linkUrl" placeholder="https://example.com" />
+      </div>
+      <div class="row">
+        <label for="linkTarget">Open in</label>
+        <select id="linkTarget">
+          <option value="_blank">New tab</option>
+          <option value="_self">Same tab</option>
+        </select>
       </div>
     </div>
-    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Save</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="linkModal">Cancel</button>
+      <button class="btn-accent" id="linkInsertBtn">Save</button>
+    </footer>
   </div>
 </div>
 
 <!-- Mailto Modal -->
 <div class="modal-backdrop" id="mailtoModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
-    <header><h3 id="mailtoTitle">Insert/edit mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
+    <header>
+      <h3 id="mailtoTitle">Insert/edit mailto link</h3>
+      <button class="close-x" data-close="mailtoModal">✕</button>
+    </header>
     <div class="fields">
-      <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com"/></div>
-      <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello"/></div>
-      <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
-      <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us"/></div>
+      <div class="row">
+        <label for="mailTo">To</label>
+        <input id="mailTo" placeholder="name@example.com" />
+      </div>
+      <div class="row">
+        <label for="mailSubject">Subject</label>
+        <input id="mailSubject" placeholder="Hello" />
+      </div>
+      <div class="row">
+        <label for="mailBody">Body</label>
+        <textarea id="mailBody" placeholder="Message…"></textarea>
+      </div>
+      <div class="row">
+        <label for="mailText">Link text</label>
+        <input id="mailText" placeholder="Email us" />
+      </div>
     </div>
-    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Save</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="mailtoModal">Cancel</button>
+      <button class="btn-accent" id="mailtoInsertBtn">Save</button>
+    </footer>
   </div>
 </div>
 
 <!-- Image Modal -->
 <div class="modal-backdrop" id="imageModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
-    <header><h3 id="imageTitle">Insert image</h3><button class="close-x" data-close="imageModal">✕</button></header>
+    <header>
+      <h3 id="imageTitle">Insert image</h3>
+      <button class="close-x" data-close="imageModal">✕</button>
+    </header>
     <div class="fields">
-      <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…"/></div>
-      <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description"/></div>
-      <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*"/></div>
-      <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)"/></div>
+      <div class="row">
+        <label for="imgUrl">Image URL</label>
+        <input id="imgUrl" placeholder="https://…" />
+      </div>
+      <div class="row">
+        <label for="imgAlt">Alt text</label>
+        <input id="imgAlt" placeholder="Description" />
+      </div>
+      <div class="row">
+        <label>Upload</label>
+        <input type="file" id="imgFile" accept="image/*" />
+      </div>
+      <div class="row">
+        <label for="imgWidth">Width</label>
+        <input id="imgWidth" type="number" min="0" placeholder="Auto (px)" />
+      </div>
     </div>
-    <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="imageModal">Cancel</button>
+      <button class="btn-accent" id="imageInsertBtn">Insert</button>
+    </footer>
   </div>
 </div>
-
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const content = $('content'),
-        source = $('source'),
-        status = $('status'),
-        titleEl = $('docTitle'),
-        blockSelect = $('blockFormat');
+  const content   = $('content');
+  const source    = $('source');
+  const status    = $('status');
+  const titleEl   = $('docTitle');
+  const blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.5)
-  const DOC_KEY='wysi_doc_dev_v25';
-  const NOTES_KEY='wysi_notes_dev_v25';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v25';
+  // Versioned storage (STB v2.5)
+  const DOC_KEY        = 'wysi_doc_stb_v25';
+  const NOTES_KEY      = 'wysi_notes_stb_v25';
+  const THEME_MODE_KEY = 'wysi_theme_mode_stb_v25';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
-  const themeSelect=$('themeMode');
-  const mql=window.matchMedia('(prefers-color-scheme: dark)');
-  let themeMode='auto';
+  const themeSelect = $('themeMode');
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  let themeMode = 'auto';
+
   function applyTheme(mode){
-    document.documentElement.setAttribute('data-theme', mode==='dark'?'dark':'light');
+    document.documentElement.setAttribute('data-theme', mode === 'dark' ? 'dark' : 'light');
   }
-  function applySystemTheme(){ applyTheme(mql.matches?'dark':'light'); }
-  function onSystemChange(){ if(themeMode==='auto') applySystemTheme(); }
+  function applySystemTheme(){
+    applyTheme(mql.matches ? 'dark' : 'light');
+  }
+  function onSystemChange(){
+    if(themeMode === 'auto') applySystemTheme();
+  }
   function setThemeMode(mode){
-    themeMode=mode;
-    try{ localStorage.setItem(THEME_MODE_KEY,mode); }catch{}
-    if(mode==='auto'){
+    themeMode = mode;
+    try{ localStorage.setItem(THEME_MODE_KEY, mode); }catch{}
+    if(mode === 'auto'){
       applySystemTheme();
       mql.addEventListener('change', onSystemChange);
     } else {
@@ -530,87 +699,110 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       applyTheme(mode);
     }
   }
-  (()=>{ const saved=localStorage.getItem(THEME_MODE_KEY)||'auto'; themeSelect.value=saved; setThemeMode(saved); })();
-  themeSelect.addEventListener('change', e=> setThemeMode(e.target.value));
+  (() => {
+    const saved = localStorage.getItem(THEME_MODE_KEY) || 'auto';
+    themeSelect.value = saved;
+    setThemeMode(saved);
+  })();
+  themeSelect.addEventListener('change', e => setThemeMode(e.target.value));
 
   // Default paragraph separator = <p>
-  try{ document.execCommand('defaultParagraphSeparator', false, 'p'); }catch{}
+  try{
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+  }catch{}
 
   /* ===== Selection save/restore for modals ===== */
-  let savedRange=null;
+  let savedRange = null;
   function selectionInside(){
-    const s=window.getSelection();
+    const s = window.getSelection();
     return s && s.rangeCount && content.contains(s.anchorNode);
   }
   function saveSelection(){
-    const s=window.getSelection();
+    const s = window.getSelection();
     if(s && s.rangeCount && content.contains(s.anchorNode)){
       savedRange = s.getRangeAt(0).cloneRange();
     }
   }
   function restoreSelection(){
     if(!savedRange) return;
-    const s=window.getSelection();
+    const s = window.getSelection();
     s.removeAllRanges();
     s.addRange(savedRange);
   }
-  document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
+  document.addEventListener('selectionchange', () => {
+    if(selectionInside()) saveSelection();
+  });
 
   /* ===== Helpers ===== */
-  function placeCaretInside(el, atEnd=true){
-    const r=document.createRange();
+  function placeCaretInside(el, atEnd = true){
+    const r = document.createRange();
     r.selectNodeContents(el);
     r.collapse(atEnd);
-    const s=window.getSelection();
+    const s = window.getSelection();
     s.removeAllRanges();
     s.addRange(r);
   }
+
   function collapseConsecutiveBR(root){
     root.querySelectorAll('br + br').forEach(br => br.remove());
-    // Normalize </br> -> <br> and self-closing forms
+    // Normalize </br> -> <br> and self-closing to <br>
     root.innerHTML = root.innerHTML
-      .replace(/<\s*\/\s*br\s*>/gi,'')
-      .replace(/<br\s*\/?>/gi,'<br>');
+      .replace(/<\s*\/\s*br\s*>/gi, '')
+      .replace(/<br\s*\/?>/gi, '<br>');
   }
+
   function ensureParagraph(){
-    // If empty, keep empty so placeholder text shows
-    if (!content.innerHTML.trim()) return;
-    if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
+    // If empty, we keep DOM empty so the placeholder text shows.
+    if(!content.innerHTML.trim()) return;
+
+    // If there's content but no block, create a <p>
+    if(!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')){
       content.innerHTML = '<p>\u200B</p>';
-      const p = content.querySelector('p'); if (p) placeCaretInside(p);
+      const p = content.querySelector('p');
+      if(p) placeCaretInside(p);
     }
   }
+
   function removeEmptyPBeforeLists(root){
-    root.querySelectorAll('ul,ol').forEach(list=>{
+    root.querySelectorAll('ul,ol').forEach(list => {
       let prev = list.previousSibling;
-      while (prev && prev.nodeType===3 && !prev.textContent.trim()) prev = prev.previousSibling;
-      if (prev &&
-          prev.nodeType===1 &&
-          prev.tagName.toLowerCase()==='p' &&
-          prev.textContent.replace(/\u200B/g,'').trim()==='' &&
-          prev.children.length===0) {
+      while(prev && prev.nodeType === 3 && !prev.textContent.trim()){
+        prev = prev.previousSibling;
+      }
+      if(
+        prev &&
+        prev.nodeType === 1 &&
+        prev.tagName.toLowerCase() === 'p' &&
+        prev.textContent.replace(/\u200B/g,'').trim() === '' &&
+        prev.children.length === 0
+      ){
         prev.remove();
       }
     });
   }
+
+  // Condense inline content so everything inside <p> is one logical line
+  // and no stray spaces before ) or punctuation.
   function condenseParagraphInlines(root){
-    root.querySelectorAll('p').forEach(p=>{
+    root.querySelectorAll('p').forEach(p => {
       let html = p.innerHTML;
       html = html.replace(/&nbsp;/g, ' ');
-      html = html.replace(/\s*\n+\s*/g,' ');
+      html = html.replace(/\s*\n+\s*/g, ' ');
 
-      // Remove stray whitespace around inline tags
+      // Trim spaces just inside inline tags
       html = html.replace(/\s+<\/(em|strong|a|sup|sub|u)>/gi, '</$1>');
       html = html.replace(/<(em|strong|a|sup|sub|u)>\s+/gi, '<$1>');
+
+      // Ensure at most one space after closing inline tag when followed by text
       html = html.replace(/<\/(em|strong|a|sup|sub|u)>(?!\s|<)/gi, '</$1> ');
 
-      // Collapse multiple spaces
-      html = html.replace(/\s{2,}/g,' ');
+      // Remove multiple spaces
+      html = html.replace(/\s{2,}/g, ' ');
 
-      // Clean spaces around punctuation and parentheses
-      html = html.replace(/\s+([,.;:!?])/g,'$1');
-      html = html.replace(/\(\s+/g, '(');
+      // Remove space before punctuation and before closing parens/brackets
+      html = html.replace(/\s+([,.;:!?])/g, '$1');
       html = html.replace(/\s+\)/g, ')');
+      html = html.replace(/\s+\]/g, ']');
 
       html = html.trim();
       p.innerHTML = html;
@@ -618,280 +810,357 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
 
   /* ===== ExecCommand bindings (with STRONG/EM normalization + selection keep) ===== */
-  function execAndNormalize(cmd){
-    const sel=window.getSelection();
-    if(!sel || !sel.rangeCount) return;
-    const pre = sel.getRangeAt(0).cloneRange();
-
-    document.execCommand(cmd,false,null);
-
-    const block = currentBlock() || content;
-    replaceInlineTag(block,'B','STRONG');
-    replaceInlineTag(block,'I','EM');
-
-    sel.removeAllRanges();
-    sel.addRange(pre);
+  function currentBlock(){
+    const sel = window.getSelection();
+    if(!sel || !sel.rangeCount) return null;
+    let n = sel.anchorNode;
+    if(n && n.nodeType === 3) n = n.parentNode;
+    while(n && n !== content){
+      if(
+        n.nodeType === 1 &&
+        /^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)
+      ){
+        return n;
+      }
+      n = n.parentNode;
+    }
+    return content;
   }
-  function replaceInlineTag(scope, from, to){
-    const nodes = scope.querySelectorAll(from);
-    nodes.forEach(n=>{
-      const neo=document.createElement(to);
+
+  function replaceInlineTag(scope, fromTag, toTag){
+    const nodes = scope.querySelectorAll(fromTag);
+    nodes.forEach(n => {
+      const neo = document.createElement(toTag);
       while(n.firstChild) neo.appendChild(n.firstChild);
       n.replaceWith(neo);
     });
   }
 
-  $('boldBtn').addEventListener('click', ()=>{
+  function execAndNormalize(cmd){
+    const sel = window.getSelection();
+    if(!sel || !sel.rangeCount) return;
+    const before = sel.getRangeAt(0).cloneRange();
+
+    document.execCommand(cmd, false, null);
+
+    // Normalize <b>/<i> to <strong>/<em> within current block
+    const block = currentBlock() || content;
+    replaceInlineTag(block, 'B', 'STRONG');
+    replaceInlineTag(block, 'I', 'EM');
+
+    // Restore selection so it behaves like underline
+    const afterSel = window.getSelection();
+    afterSel.removeAllRanges();
+    afterSel.addRange(before);
+  }
+
+  const boldBtn   = $('boldBtn');
+  const italicBtn = $('italicBtn');
+
+  boldBtn.addEventListener('click', () => {
     content.focus();
     execAndNormalize('bold');
     queueSave();
   });
-  $('italicBtn').addEventListener('click', ()=>{
+  italicBtn.addEventListener('click', () => {
     content.focus();
     execAndNormalize('italic');
     queueSave();
   });
 
-  document.querySelectorAll('button.tool[data-cmd]:not(#boldBtn):not(#italicBtn)').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      content.focus();
-      document.execCommand(btn.dataset.cmd,false,null);
-      queueSave();
+  // Other toolbar buttons (plain execCommand)
+  document
+    .querySelectorAll('button.tool[data-cmd]:not(#boldBtn):not(#italicBtn)')
+    .forEach(btn => {
+      btn.addEventListener('click', () => {
+        content.focus();
+        document.execCommand(btn.dataset.cmd, false, null);
+        queueSave();
+      });
     });
-  });
-  $('foreColor').addEventListener('input', e=>{
+
+  $('foreColor').addEventListener('input', e => {
     content.focus();
-    document.execCommand('foreColor',false,e.target.value);
+    document.execCommand('foreColor', false, e.target.value);
     queueSave();
   });
-  $('backColor').addEventListener('input', e=>{
+  $('backColor').addEventListener('input', e => {
     content.focus();
-    document.execCommand('hiliteColor',false,e.target.value);
+    document.execCommand('hiliteColor', false, e.target.value);
     queueSave();
   });
-  $('supBtn').addEventListener('click', ()=>{
+  $('supBtn').addEventListener('click', () => {
     content.focus();
-    document.execCommand('superscript',false,null);
+    document.execCommand('superscript', false, null);
     queueSave();
   });
 
   /* ===== Block format (p/h1/h2/h3) ===== */
-  blockSelect.addEventListener('change', e=> setBlockTag(e.target.value));
+  blockSelect.addEventListener('change', e => setBlockTag(e.target.value));
+
   function setBlockTag(tag){
-    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return;
-    const r=sel.getRangeAt(0);
-    let block=currentBlock();
-    if(!block || block===content){
-      const el=document.createElement(tag);
+    const sel = window.getSelection();
+    if(!sel || !sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    let block = currentBlock();
+
+    if(!block || block === content){
+      const el = document.createElement(tag);
       if(r.collapsed){
         el.appendChild(document.createTextNode('\u200B'));
-        r.insertNode(el); placeCaretInside(el,true);
+        r.insertNode(el);
+        placeCaretInside(el, true);
       } else {
         el.appendChild(r.extractContents());
-        r.insertNode(el); placeCaretInside(el,true);
+        r.insertNode(el);
+        placeCaretInside(el, true);
       }
-      queueSave(); return;
+      queueSave();
+      return;
     }
-    if(block.tagName.toLowerCase()===tag){
-      placeCaretInside(block,true); return;
+
+    if(block.tagName.toLowerCase() === tag){
+      placeCaretInside(block, true);
+      return;
     }
-    const neo=document.createElement(tag);
+
+    const neo = document.createElement(tag);
     while(block.firstChild) neo.appendChild(block.firstChild);
-    block.replaceWith(neo); placeCaretInside(neo,true); queueSave();
+    block.replaceWith(neo);
+    placeCaretInside(neo, true);
+    queueSave();
   }
-  function currentBlock(){
-    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
-    let n=sel.anchorNode; if(n && n.nodeType===3) n=n.parentNode;
-    while(n && n!==content){
-      if(n.nodeType===1 && /^(p|h1|h2|h3|blockquote|div|pre|li|td|th)$/i.test(n.tagName)) return n;
-      n=n.parentNode;
-    }
-    return content;
-  }
-  document.addEventListener('selectionchange', ()=>{
-    const sel=window.getSelection(); let v='p';
+
+  document.addEventListener('selectionchange', () => {
+    const sel = window.getSelection();
+    let v = 'p';
     if(sel && sel.rangeCount){
-      let n=sel.anchorNode; if(n && n.nodeType===3) n=n.parentNode;
-      while(n && n!==content){
-        const t=(n.tagName||'').toLowerCase();
-        if(t==='p'||t==='h1'||t==='h2'||t==='h3'){ v=t; break; }
-        n=n.parentNode;
+      let n = sel.anchorNode;
+      if(n && n.nodeType === 3) n = n.parentNode;
+      while(n && n !== content){
+        const t = (n.tagName || '').toLowerCase();
+        if(t === 'p' || t === 'h1' || t === 'h2' || t === 'h3'){
+          v = t;
+          break;
+        }
+        n = n.parentNode;
       }
     }
-    blockSelect.value=v;
+    blockSelect.value = v;
   });
 
   /* ===== Modals infra ===== */
   function showModal(id){
     saveSelection();
-    const m=$(id);
-    m.style.display='flex';
-    setTimeout(()=>m.querySelector('input,textarea,select')?.focus(),0);
+    const m = $(id);
+    m.style.display = 'flex';
+    setTimeout(() => {
+      const first = m.querySelector('input,textarea,select');
+      if(first) first.focus();
+    }, 0);
   }
   function closeModal(id){
-    $(id).style.display='none';
+    $(id).style.display = 'none';
     content.focus();
   }
-  document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click', ()=> closeModal(b.dataset.close)));
-  ['linkModal','mailtoModal','imageModal'].forEach(id=>{
-    $(id).addEventListener('click',e=>{ if(e.target.id===id) closeModal(id); });
+
+  document.querySelectorAll('[data-close]').forEach(b => {
+    b.addEventListener('click', () => closeModal(b.dataset.close));
+  });
+  ['linkModal','mailtoModal','imageModal'].forEach(id => {
+    $(id).addEventListener('click', e => {
+      if(e.target.id === id) closeModal(id);
+    });
   });
 
   function findClosest(tag){
-    const sel=window.getSelection(); if(!sel || !sel.rangeCount) return null;
-    let n=sel.anchorNode;
-    while(n && n!==content){
-      if(n.nodeType===1 && n.tagName===tag) return n;
-      n=n.parentNode;
+    const sel = window.getSelection();
+    if(!sel || !sel.rangeCount) return null;
+    let n = sel.anchorNode;
+    while(n && n !== content){
+      if(n.nodeType === 1 && n.tagName === tag) return n;
+      n = n.parentNode;
     }
     return null;
   }
 
   /* ===== Link modal ===== */
-  let currentLink=null;
-  $('linkModalBtn').addEventListener('click', ()=>{
-    const sel=window.getSelection();
+  let currentLink = null;
+  $('linkModalBtn').addEventListener('click', () => {
+    const sel = window.getSelection();
     currentLink = findClosest('A');
-    if(currentLink && currentLink.href?.toLowerCase().startsWith('mailto:')) currentLink=null;
-    $('linkText').value = currentLink ? (currentLink.textContent||'') : (sel?.toString()||'link');
-    $('linkUrl').value  = currentLink ? (currentLink.getAttribute('href')||'') : 'https://';
-    $('linkTarget').value = currentLink ? (currentLink.getAttribute('target')||'_blank') : '_blank';
+    if(currentLink && currentLink.href?.toLowerCase().startsWith('mailto:')){
+      currentLink = null;
+    }
+    $('linkText').value =
+      currentLink ? (currentLink.textContent || '') : (sel?.toString() || 'link');
+    $('linkUrl').value  =
+      currentLink ? (currentLink.getAttribute('href') || '') : 'https://';
+    $('linkTarget').value =
+      currentLink ? (currentLink.getAttribute('target') || '_blank') : '_blank';
     showModal('linkModal');
   });
-  $('linkInsertBtn').addEventListener('click', ()=>{
-    restoreSelection(); content.focus();
-    const t=($('linkText').value||'link').trim();
-    const u=($('linkUrl').value||'#').trim();
-    const trg=$('linkTarget').value;
+
+  $('linkInsertBtn').addEventListener('click', () => {
+    restoreSelection();
+    content.focus();
+
+    const t   = ($('linkText').value || 'link').trim();
+    const u   = ($('linkUrl').value  || '#').trim();
+    const trg = $('linkTarget').value;
 
     if(currentLink && document.body.contains(currentLink)){
       currentLink.setAttribute('href', u);
-      if(trg==='_blank') currentLink.setAttribute('target','_blank'); else currentLink.removeAttribute('target');
-      currentLink.removeAttribute('rel'); currentLink.removeAttribute('style');
-      if(currentLink.textContent!==t) currentLink.textContent=t;
+      if(trg === '_blank') currentLink.setAttribute('target','_blank');
+      else currentLink.removeAttribute('target');
+      currentLink.removeAttribute('rel');
+      currentLink.removeAttribute('style');
+      if(currentLink.textContent !== t) currentLink.textContent = t;
     } else {
-      const sel=window.getSelection();
-      if(!sel.rangeCount || sel.toString().length===0){
-        document.execCommand('insertText',false,t);
+      const sel = window.getSelection();
+      if(!sel.rangeCount || sel.toString().length === 0){
+        document.execCommand('insertText', false, t);
         selectInserted(t.length);
       }
-      document.execCommand('createLink',false,u);
-      const a=findClosest('A');
+      document.execCommand('createLink', false, u);
+      const a = findClosest('A');
       if(a){
-        if(trg==='_blank') a.setAttribute('target','_blank'); else a.removeAttribute('target');
-        a.removeAttribute('rel'); a.removeAttribute('style');
+        if(trg === '_blank') a.setAttribute('target','_blank');
+        else a.removeAttribute('target');
+        a.removeAttribute('rel');
+        a.removeAttribute('style');
       }
     }
-    currentLink=null;
+    currentLink = null;
     closeModal('linkModal');
     enforceLinkTargets(content);
     queueSave();
   });
 
   /* ===== Mailto modal ===== */
-  let currentMailto=null;
-  $('mailtoModalBtn').addEventListener('click', ()=>{
+  let currentMailto = null;
+  $('mailtoModalBtn').addEventListener('click', () => {
     currentMailto = findClosest('A');
     if(currentMailto && currentMailto.href?.toLowerCase().startsWith('mailto:')){
-      const {to,subject,body}=parseMailto(currentMailto.getAttribute('href'));
-      $('mailTo').value=to||'';
-      $('mailSubject').value=subject||'';
-      $('mailBody').value=body||'';
-      $('mailText').value=currentMailto.textContent||'Email us';
+      const {to,subject,body} = parseMailto(currentMailto.getAttribute('href'));
+      $('mailTo').value      = to || '';
+      $('mailSubject').value = subject || '';
+      $('mailBody').value    = body || '';
+      $('mailText').value    = currentMailto.textContent || 'Email us';
     } else {
-      currentMailto=null;
-      $('mailTo').value='';
-      $('mailSubject').value='';
-      $('mailBody').value='';
-      $('mailText').value='Email us';
+      currentMailto = null;
+      $('mailTo').value      = '';
+      $('mailSubject').value = '';
+      $('mailBody').value    = '';
+      $('mailText').value    = 'Email us';
     }
     showModal('mailtoModal');
   });
-  $('mailtoInsertBtn').addEventListener('click', ()=>{
-    restoreSelection(); content.focus();
-    const to=$('mailTo').value.trim(),
-          sub=$('mailSubject').value.trim(),
-          body=$('mailBody').value.trim();
-    const txt=($('mailText').value||to||'Email').trim();
-    const href=buildMailto(to,sub,body);
-    const sel=window.getSelection();
-    if(!sel.rangeCount || sel.toString().length===0){
-      document.execCommand('insertText',false,txt);
+
+  $('mailtoInsertBtn').addEventListener('click', () => {
+    restoreSelection();
+    content.focus();
+
+    const to   = $('mailTo').value.trim();
+    const sub  = $('mailSubject').value.trim();
+    const body = $('mailBody').value.trim();
+    const txt  = ($('mailText').value || to || 'Email').trim();
+    const href = buildMailto(to, sub, body);
+
+    const sel = window.getSelection();
+    if(!sel.rangeCount || sel.toString().length === 0){
+      document.execCommand('insertText', false, txt);
       selectInserted(txt.length);
     }
-    document.execCommand('createLink',false,href);
-    const a=findClosest('A');
+    document.execCommand('createLink', false, href);
+    const a = findClosest('A');
     if(a){
       a.removeAttribute('target');
       a.removeAttribute('rel');
       a.removeAttribute('style');
     }
-    currentMailto=null;
+    currentMailto = null;
     closeModal('mailtoModal');
     queueSave();
   });
+
   function parseMailto(href){
-    let to='',subject='',body='';
+    let to='', subject='', body='';
     if(!href?.toLowerCase().startsWith('mailto:')) return {to,subject,body};
-    const rest=href.slice(7);
-    const [addr,q='']=rest.split('?');
-    to=decodeURIComponent(addr||'');
-    const p=new URLSearchParams(q);
-    subject=p.get('subject')?decodeURIComponent(p.get('subject')):'';
-    body=p.get('body')?decodeURIComponent(p.get('body')):'';
+    const rest = href.slice(7);
+    const [addr,q=''] = rest.split('?');
+    to = decodeURIComponent(addr || '');
+    const p = new URLSearchParams(q);
+    subject = p.get('subject') ? decodeURIComponent(p.get('subject')) : '';
+    body    = p.get('body')    ? decodeURIComponent(p.get('body'))    : '';
     return {to,subject,body};
   }
+
   function buildMailto(to,subject,body){
-    const qs=new URLSearchParams();
-    if(subject) qs.set('subject',subject);
-    if(body) qs.set('body',body);
-    return `mailto:${encodeURIComponent(to||'')}${qs.toString()?('?'+qs.toString()):''}`;
+    const qs = new URLSearchParams();
+    if(subject) qs.set('subject', subject);
+    if(body)    qs.set('body', body);
+    return `mailto:${encodeURIComponent(to || '')}${
+      qs.toString() ? ('?' + qs.toString()) : ''
+    }`;
   }
 
   /* ===== Image modal ===== */
-  let uploadedDataURL=null, insertingImage=false;
-  $('imageModalBtn').addEventListener('click', ()=>{
-    $('imgUrl').value='';
-    $('imgAlt').value='';
-    $('imgWidth').value='';
-    uploadedDataURL=null;
-    $('imgFile').value='';
+  let uploadedDataURL = null;
+  let insertingImage  = false;
+
+  $('imageModalBtn').addEventListener('click', () => {
+    $('imgUrl').value   = '';
+    $('imgAlt').value   = '';
+    $('imgWidth').value = '';
+    uploadedDataURL     = null;
+    $('imgFile').value  = '';
     showModal('imageModal');
   });
-  $('imgFile').addEventListener('change', e=>{
-    const f=e.target.files[0];
-    if(!f){uploadedDataURL=null;return;}
-    const rd=new FileReader();
-    rd.onload=()=>uploadedDataURL=rd.result;
+
+  $('imgFile').addEventListener('change', e => {
+    const f = e.target.files[0];
+    if(!f){ uploadedDataURL = null; return; }
+    const rd = new FileReader();
+    rd.onload = () => { uploadedDataURL = rd.result; };
     rd.readAsDataURL(f);
   });
-  $('imageInsertBtn').addEventListener('click', ()=>{
+
+  $('imageInsertBtn').addEventListener('click', () => {
     if(insertingImage) return;
-    insertingImage=true;
-    setTimeout(()=>insertingImage=false,250);
-    restoreSelection(); content.focus();
-    const src=$('imgUrl').value.trim() || uploadedDataURL || '';
-    const alt=$('imgAlt').value.trim();
-    const w=$('imgWidth').value.trim();
-    if(!src){ alert('Provide an image URL or upload a file.'); return; }
-    const img=document.createElement('img');
-    img.src=src;
-    img.alt=alt||'';
-    img.style.maxWidth='100%';
-    img.loading='lazy';
-    img.decoding='async';
-    if(w && !isNaN(+w)) img.style.width=`${parseInt(w,10)}px`;
+    insertingImage = true;
+    setTimeout(() => { insertingImage = false; }, 250);
+
+    restoreSelection();
+    content.focus();
+    const src = $('imgUrl').value.trim() || uploadedDataURL || '';
+    const alt = $('imgAlt').value.trim();
+    const w   = $('imgWidth').value.trim();
+
+    if(!src){
+      alert('Provide an image URL or upload a file.');
+      return;
+    }
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = alt || '';
+    img.style.maxWidth = '100%';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    if(w && !isNaN(+w)) img.style.width = `${parseInt(w,10)}px`;
+
     insertNodeAtSelection(img);
     queueSave();
     closeModal('imageModal');
   });
+
   function insertNodeAtSelection(node){
-    const sel=window.getSelection();
+    const sel = window.getSelection();
     if(!sel || !sel.rangeCount){
       content.appendChild(node);
       return;
     }
-    const r=sel.getRangeAt(0);
+    const r = sel.getRangeAt(0);
     r.deleteContents();
     r.insertNode(node);
     r.setStartAfter(node);
@@ -899,14 +1168,16 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     sel.removeAllRanges();
     sel.addRange(r);
   }
+
   function selectInserted(chars){
-    const sel=window.getSelection(); if(!sel.rangeCount) return;
-    const r=sel.getRangeAt(0);
-    const node=r.startContainer;
-    const nr=document.createRange();
-    if(node.nodeType===3){
-      nr.setStart(node, Math.max(0,node.length-chars));
-      nr.setEnd(node,node.length);
+    const sel = window.getSelection();
+    if(!sel.rangeCount) return;
+    const r = sel.getRangeAt(0);
+    const node = r.startContainer;
+    const nr = document.createRange();
+    if(node.nodeType === 3){
+      nr.setStart(node, Math.max(0, node.length - chars));
+      nr.setEnd(node, node.length);
     } else {
       nr.selectNodeContents(node);
       nr.collapse(false);
@@ -917,26 +1188,29 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
   /* ===== Toggle Source / Design (beautify only for source textarea) ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
-  document.addEventListener('keydown', e=>{
-    if(e.key==='Escape'){
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape'){
       e.preventDefault();
       toggleSourceView();
     }
   });
+
   function toggleSourceView(){
-    if(source.style.display==='block'){
+    if(source.style.display === 'block'){
+      // Back to design: treat the textarea as source
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
       condenseParagraphInlines(content);
       ensureParagraph();
-      content.style.display='block';
-      source.style.display='none';
+      content.style.display = 'block';
+      source.style.display  = 'none';
       content.focus();
     } else {
+      // To Source: Beautified / indented HTML
       source.value = prettyHTML(content.innerHTML);
-      content.style.display='none';
-      source.style.display='block';
+      content.style.display = 'none';
+      source.style.display  = 'block';
       source.focus();
     }
   }
@@ -944,81 +1218,74 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   /* ===== Beautifier (block indentation, inline kept one-line inside <p>) ===== */
   function prettyHTML(html){
     try{
-      const tmp=document.createElement('div');
-      tmp.innerHTML=html;
-      return serialize(tmp,0).trim();
+      const tmp = document.createElement('div');
+      tmp.innerHTML = html;
+      return serialize(tmp, 0).trim();
     } catch {
       return html;
     }
   }
-  const BLOCKS=new Set([
-    'p','h1','h2','h3','h4','h5','h6','ul','ol','li',
-    'blockquote','pre','table','thead','tbody','tr','td','th',
-    'hr','div','section','article','nav','header','footer',
-    'aside','figure','figcaption'
+
+  const BLOCKS = new Set([
+    'p','h1','h2','h3','h4','h5','h6',
+    'ul','ol','li',
+    'blockquote','pre',
+    'table','thead','tbody','tr','td','th',
+    'hr','div','section','article','nav','header','footer','aside',
+    'figure','figcaption'
   ]);
-  function serialize(node,level){
-    let out='';
-    const indent='  '.repeat(level);
-    node.childNodes.forEach(ch=>{
-      if(ch.nodeType===3){
-        const t=ch.textContent.replace(/\s+/g,' ').trim();
-        if(t) out+=indent+t+'\n';
+
+  function serialize(node, level){
+    let out = '';
+    const indent = '  '.repeat(level);
+
+    node.childNodes.forEach(ch => {
+      if(ch.nodeType === 3){
+        const t = ch.textContent.replace(/\s+/g, ' ').trim();
+        if(t) out += indent + t + '\n';
         return;
       }
-      if(ch.nodeType!==1) return;
-      const el=ch;
-      const tag=el.tagName.toLowerCase();
-      const attrs=[...el.attributes].map(a=>` ${a.name}="${a.value}"`).join('');
-      const open=`<${tag}${attrs}>`;
-      const close=`</${tag}>`;
-      const hasBlock = Array.from(el.children).some(e=>BLOCKS.has(e.tagName.toLowerCase()));
-      if(BLOCKS.has(tag) || hasBlock){
-        out += `${indent}${open}\n${serialize(el,level+1)}${indent}${close}\n`;
+      if(ch.nodeType !== 1) return;
+
+      const el  = ch;
+      const tag = el.tagName.toLowerCase();
+      const attrs = [...el.attributes].map(a => ` ${a.name}="${a.value}"`).join('');
+      const open  = `<${tag}${attrs}>`;
+      const close = `</${tag}>`;
+      const hasBlockChild = Array
+        .from(el.children)
+        .some(e => BLOCKS.has(e.tagName.toLowerCase()));
+
+      if(BLOCKS.has(tag) || hasBlockChild){
+        out += `${indent}${open}\n${serialize(el, level + 1)}${indent}${close}\n`;
       } else {
         out += `${indent}${open}${getInlineHTML(el)}${close}\n`;
       }
     });
+
     return out;
   }
+
   function getInlineHTML(el){
-    let s='';
-    el.childNodes.forEach(n=>{
-      if (n.nodeType===3) {
+    let s = '';
+    el.childNodes.forEach(n => {
+      if(n.nodeType === 3){
         s += n.textContent.replace(/\s+/g,' ');
-      } else if (n.nodeType===1) {
+      } else if(n.nodeType === 1){
         s += n.outerHTML;
       }
     });
     return s.trim();
   }
 
-  /* ===== Clear formatting ===== */
-  const clearBtn = $('clearBtn');
-  clearBtn.addEventListener('click', ()=>{
-    content.focus();
-    document.execCommand('removeFormat', false, null);
-
-    // Extra cleanup: remove style attributes & span wrappers in selection block
-    const block = currentBlock() || content;
-    block.querySelectorAll('*').forEach(el=>{
-      el.removeAttribute('style');
-      if(el.tagName.toLowerCase()==='span' && !el.attributes.length){
-        while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
-        el.remove();
-      }
-    });
-    queueSave();
-  });
-
   /* ===== Copy / Import / Export ===== */
   async function copy(text){
     try{
       await navigator.clipboard.writeText(text);
       flash('Copied HTML');
-    } catch{
-      const ta=document.createElement('textarea');
-      ta.value=text;
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand('copy');
@@ -1026,19 +1293,21 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       flash('Copied HTML');
     }
   }
-  // Copy (RAW)
-  $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
-  $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
-  $('importBtn').addEventListener('click', ()=>{
-    const i=document.createElement('input');
-    i.type='file';
-    i.accept='.html,.htm,text/html';
-    i.onchange=async()=>{
-      const f=i.files[0]; if(!f) return;
-      const txt=await f.text();
-      const m=txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-      content.innerHTML=(m?m[1]:txt).trim();
+  // Copy = RAW innerHTML (no beautify)
+  $('copyHtmlBtn').addEventListener('click', () => copy(content.innerHTML));
+  $('copyHtmlToolbarBtn').addEventListener('click', () => copy(content.innerHTML));
+
+  $('importBtn').addEventListener('click', () => {
+    const i = document.createElement('input');
+    i.type = 'file';
+    i.accept = '.html,.htm,text/html';
+    i.onchange = async () => {
+      const f = i.files[0];
+      if(!f) return;
+      const txt = await f.text();
+      const m = txt.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      content.innerHTML = (m ? m[1] : txt).trim();
       enforceLinkTargets(content);
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
@@ -1049,38 +1318,47 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
-  // Export (RAW)
-  $('exportBtn').addEventListener('click', ()=>{
-    const doc=[
+  // Export = RAW innerHTML
+  $('exportBtn').addEventListener('click', () => {
+    const doc = [
       '<!doctype html>',
       '<html>',
-      '<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>',
+      '<head><meta charset="utf-8"><title>' +
+        escapeHtml(titleEl.textContent || 'Document') +
+      '</title></head>',
       '<body>',
       content.innerHTML,
       '</body>',
       '</html>'
     ].join('\n');
-    const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([doc],{type:'text/html;charset=utf-8'}));
-    a.download=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)+'.html';
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(
+      new Blob([doc], {type:'text/html;charset=utf-8'})
+    );
+    a.download = (titleEl.textContent || 'document')
+      .trim()
+      .replace(/[^\w\-]+/g,'_')
+      .slice(0,40) + '.html';
     a.click();
   });
 
   // --- New document ---
-  $('resetBtn').addEventListener('click', ()=>{
-    if (!confirm('Start a new document?')) return;
+  $('resetBtn').addEventListener('click', () => {
+    if(!confirm('Start a new document?')) return;
 
-    if (source.style.display === 'block') {
+    if(source.style.display === 'block'){
       content.innerHTML = source.value.trim();
       collapseConsecutiveBR(content);
       removeEmptyPBeforeLists(content);
       condenseParagraphInlines(content);
       content.style.display = 'block';
-      source.style.display = 'none';
+      source.style.display  = 'none';
     }
 
     titleEl.textContent = 'Untitled Document';
-    content.innerHTML = ''; // empty: show placeholder "Welcome…"
+    // leave empty so placeholder "Welcome…" shows
+    content.innerHTML = '';
     savedRange = null;
 
     saveNow();
@@ -1088,26 +1366,32 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   });
 
   function escapeHtml(s){
-    return s.replace(/[&<>"']/g, m=>(
-      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]
-    ));
+    return s.replace(/[&<>"']/g, m => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[m]));
   }
 
   /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
-  let pasteMode='plain';
-  const pasteModeEl=$('pasteMode');
-  pasteModeEl?.addEventListener('change', e=> pasteMode=e.target.value);
+  let pasteMode = 'plain';
+  const pasteModeEl = $('pasteMode');
+  pasteModeEl?.addEventListener('change', e => {
+    pasteMode = e.target.value;
+  });
 
-  content.addEventListener('paste', e=>{
-    const html=e.clipboardData?.getData('text/html')||'';
-    const text=e.clipboardData?.getData('text/plain')||'';
+  content.addEventListener('paste', e => {
+    const html = e.clipboardData?.getData('text/html')  || '';
+    const text = e.clipboardData?.getData('text/plain') || '';
     e.preventDefault();
 
-    if(pasteMode==='word' && html){
-      const cleaned=cleanWordHtmlPreserveLinksAndInlines(html);
+    if(pasteMode === 'word' && html){
+      const cleaned = cleanWordHtmlPreserveLinksAndInlines(html);
       document.execCommand('insertHTML', false, cleaned);
     } else {
-      const linked=linkifyTextToHTML(text);
+      const linked = linkifyTextToHTML(text);
       document.execCommand('insertHTML', false, linked);
     }
 
@@ -1121,8 +1405,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
   // Enforce link targets (http/https => _blank; mailto => no target)
   function enforceLinkTargets(root){
-    root.querySelectorAll('a[href]').forEach(a=>{
-      const href=(a.getAttribute('href')||'').trim();
+    root.querySelectorAll('a[href]').forEach(a => {
+      const href = (a.getAttribute('href') || '').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
       else a.removeAttribute('target');
       a.removeAttribute('rel');
@@ -1132,78 +1416,123 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
   // Plain-text linkify
   function linkifyTextToHTML(t){
-    const esc=s=>s.replace(/[&<>"]/g,m=>(
-      {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]
-    ));
-    let out=esc(t);
-    out=out.replace(/\bhttps?:\/\/[^\s<>"']+/gi, m=>`<a href="${m}" target="_blank">${esc(m)}</a>`);
-    out=out.replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, m=>`<a href="mailto:${m}">${esc(m)}</a>`);
+    const esc = s => s.replace(/[&<>"]/g, m => ({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;'
+    }[m]));
+    let out = esc(t);
+    out = out.replace(
+      /\bhttps?:\/\/[^\s<>"']+/gi,
+      m => `<a href="${m}" target="_blank">${esc(m)}</a>`
+    );
+    out = out.replace(
+      /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi,
+      m => `<a href="mailto:${m}">${esc(m)}</a>`
+    );
     return out.replace(/\n/g,'<br>');
   }
 
-  // ===== Word sanitizer: preserve links, inline <em>/<strong>, <sup>/<sub>, <u>, headers, lists, footnote anchors
+  // ===== Word sanitizer: preserve links, <em>/<strong>, <u>, <sup>/<sub>, lists, headings
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
-    const doc = parser.parseFromString(inputHtml, 'text/html');
-    const body = doc.body;
+    const doc   = parser.parseFromString(inputHtml, 'text/html');
+    const body  = doc.body;
 
     // Remove comments
     const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
-    const rm=[];
+    const rm = [];
     while(walker.nextNode()) rm.push(walker.currentNode);
-    rm.forEach(n=>n.remove());
+    rm.forEach(n => n.remove());
 
-    // Strip MSO/inline junk + convert tags
-    body.querySelectorAll('*').forEach(el=>{
+    // Strip MSO junk and convert tags
+    body.querySelectorAll('*').forEach(el => {
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
+
       if(el.hasAttribute('style')){
-        const cleaned = el.getAttribute('style')
+        let style = el.getAttribute('style') || '';
+        const hadUnderline = /text-decoration\s*:\s*underline/i.test(style);
+
+        style = style
           .replace(/\s*mso-[^:]+:[^;]+;?/gi,'')
           .replace(/\s*line-height:[^;]+;?/gi,'')
           .trim();
-        if (cleaned) el.setAttribute('style', cleaned);
+
+        if(style) el.setAttribute('style', style);
         else el.removeAttribute('style');
+
+        // Convert span with underline to <u>
+        if(
+          hadUnderline &&
+          el.tagName.toLowerCase() === 'span'
+        ){
+          replaceTag(el, 'u');
+          return; // replaced, skip further processing on old node
+        }
       }
+
       el.removeAttribute('id');
       el.removeAttribute('lang');
 
-      const t = (el.tagName||'').toLowerCase();
-      if (t==='b') { replaceTag(el,'strong'); }
-      if (t==='i') { replaceTag(el,'em'); }
-      if (t==='font' || t==='span') {
-        if (!el.attributes.length) unwrap(el);
-        else {
-          const attrs=[...el.attributes].map(a=>a.name.toLowerCase());
-          if (attrs.every(a=>/^data-|^dir$/.test(a))) unwrap(el);
+      const t = (el.tagName || '').toLowerCase();
+      if(t === 'b') replaceTag(el, 'strong');
+      if(t === 'i') replaceTag(el, 'em');
+      if(t === 'font'){
+        replaceTag(el, 'span');
+      }
+      // generic spans without attributes are unwrapped
+      if(t === 'span'){
+        if(!el.attributes.length){
+          unwrap(el);
+          return;
         }
       }
-      if (t==='div') { replaceTag(el,'p'); }
-      // keep <sup>/<sub>/<u> as is for footnotes/underline
+      if(t === 'div'){
+        replaceTag(el, 'p');
+      }
+      // keep <sup>/<sub> as-is
     });
 
-    // Whitelist including <u>
-    const ALLOWED = new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup','sub','br','u']);
-    [...body.querySelectorAll('*')].forEach(el=>{
-      const t=el.tagName.toLowerCase();
+    // Whitelist
+    const ALLOWED = new Set([
+      'h1','h2','h3',
+      'p',
+      'strong','em','u',
+      'ul','ol','li',
+      'a',
+      'sup','sub',
+      'br'
+    ]);
+
+    [...body.querySelectorAll('*')].forEach(el => {
+      const t = el.tagName.toLowerCase();
       if(!ALLOWED.has(t)){
         unwrap(el);
         return;
       }
-      if(t==='a'){
-        const href=(el.getAttribute('href')||'').trim();
+      if(t === 'a'){
+        const href = (el.getAttribute('href') || '').trim();
         if(!/^#|^https?:|^mailto:/i.test(href)){
           unwrap(el);
           return;
         }
-        [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
+        [...el.attributes].forEach(a => {
+          if(a.name !== 'href') el.removeAttribute(a.name);
+        });
       } else {
-        [...el.attributes].forEach(a=> el.removeAttribute(a.name));
+        [...el.attributes].forEach(a => el.removeAttribute(a.name));
       }
     });
 
     // Remove empty <p>
-    body.querySelectorAll('p').forEach(p=>{
-      if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
+    body.querySelectorAll('p').forEach(p => {
+      if(
+        !p.textContent.replace(/\u200B/g,'').trim() &&
+        p.children.length === 0
+      ){
+        p.remove();
+      }
     });
 
     // Normalize <br></br> -> <br>
@@ -1212,8 +1541,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       .replace(/<br\s*\/?>/gi,'<br>');
 
     // Enforce link targets
-    body.querySelectorAll('a[href]').forEach(a=>{
-      const href=(a.getAttribute('href')||'').trim();
+    body.querySelectorAll('a[href]').forEach(a => {
+      const href = (a.getAttribute('href') || '').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
       else a.removeAttribute('target');
     });
@@ -1224,67 +1553,78 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
       el.remove();
     }
-    function replaceTag(el,name){
-      const neo=doc.createElement(name);
+    function replaceTag(el, name){
+      const neo = doc.createElement(name);
       while(el.firstChild) neo.appendChild(el.firstChild);
       el.replaceWith(neo);
     }
   }
 
   // Ctrl/Cmd-click to open links while editing
-  content.addEventListener('click', e=>{
-    const a=e.target.closest('a');
+  content.addEventListener('click', e => {
+    const a = e.target.closest('a');
     if(!a || !content.contains(a)) return;
     if(e.metaKey || e.ctrlKey){
       e.preventDefault();
-      window.open(a.href,'_blank');
+      window.open(a.href, '_blank');
     }
   });
 
+  /* ===== Clear formatting ===== */
+  $('clearBtn').addEventListener('click', () => {
+    content.focus();
+    // Basic clear: remove inline styles and links/bold/italic/underline/etc.
+    document.execCommand('removeFormat', false, null);
+    document.execCommand('unlink', false, null);
+    queueSave();
+  });
+
   /* ===== Autosave ===== */
-  let timer=null;
+  let timer = null;
   function queueSave(){
     clearTimeout(timer);
-    status.textContent='Saving…';
-    timer=setTimeout(saveNow,400);
+    status.textContent = 'Saving…';
+    timer = setTimeout(saveNow, 400);
   }
+
   function saveNow(){
     try{
       localStorage.setItem(
         DOC_KEY,
         JSON.stringify({
-          title:titleEl.textContent||'Untitled Document',
-          html:content.innerHTML,
-          ts:Date.now()
+          title: titleEl.textContent || 'Untitled Document',
+          html:  content.innerHTML,
+          ts:    Date.now()
         })
       );
-      status.textContent='Saved';
+      status.textContent = 'Saved';
     } catch(e){
-      status.textContent='Autosave error';
+      status.textContent = 'Autosave error';
     }
   }
+
   (function restore(){
     try{
-      const raw=localStorage.getItem(DOC_KEY);
+      const raw = localStorage.getItem(DOC_KEY);
       if(raw){
-        const d=JSON.parse(raw);
-        titleEl.textContent=d.title||'Untitled Document';
-        content.innerHTML=d.html||'';
+        const d = JSON.parse(raw);
+        titleEl.textContent = d.title || 'Untitled Document';
+        content.innerHTML   = d.html  || '';
         collapseConsecutiveBR(content);
         removeEmptyPBeforeLists(content);
         condenseParagraphInlines(content);
         ensureParagraph();
-      }
-      // else: leave empty to show placeholder
-    }catch{
-      // leave empty to show placeholder
+      } // else: empty -> placeholder shows
+    } catch{
+      // leave empty => placeholder
     }
   })();
-  content.addEventListener('input', ()=>{
-    // Convert DIVs to P on first typing
-    Array.from(content.children).forEach(ch=>{
-      if(ch.tagName==='DIV'){
-        const p=document.createElement('p');
+
+  content.addEventListener('input', () => {
+    // If browser inserted <div>, convert to <p>
+    Array.from(content.children).forEach(ch => {
+      if(ch.tagName === 'DIV'){
+        const p = document.createElement('p');
         while(ch.firstChild) p.appendChild(ch.firstChild);
         ch.replaceWith(p);
       }
@@ -1292,38 +1632,48 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     ensureParagraph();
     queueSave();
   });
+
   titleEl.addEventListener('input', queueSave);
 
   // Notes autosave
-  const notes=$('notesArea');
-  try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
-  notes.addEventListener('input', ()=>{
+  const notes = $('notesArea');
+  try{
+    notes.value = localStorage.getItem(NOTES_KEY) || '';
+  }catch{}
+  notes.addEventListener('input', () => {
     try{ localStorage.setItem(NOTES_KEY, notes.value); }catch{}
   });
 
   // Shortcuts
-  document.addEventListener('keydown', e=>{
-    const meta=e.ctrlKey||e.metaKey;
-    if(e.key==='Escape'){
+  document.addEventListener('keydown', e => {
+    const meta = e.ctrlKey || e.metaKey;
+    if(e.key === 'Escape'){
       e.preventDefault();
       $('toggleSource').click();
+      return;
     }
     if(!meta) return;
-    const k=e.key.toLowerCase();
+    const k = e.key.toLowerCase();
     if(['b','i','u'].includes(k)){
       e.preventDefault();
-      if(k==='b') execAndNormalize('bold');
-      else if(k==='i') execAndNormalize('italic');
-      else document.execCommand('underline', false, null);
+      if(k === 'b')      execAndNormalize('bold');
+      else if(k === 'i') execAndNormalize('italic');
+      else               document.execCommand('underline', false, null);
       queueSave();
     }
-    if(k==='k'){ e.preventDefault(); $('linkModalBtn').click(); }
-    if(k==='s'){ e.preventDefault(); $('exportBtn').click(); }
+    if(k === 'k'){
+      e.preventDefault();
+      $('linkModalBtn').click();
+    }
+    if(k === 's'){
+      e.preventDefault();
+      $('exportBtn').click();
+    }
   });
 
   function flash(msg){
-    status.textContent=msg;
-    setTimeout(()=>status.textContent='Saved',1200);
+    status.textContent = msg;
+    setTimeout(() => { status.textContent = 'Saved'; }, 1200);
   }
 })();
 </script>
