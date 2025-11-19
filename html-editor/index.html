@@ -2,16 +2,18 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.6.3.html
- Build: dev v2.6.3
+ File: editor-dev-v2.6.4.html
+ Build: dev v2.6.4
 
-Base from: dev v2.6.2 (footnote-friendly build)
+Base from: dev v2.6.3 (footnote + cleaned output)
+
+Shared features:
 - Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
 - Selection behavior so Bold/Italic behave like Underline.
 - Placeholder welcome text: disappears on type, returns when cleared.
 - Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, <u>,
   headers, lists, footnote anchors; removes MSO junk.
-- Beautifier only used for Source view; Copy/Export keep HTML (now cleaned).
+- Beautifier only used for Source view; Copy/Export use cleaned HTML.
 - Word-style footnotes (_ftn / _ftnref) normalized into:
     in-text:  <a href="#ftnN"   name="topftnN"><sup>N</sup></a>
     footer:   <a href="#topftnN" name="ftnN">N</a> in block id="ftnN".
@@ -35,16 +37,25 @@ dev v2.6.2 changes:
    - footer [_ftnN]     → plain numeric “N” inside link
 
 dev v2.6.3 changes:
-5) New output cleaner used for Copy/Export:
-   - Removes empty <p></p> and <em></em>/<strong></strong>/<sup></sup>/<a></a>/span
+5) Output cleaner for Copy/Export:
+   - Removes empty <p></p> and empty inline tags
+     (<em>,<strong>,<sup>,<sub>,<a>,<span> without text/children)
    - Works on a clone of the editor so caret/UI behavior is unchanged.
+
+dev v2.6.4 changes:
+6) Multi-level list reconstruction for Word-pasted bullets/numbering:
+   - Detects bullet/number markers (•, ·, ∙, ‧, -, *, ○, ▪, – and 1. / 2))
+   - Uses margin-left (pt/px) to infer indent level
+   - Rebuilds nested <ul>/<ol><li> structure (sub-bullets, sub-numbering)
+   - Bullet/number stripping ONLY applied to list items (not normal text)
+   - Regex bug fixed so Word paste works again (safe handling of "-")
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (dev v2.6.3)</title>
+<title>WYSIWYG HTML Editor (dev v2.6.4)</title>
 
 <style>
   :root{
@@ -408,7 +419,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">dev v2.6.3</span>
+          <span class="chip">dev v2.6.4</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -528,9 +539,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  const DOC_KEY='wysi_doc_dev_v263';
-  const NOTES_KEY='wysi_notes_dev_v263';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v263';
+  const DOC_KEY='wysi_doc_dev_v264';
+  const NOTES_KEY='wysi_notes_dev_v264';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v264';
 
   const themeSelect=$('themeMode');
   const mql=window.matchMedia('(prefers-color-scheme: dark)');
@@ -625,13 +636,15 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       html = html.replace(/\(\s+/g, '(');
       html = html.replace(/\s+\)/g, ')');
 
+      // Remove space before footnote superscript links
       html = html.replace(
         /\s+(<a\b[^>]*href="#ftn\d+"[^>]*><sup>\d+<\/sup><\/a>)/gi,
         '$1'
       );
 
+      // Ensure footer anchor text is bare number, not [N]
       html = html.replace(
-        /(<a\b[^>]*name="ftn\d+"[^>]*>)\[(\d+)\](<\/a>)/gi,
+        /(<a\b[^>]*name="ftn\d+"[^>]*>)\s*\[(\d+)\]\s*(<\/a>)/gi,
         '$1$2$3'
       );
 
@@ -640,7 +653,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
-  // === dev v2.6.3: Clean empty tags for output (copy/export) ===
+  // dev v2.6.3+: Clean empty tags for output (copy/export)
   function getCleanHtmlForOutput(){
     const clone = content.cloneNode(true);
 
@@ -653,7 +666,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
 
   function cleanEmptyNodes(root){
-    // Remove empty inline tags: em, strong, u, sup, sub, a, span
     root.querySelectorAll('em,strong,u,sup,sub,a,span').forEach(el=>{
       const text = (el.textContent || '').replace(/\u200B/g,'').trim();
       if (!text && el.children.length === 0) {
@@ -661,7 +673,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
 
-    // Remove empty paragraphs
     root.querySelectorAll('p').forEach(p=>{
       const text = (p.textContent || '').replace(/\u200B/g,'').trim();
       if (!text && p.children.length === 0) {
@@ -669,6 +680,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
   }
+
   function execAndNormalize(cmd){
     const sel=window.getSelection();
     if(!sel || !sel.rangeCount) return;
@@ -1090,7 +1102,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
   $('exportBtn').addEventListener('click', ()=>{
     const bodyHtml = getCleanHtmlForOutput();
-    const doc=[
+    const docArr=[
       '<!doctype html>',
       '<html>',
       '<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>',
@@ -1098,9 +1110,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       bodyHtml,
       '</body>',
       '</html>'
-    ].join('\n');
+    ];
     const a=document.createElement('a');
-    a.href=URL.createObjectURL(new Blob([doc],{type:'text/html;charset=utf-8'}));
+    a.href=URL.createObjectURL(new Blob([docArr.join('\n')],{type:'text/html;charset=utf-8'}));
     a.download=(titleEl.textContent||'document').trim().replace(/[^\w\-]+/g,'_').slice(0,40)+'.html';
     a.click();
   });
@@ -1246,6 +1258,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
     normalizeWordFootnotes(body);
 
+    // dev v2.6.4: rebuild multi-level lists from bullet/numbered paragraphs
+    rebuildListsFromParagraphs(body);
+
     body.querySelectorAll('p').forEach(p=>{
       if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
     });
@@ -1260,12 +1275,155 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       else a.removeAttribute('target');
     });
 
+    // global fallback: remove brackets in footer anchors if any survive
     body.innerHTML = body.innerHTML.replace(
       /(<a\b[^>]*name="ftn\d+"[^>]*>)\s*\[(\d+)\]\s*(<\/a>)/gi,
       '$1$2$3'
     );
 
     return body.innerHTML.trim();
+
+    function rebuildListsFromParagraphs(root){
+      const stack = []; // [{ list, level, type }]
+
+      let node = root.firstElementChild;
+      while (node) {
+        const next = node.nextElementSibling;
+
+        if (node.tagName && node.tagName.toLowerCase() === 'p') {
+          const info = getListInfo(node);
+          if (info) {
+            const { type, level } = info;
+
+            // close lists until <= level
+            while (stack.length && stack[stack.length - 1].level > level) {
+              stack.pop();
+            }
+
+            let current = stack[stack.length - 1];
+
+            // need a new list (type change or deeper level)
+            if (!current || current.type !== type || current.level < level) {
+              const list = doc.createElement(type);
+
+              if (current && level > current.level) {
+                const lastLi = current.list.lastElementChild;
+                if (lastLi) {
+                  lastLi.appendChild(list);
+                } else {
+                  current.list.appendChild(list);
+                }
+              } else {
+                root.insertBefore(list, node);
+              }
+
+              current = { list, level, type };
+              stack.push(current);
+            }
+
+            const li = doc.createElement('li');
+            li.innerHTML = stripListMarker(node.innerHTML);
+            current.list.appendChild(li);
+
+            root.removeChild(node);
+            node = next;
+            continue;
+          } else {
+            while (stack.length) stack.pop();
+          }
+        } else {
+          while (stack.length) stack.pop();
+        }
+
+        node = next;
+      }
+
+      function getListInfo(p){
+        const text = (p.textContent || '').trim();
+        if (!text) return null;
+
+        // bullets: • · ∙ ‧ ○ ▪ – - *
+        const bulletRe = /^([\u2022\u00B7\u2219\u2027•○▪–\-*])\s+/;
+        // numbers like "1. " or "2) "
+        const numberRe = /^\d+[\.\)]\s+/;
+
+        let type = null;
+        if (bulletRe.test(text)) {
+          type = 'ul';
+        } else if (numberRe.test(text)) {
+          type = 'ol';
+        } else {
+          return null;
+        }
+
+        const style = (p.getAttribute('style') || '').toLowerCase();
+        let level = 0;
+        const m = style.match(/margin-left:\s*([0-9.]+)(px|pt)/);
+        if (m) {
+          let val = parseFloat(m[1]) || 0;
+          const unit = m[2];
+          if (unit === 'pt') {
+            val = val * (96 / 72);
+          }
+          level = Math.max(0, Math.round(val / 20));
+        }
+
+        return { type, level };
+      }
+
+      function stripListMarker(html){
+        const wrapper = doc.createElement('div');
+        wrapper.innerHTML = html;
+
+        // Bullet-like markers we want to strip ONLY for list items
+        // (no raw "-" here; we add "-" safely in the regex below)
+        const bulletChars = '\u2022\u00B7\u2219\u2027•○▪–*';
+        //  •  ·  ∙  ‧  •  ○  ▪  –  *
+
+        function firstContentNode(parent){
+          let n = parent.firstChild;
+          while (n && n.nodeType === 3 && !n.textContent.trim()) {
+            n = n.nextSibling;
+          }
+          return n;
+        }
+
+        const n = firstContentNode(wrapper);
+        if (!n) return wrapper.innerHTML;
+
+        // CASE 1 – first node is text: remove bullet / number prefix
+        if (n.nodeType === 3) {
+          let text = n.textContent;
+
+          // strip bullet char + spaces (from bulletChars OR a plain "-")
+          text = text.replace(
+            new RegExp('^\\s*[' + bulletChars + '\\-]\\s+'),
+            ''
+          );
+          // strip numeric marker like "1. " or "2) "
+          text = text.replace(/^\s*\d+[\.\)]\s+/, '');
+
+          if (text.length) {
+            n.textContent = text;
+          } else {
+            wrapper.removeChild(n);
+          }
+        }
+
+        // CASE 2 – first node is element like <span>·</span> or <span>1.</span>
+        else if (n.nodeType === 1) {
+          const txt = (n.textContent || '').trim();
+          const bulletOnly = new RegExp('^[' + bulletChars + '\\-]$').test(txt);
+          const numberOnly = /^\d+[\.\)]$/.test(txt);
+
+          if (bulletOnly || numberOnly) {
+            wrapper.removeChild(n);
+          }
+        }
+
+        return wrapper.innerHTML;
+      }
+    }
 
     function unwrap(el){
       while(el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
@@ -1411,4 +1569,3 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 </script>
 </body>
 </html>
-
