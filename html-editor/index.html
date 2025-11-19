@@ -2,39 +2,46 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.6.html
- Build: dev v2.6
- Base from: stb v2.5 (your “good” build)
+ File: editor-dev-v2.6.2.html
+ Build: dev v2.6.2
 
+Base from: dev v2.6.1 (footnote-friendly build)
 - Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
-- Selection behavior so Bold/Italic behave like Underline:
-  selection remains active (no jump to start of word).
-- Welcome text behaves like a placeholder: disappears when
-  user types, reappears only if doc fully cleared.
+- Selection behavior so Bold/Italic behave like Underline.
+- Placeholder welcome text: disappears on type, returns when cleared.
 - Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, <u>,
-  headers, lists, footnote anchors, and cleans MSO junk.
-- Beautifier only used for Source view, Copy/Export keep raw HTML.
+  headers, lists, footnote anchors; removes MSO junk.
+- Beautifier only used for Source view; Copy/Export keep raw HTML.
+- Word-style footnotes (_ftn / _ftnref) normalized into:
+    in-text:  <a href="#ftnN"   name="topftnN"><sup>N</sup></a>
+    footer:   <a href="#topftnN" name="ftnN">N</a> in block id="ftnN".
+- Dev icons footer:
+    LinkedIn → https://www.linkedin.com/in/lincuna
+    GitHub   → https://github.com/reraxe/web-tools
 
-New in dev v2.6
-- Word sanitizer now preserves footnote anchors (name/id on <a>).
-- Normalizes Word-style footnotes (_ftn / _ftnref) into:
-    top reference:  <a href="#ftnN"  name="topftnN"><sup>N</sup></a>
-    bottom note:    <a href="#topftnN" name="ftnN">N</a> inside a block with id="ftnN".
-- Footer chip shows dev v2.6.
-- Uses dev-specific localStorage keys (dev_v26).
-- Developer icons in footer:
-  • LinkedIn  → https://www.linkedin.com/in/lincuna
-  • GitHub    → https://github.com/reraxe/web-tools
+dev v2.6.1 changes:
+1) Remove space before footnote superscript links:
+   2025. <a href="#ftn6" name="topftn6"><sup>6</sup></a>
+   → 2025.<a href="#ftn6" name="topftn6"><sup>6</sup></a>
+2) Remove brackets in footer footnote links:
+   <a href="#topftn26" name="ftn26">[26]</a>
+   → <a href="#topftn26" name="ftn26">26</a>
+
+dev v2.6.2 changes:
+3) Extra global sanitizer pass to strip [N] from any
+   <a name="ftnN">[N]</a> that survives, even with odd spacing/ordering.
+4) normalizeWordFootnotes upgraded so:
+   - in-text [_ftnrefN] → <sup>N</sup> inside link
+   - footer [_ftnN]     → plain numeric “N” inside link
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (dev v2.6)</title>
+<title>WYSIWYG HTML Editor (dev v2.6.2)</title>
 
 <style>
-  /* ===== THEME VARS ===== */
   :root{
     --bg:#f6f7fb; --panel:#ffffff; --panel-2:#f1f3f9; --text:#101321; --muted:#5a6279;
     --accent:#2563eb; --border:#dfe3ee; --danger:#dc2626;
@@ -44,7 +51,6 @@ New in dev v2.6
     --accent:#6ea8fe; --border:#2a2f45; --danger:#ff6b6b;
   }
 
-  /* ===== LAYOUT ===== */
   *{box-sizing:border-box}
   body{
     margin:0;
@@ -187,7 +193,6 @@ New in dev v2.6
   [data-theme="dark"] .btn-accent{color:#0b1020}
   .btn-danger{background:linear-gradient(180deg,#ff8383,var(--danger));color:#1a0d0d}
 
-  /* NOTES */
   .notes{
     border:1px solid var(--border);
     border-radius:12px;
@@ -212,7 +217,6 @@ New in dev v2.6
   }
   [data-theme="dark"] .notes textarea{background:#0b0f1d;color:#cfe3ff}
 
-  /* Modals */
   .modal-backdrop{
     position:fixed;
     inset:0;
@@ -248,7 +252,6 @@ New in dev v2.6
   .modal textarea{height:90px;padding:10px;resize:vertical}
   .close-x{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
 
-  /* Dev social icons */
   .dev-links{
     display:inline-flex;
     gap:6px;
@@ -326,13 +329,11 @@ New in dev v2.6
               <path fill="currentColor" d="M2 5h3v1H3v1H2V5zm1 6h2v1H3v1h2v1H2v-3zm1 6h2v4H3v-3H2v-1h2z"/>
             </svg>
           </button>
-          <!-- Outdent (arrow pointing West) -->
           <button class="tool" data-cmd="outdent" title="Outdent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM11 9v6l-4-3zM3 11h8v2H3zM15 8h6v8h-6z"/>
             </svg>
           </button>
-          <!-- Indent (arrow pointing East) -->
           <button class="tool" data-cmd="indent" title="Indent">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3 4h18v2H3zM3 18h18v2H3zM13 9v6l4-3zM3 11h8v2H3zM13 8h6v8h-6z"/>
@@ -356,7 +357,6 @@ New in dev v2.6
         </div>
 
         <div class="group">
-          <!-- Link / mail / image -->
           <button class="tool" id="linkModalBtn" title="Insert/edit link (Ctrl+K)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M3.9 12a4.1 4.1 0 0 1 4.1-4.1h3v2h-3A2.1 2.1 0 0 0 5 12a2.1 2.1 0 0 0 2.1 2.1h3v2h-3A4.1 4.1 0 0 1 3.9 12zM13 9.9h3A4.1 4.1 0 1 1 16 18h-3v-2h3a2.1 2.1 0 1 0 0-4.2h-3v-2z"/>
@@ -376,7 +376,6 @@ New in dev v2.6
           <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML (raw)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
-          <!-- Source toggle icon = </> -->
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path fill="currentColor" d="M8.5 12 4 7.5 5.5 6l6 6-6 6L4 16.5 8.5 12zM15.5 12 20 16.5 18.5 18l-6-6 6-6L20 7.5 15.5 12z"/>
@@ -404,7 +403,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">dev v2.6</span>
+          <span class="chip">dev v2.6.2</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -421,7 +420,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
             </select>
           </label>
           <span class="chip">Tip: Ctrl/Cmd + click a link to open</span>
-          <!-- Dev links chip -->
           <span class="chip" title="Developer links">
             <span>Dev:</span>
             <span class="dev-links">
@@ -448,7 +446,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       </div>
     </div>
 
-    <!-- Notes (not exported) -->
     <aside class="notes">
       <h2>Your notes (not part of HTML)</h2>
       <textarea id="notesArea" placeholder="Keep temporary notes or code here…"></textarea>
@@ -456,46 +453,64 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   </div>
 </div>
 
-<!-- Link Modal -->
 <div class="modal-backdrop" id="linkModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="linkTitle">
-    <header><h3 id="linkTitle">Insert/edit link</h3><button class="close-x" data-close="linkModal">✕</button></header>
+    <header>
+      <h3 id="linkTitle">Insert/edit link</h3>
+      <button class="close-x" data-close="linkModal">✕</button>
+    </header>
     <div class="fields">
       <div class="row"><label for="linkText">Text</label><input id="linkText" placeholder="Link text"/></div>
       <div class="row"><label for="linkUrl">URL</label><input id="linkUrl" placeholder="https://example.com"/></div>
       <div class="row"><label for="linkTarget">Open in</label>
-        <select id="linkTarget"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>
+        <select id="linkTarget">
+          <option value="_blank">New tab</option>
+          <option value="_self">Same tab</option>
+        </select>
       </div>
     </div>
-    <footer><button class="btn-flat" data-close="linkModal">Cancel</button><button class="btn-accent" id="linkInsertBtn">Save</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="linkModal">Cancel</button>
+      <button class="btn-accent" id="linkInsertBtn">Save</button>
+    </footer>
   </div>
 </div>
 
-<!-- Mailto Modal -->
 <div class="modal-backdrop" id="mailtoModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mailtoTitle">
-    <header><h3 id="mailtoTitle">Insert/edit mailto link</h3><button class="close-x" data-close="mailtoModal">✕</button></header>
+    <header>
+      <h3 id="mailtoTitle">Insert/edit mailto link</h3>
+      <button class="close-x" data-close="mailtoModal">✕</button>
+    </header>
     <div class="fields">
       <div class="row"><label for="mailTo">To</label><input id="mailTo" placeholder="name@example.com"/></div>
       <div class="row"><label for="mailSubject">Subject</label><input id="mailSubject" placeholder="Hello"/></div>
       <div class="row"><label for="mailBody">Body</label><textarea id="mailBody" placeholder="Message…"></textarea></div>
       <div class="row"><label for="mailText">Link text</label><input id="mailText" placeholder="Email us"/></div>
     </div>
-    <footer><button class="btn-flat" data-close="mailtoModal">Cancel</button><button class="btn-accent" id="mailtoInsertBtn">Save</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="mailtoModal">Cancel</button>
+      <button class="btn-accent" id="mailtoInsertBtn">Save</button>
+    </footer>
   </div>
 </div>
 
-<!-- Image Modal -->
 <div class="modal-backdrop" id="imageModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="imageTitle">
-    <header><h3 id="imageTitle">Insert image</h3><button class="close-x" data-close="imageModal">✕</button></header>
+    <header>
+      <h3 id="imageTitle">Insert image</h3>
+      <button class="close-x" data-close="imageModal">✕</button>
+    </header>
     <div class="fields">
       <div class="row"><label for="imgUrl">Image URL</label><input id="imgUrl" placeholder="https://…"/></div>
       <div class="row"><label for="imgAlt">Alt text</label><input id="imgAlt" placeholder="Description"/></div>
       <div class="row"><label>Upload</label><input type="file" id="imgFile" accept="image/*"/></div>
       <div class="row"><label for="imgWidth">Width</label><input id="imgWidth" type="number" min="0" placeholder="Auto (px)"/></div>
     </div>
-    <footer><button class="btn-flat" data-close="imageModal">Cancel</button><button class="btn-accent" id="imageInsertBtn">Insert</button></footer>
+    <footer>
+      <button class="btn-flat" data-close="imageModal">Cancel</button>
+      <button class="btn-accent" id="imageInsertBtn">Insert</button>
+    </footer>
   </div>
 </div>
 
@@ -508,12 +523,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (dev v2.6)
-  const DOC_KEY='wysi_doc_dev_v26';
-  const NOTES_KEY='wysi_notes_dev_v26';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v26';
+  const DOC_KEY='wysi_doc_dev_v262';
+  const NOTES_KEY='wysi_notes_dev_v262';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v262';
 
-  /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
   const mql=window.matchMedia('(prefers-color-scheme: dark)');
   let themeMode='auto';
@@ -536,10 +549,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   (()=>{ const saved=localStorage.getItem(THEME_MODE_KEY)||'auto'; themeSelect.value=saved; setThemeMode(saved); })();
   themeSelect.addEventListener('change', e=> setThemeMode(e.target.value));
 
-  // Default paragraph separator = <p>
   try{ document.execCommand('defaultParagraphSeparator', false, 'p'); }catch{}
 
-  /* ===== Selection save/restore for modals ===== */
   let savedRange=null;
   function selectionInside(){
     const s=window.getSelection();
@@ -559,7 +570,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
   document.addEventListener('selectionchange', ()=>{ if(selectionInside()) saveSelection(); });
 
-  /* ===== Helpers ===== */
   function placeCaretInside(el, atEnd=true){
     const r=document.createRange();
     r.selectNodeContents(el);
@@ -570,13 +580,11 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   }
   function collapseConsecutiveBR(root){
     root.querySelectorAll('br + br').forEach(br => br.remove());
-    // Normalize </br> -> <br> and self-closing forms
     root.innerHTML = root.innerHTML
       .replace(/<\s*\/\s*br\s*>/gi,'')
       .replace(/<br\s*\/?>/gi,'<br>');
   }
   function ensureParagraph(){
-    // If empty, keep empty so placeholder text shows
     if (!content.innerHTML.trim()) return;
     if (!content.querySelector('p,h1,h2,h3,ul,ol,blockquote,pre')) {
       content.innerHTML = '<p>\u200B</p>';
@@ -602,25 +610,32 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       html = html.replace(/&nbsp;/g, ' ');
       html = html.replace(/\s*\n+\s*/g,' ');
 
-      // Remove stray whitespace around inline tags
       html = html.replace(/\s+<\/(em|strong|a|sup|sub|u)>/gi, '</$1>');
       html = html.replace(/<(em|strong|a|sup|sub|u)>\s+/gi, '<$1>');
       html = html.replace(/<\/(em|strong|a|sup|sub|u)>(?!\s|<)/gi, '</$1> ');
 
-      // Collapse multiple spaces
       html = html.replace(/\s{2,}/g,' ');
 
-      // Clean spaces around punctuation and parentheses
       html = html.replace(/\s+([,.;:!?])/g,'$1');
       html = html.replace(/\(\s+/g, '(');
       html = html.replace(/\s+\)/g, ')');
+
+      // dev v2.6.1: remove space before superscript footnote links
+      html = html.replace(
+        /\s+(<a\b[^>]*href="#ftn\d+"[^>]*><sup>\d+<\/sup><\/a>)/gi,
+        '$1'
+      );
+
+      // dev v2.6.1: remove brackets in footer footnote links
+      html = html.replace(
+        /(<a\b[^>]*name="ftn\d+"[^>]*>)\[(\d+)\](<\/a>)/gi,
+        '$1$2$3'
+      );
 
       html = html.trim();
       p.innerHTML = html;
     });
   }
-
-  /* ===== ExecCommand bindings (with STRONG/EM normalization + selection keep) ===== */
   function execAndNormalize(cmd){
     const sel=window.getSelection();
     if(!sel || !sel.rangeCount) return;
@@ -678,7 +693,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  /* ===== Block format (p/h1/h2/h3) ===== */
   blockSelect.addEventListener('change', e=> setBlockTag(e.target.value));
   function setBlockTag(tag){
     const sel=window.getSelection(); if(!sel || !sel.rangeCount) return;
@@ -724,7 +738,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     blockSelect.value=v;
   });
 
-  /* ===== Modals infra ===== */
   function showModal(id){
     saveSelection();
     const m=$(id);
@@ -750,7 +763,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return null;
   }
 
-  /* ===== Link modal ===== */
   let currentLink=null;
   $('linkModalBtn').addEventListener('click', ()=>{
     const sel=window.getSelection();
@@ -791,7 +803,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  /* ===== Mailto modal ===== */
   let currentMailto=null;
   $('mailtoModalBtn').addEventListener('click', ()=>{
     currentMailto = findClosest('A');
@@ -851,7 +862,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return `mailto:${encodeURIComponent(to||'')}${qs.toString()?('?'+qs.toString()):''}`;
   }
 
-  /* ===== Image modal ===== */
   let uploadedDataURL=null, insertingImage=false;
   $('imageModalBtn').addEventListener('click', ()=>{
     $('imgUrl').value='';
@@ -918,7 +928,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     sel.addRange(nr);
   }
 
-  /* ===== Toggle Source / Design (beautify only for source textarea) ===== */
   $('toggleSource').addEventListener('click', toggleSourceView);
   document.addEventListener('keydown', e=>{
     if(e.key==='Escape'){
@@ -944,7 +953,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
   }
 
-  /* ===== Beautifier (block indentation, inline kept one-line inside <p>) ===== */
   function prettyHTML(html){
     try{
       const tmp=document.createElement('div');
@@ -996,13 +1004,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return s.trim();
   }
 
-  /* ===== Clear formatting ===== */
   const clearBtn = $('clearBtn');
   clearBtn.addEventListener('click', ()=>{
     content.focus();
     document.execCommand('removeFormat', false, null);
-
-    // Extra cleanup: remove style attributes & span wrappers in selection block
     const block = currentBlock() || content;
     block.querySelectorAll('*').forEach(el=>{
       el.removeAttribute('style');
@@ -1014,7 +1019,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  /* ===== Copy / Import / Export ===== */
   async function copy(text){
     try{
       await navigator.clipboard.writeText(text);
@@ -1029,7 +1033,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       flash('Copied HTML');
     }
   }
-  // Copy (RAW)
   $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
   $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
 
@@ -1052,7 +1055,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     i.click();
   });
 
-  // Export (RAW)
   $('exportBtn').addEventListener('click', ()=>{
     const doc=[
       '<!doctype html>',
@@ -1069,7 +1071,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     a.click();
   });
 
-  // --- New document ---
   $('resetBtn').addEventListener('click', ()=>{
     if (!confirm('Start a new document?')) return;
 
@@ -1083,7 +1084,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
 
     titleEl.textContent = 'Untitled Document';
-    content.innerHTML = ''; // empty: show placeholder "Welcome…"
+    content.innerHTML = '';
     savedRange = null;
 
     saveNow();
@@ -1096,7 +1097,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     ));
   }
 
-  /* ===== Paste handling: Plain vs Word Sanitized + linkify ===== */
   let pasteMode='plain';
   const pasteModeEl=$('pasteMode');
   pasteModeEl?.addEventListener('change', e=> pasteMode=e.target.value);
@@ -1122,7 +1122,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  // Enforce link targets (http/https => _blank; mailto/# => no target)
   function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
@@ -1133,7 +1132,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
-  // Plain-text linkify
   function linkifyTextToHTML(t){
     const esc=s=>s.replace(/[&<>"]/g,m=>(
       {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]
@@ -1144,19 +1142,16 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return out.replace(/\n/g,'<br>');
   }
 
-  // ===== Word sanitizer: preserve links, inline <em>/<strong>, <sup>/<sub>, <u>, headers, lists, footnote anchors
   function cleanWordHtmlPreserveLinksAndInlines(inputHtml){
     const parser = new DOMParser();
     const doc = parser.parseFromString(inputHtml, 'text/html');
     const body = doc.body;
 
-    // Remove comments
     const walker = doc.createTreeWalker(body, NodeFilter.SHOW_COMMENT, null);
     const rm=[];
     while(walker.nextNode()) rm.push(walker.currentNode);
     rm.forEach(n=>n.remove());
 
-    // Strip MSO/inline junk + convert tags
     body.querySelectorAll('*').forEach(el=>{
       if(/^Mso/i.test(el.className)) el.removeAttribute('class');
       if(el.hasAttribute('style')){
@@ -1181,10 +1176,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         }
       }
       if (t==='div') { replaceTag(el,'p'); }
-      // keep <sup>/<sub>/<u> as is for footnotes/underline
     });
 
-    // Whitelist including <u>
     const ALLOWED = new Set(['h1','h2','h3','p','strong','em','ul','ol','li','a','sup','sub','br','u']);
     [...body.querySelectorAll('*')].forEach(el=>{
       const t=el.tagName.toLowerCase();
@@ -1200,16 +1193,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         const isMail = /^mailto:/i.test(href);
         const isHash = /^#/.test(href);
 
-        // Word footnote anchors often rely on name="_ftn…" / name="_ftnref…"
         const isWordFootnoteName = /^_?ftn(ref)?\d+/i.test(nameAttr);
 
         if (!isHttp && !isMail && !isHash && !isWordFootnoteName) {
-          // Unknown / useless <a> → unwrap
           unwrap(el);
           return;
         }
 
-        // Whitelist attributes on <a>: keep href, name, id
         [...el.attributes].forEach(a=>{
           if (a.name !== 'href' && a.name !== 'name' && a.name !== 'id') {
             el.removeAttribute(a.name);
@@ -1220,25 +1210,27 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       }
     });
 
-    // Normalize Word-style footnotes into topftnN / ftnN pattern (dev v2.6)
     normalizeWordFootnotes(body);
 
-    // Remove empty <p>
     body.querySelectorAll('p').forEach(p=>{
       if (!p.textContent.replace(/\u200B/g,'').trim() && p.children.length===0) p.remove();
     });
 
-    // Normalize <br></br> -> <br>
     body.innerHTML = body.innerHTML
       .replace(/<\s*\/\s*br\s*>/gi,'')
       .replace(/<br\s*\/?>/gi,'<br>');
 
-    // Enforce link targets for http/https
     body.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
       else a.removeAttribute('target');
     });
+
+    // dev v2.6.2: extra safety – strip [N] in any footer-style footnote links globally
+    body.innerHTML = body.innerHTML.replace(
+      /(<a\b[^>]*name="ftn\d+"[^>]*>)\s*\[(\d+)\]\s*(<\/a>)/gi,
+      '$1$2$3'
+    );
 
     return body.innerHTML.trim();
 
@@ -1251,33 +1243,35 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       while(el.firstChild) neo.appendChild(el.firstChild);
       el.replaceWith(neo);
     }
-    // Convert Word-style _ftn / _ftnref anchors to topftnN / ftnN + block id="ftnN"
     function normalizeWordFootnotes(root){
       const anchors = root.querySelectorAll('a[name], a[href]');
       anchors.forEach(a=>{
-        const name = (a.getAttribute('name') || '').trim();
-        const href = (a.getAttribute('href') || '').trim();
+        let name = (a.getAttribute('name') || '').trim();
+        let href = (a.getAttribute('href') || '').trim();
         let m;
 
-        // Top reference in text:
-        //   Word:   <a href="#_ftn1" name="_ftnref1"><sup>1</sup></a>
-        //   Target: <a href="#ftn1" name="topftn1"><sup>1</sup></a>
+        // In-text references: _ftnref5 → topftn5 + <sup>5</sup>
         if ((m = name.match(/^_?ftnref(\d+)/i))) {
           const n = m[1];
-          a.setAttribute('name', `topftn${n}`);
 
+          a.setAttribute('name', `topftn${n}`);
           if (!href || /^#_?ftn(ref)?\d+/i.test(href)) {
             a.setAttribute('href', `#ftn${n}`);
           }
+
+          const sup = root.ownerDocument
+            ? root.ownerDocument.createElement('sup')
+            : document.createElement('sup');
+          sup.textContent = n;
+          a.textContent = '';
+          a.appendChild(sup);
         }
 
-        // Bottom footnote definition:
-        //   Word:   <a href="#_ftnref1" name="_ftn1">1</a>
-        //   Target: <a href="#topftn1" name="ftn1">1</a> inside block id="ftn1"
+        // Footer entries: _ftn5 → ftn5 + plain "5"
         else if ((m = name.match(/^_?ftn(\d+)/i))) {
           const n = m[1];
-          a.setAttribute('name', `ftn${n}`);
 
+          a.setAttribute('name', `ftn${n}`);
           if (!href || /^#_?ftn(ref)?\d+/i.test(href)) {
             a.setAttribute('href', `#topftn${n}`);
           }
@@ -1286,12 +1280,16 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
           if (container && !container.id) {
             container.id = `ftn${n}`;
           }
+
+          const text = (a.textContent || '').trim();
+          const numMatch = text.match(/\d+/);
+          const num = numMatch ? numMatch[0] : n;
+          a.textContent = num;
         }
       });
     }
   }
 
-  // Ctrl/Cmd-click to open links while editing
   content.addEventListener('click', e=>{
     const a=e.target.closest('a');
     if(!a || !content.contains(a)) return;
@@ -1301,7 +1299,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     }
   });
 
-  /* ===== Autosave ===== */
   let timer=null;
   function queueSave(){
     clearTimeout(timer);
@@ -1335,13 +1332,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         condenseParagraphInlines(content);
         ensureParagraph();
       }
-      // else: leave empty to show placeholder
-    }catch{
-      // leave empty to show placeholder
-    }
+    }catch{}
   })();
   content.addEventListener('input', ()=>{
-    // Convert DIVs to P on first typing
     Array.from(content.children).forEach(ch=>{
       if(ch.tagName==='DIV'){
         const p=document.createElement('p');
@@ -1354,14 +1347,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   });
   titleEl.addEventListener('input', queueSave);
 
-  // Notes autosave
   const notes=$('notesArea');
   try{ notes.value=localStorage.getItem(NOTES_KEY)||''; }catch{}
   notes.addEventListener('input', ()=>{
     try{ localStorage.setItem(NOTES_KEY, notes.value); }catch{}
   });
 
-  // Shortcuts
   document.addEventListener('keydown', e=>{
     const meta=e.ctrlKey||e.metaKey;
     if(e.key==='Escape'){
