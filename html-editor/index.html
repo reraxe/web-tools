@@ -2,16 +2,16 @@
 <!--
 =========================================================
  WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.6.2.html
- Build: dev v2.6.2
+ File: editor-dev-v2.6.3.html
+ Build: dev v2.6.3
 
-Base from: dev v2.6.1 (footnote-friendly build)
+Base from: dev v2.6.2 (footnote-friendly build)
 - Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
 - Selection behavior so Bold/Italic behave like Underline.
 - Placeholder welcome text: disappears on type, returns when cleared.
 - Word sanitizer preserves <a>, <em>/<strong>, <sup>/<sub>, <u>,
   headers, lists, footnote anchors; removes MSO junk.
-- Beautifier only used for Source view; Copy/Export keep raw HTML.
+- Beautifier only used for Source view; Copy/Export keep HTML (now cleaned).
 - Word-style footnotes (_ftn / _ftnref) normalized into:
     in-text:  <a href="#ftnN"   name="topftnN"><sup>N</sup></a>
     footer:   <a href="#topftnN" name="ftnN">N</a> in block id="ftnN".
@@ -33,13 +33,18 @@ dev v2.6.2 changes:
 4) normalizeWordFootnotes upgraded so:
    - in-text [_ftnrefN] → <sup>N</sup> inside link
    - footer [_ftnN]     → plain numeric “N” inside link
+
+dev v2.6.3 changes:
+5) New output cleaner used for Copy/Export:
+   - Removes empty <p></p> and <em></em>/<strong></strong>/<sup></sup>/<a></a>/span
+   - Works on a clone of the editor so caret/UI behavior is unchanged.
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (dev v2.6.2)</title>
+<title>WYSIWYG HTML Editor (dev v2.6.3)</title>
 
 <style>
   :root{
@@ -373,7 +378,7 @@ dev v2.6.2 changes:
               <path fill="currentColor" d="M3.27 3 2 4.27 7.73 10H5v2h4.73l2 2H5v2h8.73L19.73 21 21 19.73 3.27 3zM15 3H7v2h8V3z"/>
             </svg>
           </button>
-          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML (raw)">
+          <button class="tool" id="copyHtmlToolbarBtn" title="Copy formatted HTML (cleaned)">
             <svg viewBox="0 0 24 24"><path fill="currentColor" d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v16h14a2 2 0 0 0 2-2V5z"/></svg>
           </button>
           <button class="tool" id="toggleSource" title="Toggle HTML / Design (Esc)">
@@ -403,7 +408,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">dev v2.6.2</span>
+          <span class="chip">dev v2.6.3</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -438,9 +443,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
           </span>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML (raw)">Copy HTML</button>
+          <button class="btn-flat" id="copyHtmlBtn" title="Copy formatted HTML (cleaned)">Copy HTML</button>
           <button class="btn-flat" id="importBtn" title="Import HTML">Import</button>
-          <button class="btn-accent" id="exportBtn" title="Download HTML (raw)">Export</button>
+          <button class="btn-accent" id="exportBtn" title="Download HTML (cleaned)">Export</button>
           <button class="btn-accent btn-danger" id="resetBtn" title="Clear document">New</button>
         </div>
       </div>
@@ -523,9 +528,9 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  const DOC_KEY='wysi_doc_dev_v262';
-  const NOTES_KEY='wysi_notes_dev_v262';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v262';
+  const DOC_KEY='wysi_doc_dev_v263';
+  const NOTES_KEY='wysi_notes_dev_v263';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v263';
 
   const themeSelect=$('themeMode');
   const mql=window.matchMedia('(prefers-color-scheme: dark)');
@@ -620,13 +625,11 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       html = html.replace(/\(\s+/g, '(');
       html = html.replace(/\s+\)/g, ')');
 
-      // dev v2.6.1: remove space before superscript footnote links
       html = html.replace(
         /\s+(<a\b[^>]*href="#ftn\d+"[^>]*><sup>\d+<\/sup><\/a>)/gi,
         '$1'
       );
 
-      // dev v2.6.1: remove brackets in footer footnote links
       html = html.replace(
         /(<a\b[^>]*name="ftn\d+"[^>]*>)\[(\d+)\](<\/a>)/gi,
         '$1$2$3'
@@ -634,6 +637,36 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
       html = html.trim();
       p.innerHTML = html;
+    });
+  }
+
+  // === dev v2.6.3: Clean empty tags for output (copy/export) ===
+  function getCleanHtmlForOutput(){
+    const clone = content.cloneNode(true);
+
+    cleanEmptyNodes(clone);
+    collapseConsecutiveBR(clone);
+    removeEmptyPBeforeLists(clone);
+    condenseParagraphInlines(clone);
+
+    return clone.innerHTML.trim();
+  }
+
+  function cleanEmptyNodes(root){
+    // Remove empty inline tags: em, strong, u, sup, sub, a, span
+    root.querySelectorAll('em,strong,u,sup,sub,a,span').forEach(el=>{
+      const text = (el.textContent || '').replace(/\u200B/g,'').trim();
+      if (!text && el.children.length === 0) {
+        el.remove();
+      }
+    });
+
+    // Remove empty paragraphs
+    root.querySelectorAll('p').forEach(p=>{
+      const text = (p.textContent || '').replace(/\u200B/g,'').trim();
+      if (!text && p.children.length === 0) {
+        p.remove();
+      }
     });
   }
   function execAndNormalize(cmd){
@@ -1033,8 +1066,8 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       flash('Copied HTML');
     }
   }
-  $('copyHtmlBtn').addEventListener('click', ()=> copy(content.innerHTML));
-  $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(content.innerHTML));
+  $('copyHtmlBtn').addEventListener('click', ()=> copy(getCleanHtmlForOutput()));
+  $('copyHtmlToolbarBtn').addEventListener('click', ()=> copy(getCleanHtmlForOutput()));
 
   $('importBtn').addEventListener('click', ()=>{
     const i=document.createElement('input');
@@ -1056,12 +1089,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
   });
 
   $('exportBtn').addEventListener('click', ()=>{
+    const bodyHtml = getCleanHtmlForOutput();
     const doc=[
       '<!doctype html>',
       '<html>',
       '<head><meta charset="utf-8"><title>'+escapeHtml(titleEl.textContent||'Document')+'</title></head>',
       '<body>',
-      content.innerHTML,
+      bodyHtml,
       '</body>',
       '</html>'
     ].join('\n');
@@ -1226,7 +1260,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       else a.removeAttribute('target');
     });
 
-    // dev v2.6.2: extra safety – strip [N] in any footer-style footnote links globally
     body.innerHTML = body.innerHTML.replace(
       /(<a\b[^>]*name="ftn\d+"[^>]*>)\s*\[(\d+)\]\s*(<\/a>)/gi,
       '$1$2$3'
@@ -1250,7 +1283,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         let href = (a.getAttribute('href') || '').trim();
         let m;
 
-        // In-text references: _ftnref5 → topftn5 + <sup>5</sup>
         if ((m = name.match(/^_?ftnref(\d+)/i))) {
           const n = m[1];
 
@@ -1267,7 +1299,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
           a.appendChild(sup);
         }
 
-        // Footer entries: _ftn5 → ftn5 + plain "5"
         else if ((m = name.match(/^_?ftn(\d+)/i))) {
           const n = m[1];
 
@@ -1380,3 +1411,4 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 </script>
 </body>
 </html>
+
