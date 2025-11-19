@@ -1,11 +1,11 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - STABLE Branch
- File: editor-stb-v2.5.html
- Build: v2.5-stable
-=========================================================
-Base from: DEV v2.1.1 (your “good” build)
+ WYSIWYG HTML Editor - DEV Branch
+ File: editor-dev-v2.6.html
+ Build: dev v2.6
+ Base from: stb v2.5 (your “good” build)
+
 - Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
 - Selection behavior so Bold/Italic behave like Underline:
   selection remains active (no jump to start of word).
@@ -15,9 +15,14 @@ Base from: DEV v2.1.1 (your “good” build)
   headers, lists, footnote anchors, and cleans MSO junk.
 - Beautifier only used for Source view, Copy/Export keep raw HTML.
 
-New in v2.5
-- Footer chip shows stb v2.5.
-- Developer icons added in footer:
+New in dev v2.6
+- Word sanitizer now preserves footnote anchors (name/id on <a>).
+- Normalizes Word-style footnotes (_ftn / _ftnref) into:
+    top reference:  <a href="#ftnN"  name="topftnN"><sup>N</sup></a>
+    bottom note:    <a href="#topftnN" name="ftnN">N</a> inside a block with id="ftnN".
+- Footer chip shows dev v2.6.
+- Uses dev-specific localStorage keys (dev_v26).
+- Developer icons in footer:
   • LinkedIn  → https://www.linkedin.com/in/lincuna
   • GitHub    → https://github.com/reraxe/web-tools
 =========================================================
@@ -26,7 +31,7 @@ New in v2.5
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (stb v2.5)</title>
+<title>WYSIWYG HTML Editor (dev v2.6)</title>
 
 <style>
   /* ===== THEME VARS ===== */
@@ -399,7 +404,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">stb v2.5</span>
+          <span class="chip">dev v2.6</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -421,14 +426,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
             <span>Dev:</span>
             <span class="dev-links">
               <a href="https://www.linkedin.com/in/lincuna" target="_blank" aria-label="LinkedIn">
-                <!-- Simple LinkedIn icon -->
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="currentColor" opacity="0.15"></rect>
                   <path fill="currentColor" d="M8.34 17.5H6.03V9.5h2.31v8zM7.18 8.45c-.74 0-1.34-.61-1.34-1.36 0-.76.6-1.36 1.34-1.36.74 0 1.34.6 1.34 1.36 0 .75-.6 1.36-1.34 1.36zM18 17.5h-2.3v-4.2c0-1-.02-2.29-1.4-2.29-1.4 0-1.62 1.09-1.62 2.22v4.27H10.4V9.5h2.21v1.09h.03c.31-.58 1.06-1.19 2.18-1.19 2.33 0 2.76 1.54 2.76 3.55v4.55z"/>
                 </svg>
               </a>
               <a href="https://github.com/reraxe/web-tools" target="_blank" aria-label="GitHub">
-                <!-- Simple GitHub icon -->
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.26c0 4.52 2.87 8.35 6.84 9.7.5.09.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.61-3.37-1.37-3.37-1.37-.45-1.18-1.12-1.5-1.12-1.5-.92-.64.07-.63.07-.63 1.02.07 1.56 1.07 1.56 1.07.9 1.57 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.31.1-2.73 0 0 .84-.27 2.75 1.05A9.18 9.18 0 0 1 12 6.37c.85 0 1.71.12 2.51.34 1.9-1.32 2.74-1.05 2.74-1.05.55 1.42.2 2.47.1 2.73.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.91 0 1.38-.01 2.49-.01 2.83 0 .27.18.59.69.49A10.01 10.01 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/>
                 </svg>
@@ -505,10 +508,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  // Versioned storage (v2.5 STABLE)
-  const DOC_KEY='wysi_doc_stb_v25';
-  const NOTES_KEY='wysi_notes_stb_v25';
-  const THEME_MODE_KEY='wysi_theme_mode_stb_v25';
+  // Versioned storage (dev v2.6)
+  const DOC_KEY='wysi_doc_dev_v26';
+  const NOTES_KEY='wysi_notes_dev_v26';
+  const THEME_MODE_KEY='wysi_theme_mode_dev_v26';
 
   /* ===== Theme: Light/Dark/Auto (Auto default) ===== */
   const themeSelect=$('themeMode');
@@ -1119,7 +1122,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     queueSave();
   });
 
-  // Enforce link targets (http/https => _blank; mailto => no target)
+  // Enforce link targets (http/https => _blank; mailto/# => no target)
   function enforceLinkTargets(root){
     root.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
@@ -1189,17 +1192,36 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         unwrap(el);
         return;
       }
-      if(t==='a'){
-        const href=(el.getAttribute('href')||'').trim();
-        if(!/^#|^https?:|^mailto:/i.test(href)){
+      if (t === 'a') {
+        const href = (el.getAttribute('href') || '').trim();
+        const nameAttr = (el.getAttribute('name') || '').trim();
+
+        const isHttp = /^https?:/i.test(href);
+        const isMail = /^mailto:/i.test(href);
+        const isHash = /^#/.test(href);
+
+        // Word footnote anchors often rely on name="_ftn…" / name="_ftnref…"
+        const isWordFootnoteName = /^_?ftn(ref)?\d+/i.test(nameAttr);
+
+        if (!isHttp && !isMail && !isHash && !isWordFootnoteName) {
+          // Unknown / useless <a> → unwrap
           unwrap(el);
           return;
         }
-        [...el.attributes].forEach(a=>{ if(a.name!=='href') el.removeAttribute(a.name); });
+
+        // Whitelist attributes on <a>: keep href, name, id
+        [...el.attributes].forEach(a=>{
+          if (a.name !== 'href' && a.name !== 'name' && a.name !== 'id') {
+            el.removeAttribute(a.name);
+          }
+        });
       } else {
         [...el.attributes].forEach(a=> el.removeAttribute(a.name));
       }
     });
+
+    // Normalize Word-style footnotes into topftnN / ftnN pattern (dev v2.6)
+    normalizeWordFootnotes(body);
 
     // Remove empty <p>
     body.querySelectorAll('p').forEach(p=>{
@@ -1211,7 +1233,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       .replace(/<\s*\/\s*br\s*>/gi,'')
       .replace(/<br\s*\/?>/gi,'<br>');
 
-    // Enforce link targets
+    // Enforce link targets for http/https
     body.querySelectorAll('a[href]').forEach(a=>{
       const href=(a.getAttribute('href')||'').trim();
       if(/^https?:/i.test(href)) a.setAttribute('target','_blank');
@@ -1228,6 +1250,44 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       const neo=doc.createElement(name);
       while(el.firstChild) neo.appendChild(el.firstChild);
       el.replaceWith(neo);
+    }
+    // Convert Word-style _ftn / _ftnref anchors to topftnN / ftnN + block id="ftnN"
+    function normalizeWordFootnotes(root){
+      const anchors = root.querySelectorAll('a[name], a[href]');
+      anchors.forEach(a=>{
+        const name = (a.getAttribute('name') || '').trim();
+        const href = (a.getAttribute('href') || '').trim();
+        let m;
+
+        // Top reference in text:
+        //   Word:   <a href="#_ftn1" name="_ftnref1"><sup>1</sup></a>
+        //   Target: <a href="#ftn1" name="topftn1"><sup>1</sup></a>
+        if ((m = name.match(/^_?ftnref(\d+)/i))) {
+          const n = m[1];
+          a.setAttribute('name', `topftn${n}`);
+
+          if (!href || /^#_?ftn(ref)?\d+/i.test(href)) {
+            a.setAttribute('href', `#ftn${n}`);
+          }
+        }
+
+        // Bottom footnote definition:
+        //   Word:   <a href="#_ftnref1" name="_ftn1">1</a>
+        //   Target: <a href="#topftn1" name="ftn1">1</a> inside block id="ftn1"
+        else if ((m = name.match(/^_?ftn(\d+)/i))) {
+          const n = m[1];
+          a.setAttribute('name', `ftn${n}`);
+
+          if (!href || /^#_?ftn(ref)?\d+/i.test(href)) {
+            a.setAttribute('href', `#topftn${n}`);
+          }
+
+          const container = a.closest('p,li,div');
+          if (container && !container.id) {
+            container.id = `ftn${n}`;
+          }
+        }
+      });
     }
   }
 
