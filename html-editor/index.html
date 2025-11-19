@@ -1,11 +1,11 @@
 <!doctype html>
 <!--
 =========================================================
- WYSIWYG HTML Editor - DEV Branch
- File: editor-dev-v2.6.4.html
- Build: dev v2.6.4
+ WYSIWYG HTML Editor - STABLE Branch
+ File: editor-stb-v2.6.4.html
+ Build: stb v2.6.4
 
-Base from: dev v2.6.3 (footnote + cleaned output)
+Base from: dev v2.6.4 (multi-level lists + footnotes + cleaned output)
 
 Shared features:
 - Toolbar Bold/Italic normalize to <strong>/<em> (not <b>/<i>).
@@ -21,41 +21,37 @@ Shared features:
     LinkedIn → https://www.linkedin.com/in/lincuna
     GitHub   → https://github.com/reraxe/web-tools
 
-dev v2.6.1 changes:
+Footnote-related changes:
 1) Remove space before footnote superscript links:
    2025. <a href="#ftn6" name="topftn6"><sup>6</sup></a>
    → 2025.<a href="#ftn6" name="topftn6"><sup>6</sup></a>
 2) Remove brackets in footer footnote links:
    <a href="#topftn26" name="ftn26">[26]</a>
    → <a href="#topftn26" name="ftn26">26</a>
+3) Global fallback: strip [N] inside any <a name="ftnN">[N]</a>
+4) normalizeWordFootnotes ensures:
+   - in-text [_ftnrefN] → <sup>N</sup> in link
+   - footer [_ftnN]     → plain numeric “N” in link
 
-dev v2.6.2 changes:
-3) Extra global sanitizer pass to strip [N] from any
-   <a name="ftnN">[N]</a> that survives, even with odd spacing/ordering.
-4) normalizeWordFootnotes upgraded so:
-   - in-text [_ftnrefN] → <sup>N</sup> inside link
-   - footer [_ftnN]     → plain numeric “N” inside link
-
-dev v2.6.3 changes:
-5) Output cleaner for Copy/Export:
+Output cleanup:
+5) For Copy/Export:
    - Removes empty <p></p> and empty inline tags
      (<em>,<strong>,<sup>,<sub>,<a>,<span> without text/children)
    - Works on a clone of the editor so caret/UI behavior is unchanged.
 
-dev v2.6.4 changes:
+Word → nested lists:
 6) Multi-level list reconstruction for Word-pasted bullets/numbering:
    - Detects bullet/number markers (•, ·, ∙, ‧, -, *, ○, ▪, – and 1. / 2))
    - Uses margin-left (pt/px) to infer indent level
    - Rebuilds nested <ul>/<ol><li> structure (sub-bullets, sub-numbering)
    - Bullet/number stripping ONLY applied to list items (not normal text)
-   - Regex bug fixed so Word paste works again (safe handling of "-")
 =========================================================
 -->
 <html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>WYSIWYG HTML Editor (dev v2.6.4)</title>
+<title>WYSIWYG HTML Editor (stb v2.6.4)</title>
 
 <style>
   :root{
@@ -419,7 +415,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       <div class="footerbar">
         <div class="chips">
           <span class="chip">Autosave: on</span>
-          <span class="chip">dev v2.6.4</span>
+          <span class="chip">stb v2.6.4</span>
           <label class="chip" title="Choose how pasted content is handled">
             Paste mode:
             <select id="pasteMode">
@@ -539,9 +535,10 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         titleEl = $('docTitle'),
         blockSelect = $('blockFormat');
 
-  const DOC_KEY='wysi_doc_dev_v264';
-  const NOTES_KEY='wysi_notes_dev_v264';
-  const THEME_MODE_KEY='wysi_theme_mode_dev_v264';
+  // STABLE v2.6.4 storage keys (separate from dev)
+  const DOC_KEY='wysi_doc_stb_v264';
+  const NOTES_KEY='wysi_notes_stb_v264';
+  const THEME_MODE_KEY='wysi_theme_mode_stb_v264';
 
   const themeSelect=$('themeMode');
   const mql=window.matchMedia('(prefers-color-scheme: dark)');
@@ -653,7 +650,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     });
   }
 
-  // dev v2.6.3+: Clean empty tags for output (copy/export)
   function getCleanHtmlForOutput(){
     const clone = content.cloneNode(true);
 
@@ -1258,7 +1254,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
 
     normalizeWordFootnotes(body);
 
-    // dev v2.6.4: rebuild multi-level lists from bullet/numbered paragraphs
     rebuildListsFromParagraphs(body);
 
     body.querySelectorAll('p').forEach(p=>{
@@ -1275,7 +1270,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
       else a.removeAttribute('target');
     });
 
-    // global fallback: remove brackets in footer anchors if any survive
     body.innerHTML = body.innerHTML.replace(
       /(<a\b[^>]*name="ftn\d+"[^>]*>)\s*\[(\d+)\]\s*(<\/a>)/gi,
       '$1$2$3'
@@ -1284,7 +1278,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
     return body.innerHTML.trim();
 
     function rebuildListsFromParagraphs(root){
-      const stack = []; // [{ list, level, type }]
+      const stack = [];
 
       let node = root.firstElementChild;
       while (node) {
@@ -1295,14 +1289,12 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
           if (info) {
             const { type, level } = info;
 
-            // close lists until <= level
             while (stack.length && stack[stack.length - 1].level > level) {
               stack.pop();
             }
 
             let current = stack[stack.length - 1];
 
-            // need a new list (type change or deeper level)
             if (!current || current.type !== type || current.level < level) {
               const list = doc.createElement(type);
 
@@ -1342,9 +1334,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         const text = (p.textContent || '').trim();
         if (!text) return null;
 
-        // bullets: • · ∙ ‧ ○ ▪ – - *
         const bulletRe = /^([\u2022\u00B7\u2219\u2027•○▪–\-*])\s+/;
-        // numbers like "1. " or "2) "
         const numberRe = /^\d+[\.\)]\s+/;
 
         let type = null;
@@ -1375,10 +1365,7 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         const wrapper = doc.createElement('div');
         wrapper.innerHTML = html;
 
-        // Bullet-like markers we want to strip ONLY for list items
-        // (no raw "-" here; we add "-" safely in the regex below)
         const bulletChars = '\u2022\u00B7\u2219\u2027•○▪–*';
-        //  •  ·  ∙  ‧  •  ○  ▪  –  *
 
         function firstContentNode(parent){
           let n = parent.firstChild;
@@ -1391,16 +1378,13 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
         const n = firstContentNode(wrapper);
         if (!n) return wrapper.innerHTML;
 
-        // CASE 1 – first node is text: remove bullet / number prefix
         if (n.nodeType === 3) {
           let text = n.textContent;
 
-          // strip bullet char + spaces (from bulletChars OR a plain "-")
           text = text.replace(
             new RegExp('^\\s*[' + bulletChars + '\\-]\\s+'),
             ''
           );
-          // strip numeric marker like "1. " or "2) "
           text = text.replace(/^\s*\d+[\.\)]\s+/, '');
 
           if (text.length) {
@@ -1410,7 +1394,6 @@ Tip: Switch Paste mode to ‘Word sanitized’ for clean pastes."></div>
           }
         }
 
-        // CASE 2 – first node is element like <span>·</span> or <span>1.</span>
         else if (n.nodeType === 1) {
           const txt = (n.textContent || '').trim();
           const bulletOnly = new RegExp('^[' + bulletChars + '\\-]$').test(txt);
