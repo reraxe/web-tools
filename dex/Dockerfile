@@ -18,7 +18,6 @@ COPY tests ./tests
 RUN DEX_WATCH_INBOUND=0 DEX_SEED_DEMO=0 python -m unittest discover -s tests -v
 
 FROM test AS runtime
-COPY scripts ./scripts
 
 RUN rm -rf tests \
     && useradd --uid 10001 --create-home dex \
