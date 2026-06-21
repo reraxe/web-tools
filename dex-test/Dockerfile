@@ -1,9 +1,0 @@
-.git
-.gitignore
-__pycache__
-*.pyc
-data
-storage
-scanner-inbox
-work
-outputs
