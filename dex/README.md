@@ -2,6 +2,22 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
+Current release: **Dex v1.2-stable**
+
+## Release policy
+
+- Stable releases are preserved and are never overwritten by development work.
+- `v1.1-test` consolidates the first quality-of-life work planned through the former v1.4 roadmap.
+- `v1.1a-test` added inventory safety and intake corrections discovered during live 29-card batch testing.
+- `v1.1b-test` added batch-first intake, bulk batch-card selection, bottom batch completion, unified set entry, and order-number search for sold cards.
+- `v1.2-stable` promotes the tested v1.1b workflow with the final searchable color picker for cleaner drawer labels.
+- Automatic card recognition and catalog intelligence begin in `v2.0-test`.
+- Test releases use a separate Docker tag, container, port, and storage volume so test data cannot affect stable inventory.
+- Stable releases are the versions intended for weeklong real inventory work before the next test lane begins.
+- Urgent fixes to a stable release use a patch version such as `v1.0.1-test` before promotion to `v1.0.1-stable`.
+
+Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1.1_TEST_BACKLOG.md).
+
 ## Repository layout
 
 - `static/index.html`: browser interface.
@@ -17,8 +33,8 @@ Dex is a private, single-user TCG inventory system for individual physical cards
 
 1. Create an inbound purchase batch for a booster box, packs, purchased singles, a trade, or existing inventory.
 2. Add front/back scans in the browser, or save scanner images into that batch's watched folder.
-3. Dex immediately assigns a SKU such as `OP-B20260617-001`.
-4. Review the card identity, pricing, location, and listing platform.
+3. Select one image pair or a complete scan batch; Dex pairs files and immediately assigns a unique SKU to every physical card.
+4. Review and edit cards from the multi-card batch grid.
 5. Finish the batch and print all queued 2 x 1 labels.
 6. Scan sleeve QR codes into an eBay or TCGplayer outbound order.
 
@@ -57,7 +73,7 @@ docker compose up -d --build
 
 Compose defaults to Debian user/group `1000:1000`. If the server account uses different IDs, put `PUID` and `PGID` in a `.env` file before starting Dex.
 
-Dex will be available at `http://SERVER-IP:8080` on the home network. Keep port `8080` blocked from the public internet.
+The included test compose file publishes Dex at `http://SERVER-IP:8082` and uses separate test storage. Keep the port blocked from the public internet. Earlier releases remain untouched on their existing ports and storage.
 
 The persistent folders are:
 
@@ -65,6 +81,10 @@ The persistent folders are:
 - `scanner-inbox/`: scanner drop folders created for open batches.
 
 The SQLite database is stored at `storage/dex.db` on the host through the `/data` container volume. Rebuilding or replacing the image does not remove inventory data.
+
+### Move v1.1b test data into v1.2 stable
+
+Stop the `v1.1b-test` container or create a consistent SQLite backup before copying its data. Copy the complete `storage-v1.1b-test` directory to `storage-v1.2-stable`, then start this compose file. Dex preserves cards, SKUs, images, batches, and sales while moving the tested workflow into the stable lane.
 
 ## Jenkins image build
 
@@ -92,6 +112,8 @@ Back up the entire `storage/` folder using the server's normal backup system. It
 | `DEX_WATCH_INBOUND` | `1` | Enables automatic folder intake |
 | `DEX_SCAN_INTERVAL` | `5` | Folder check interval in seconds |
 | `DEX_SEED_DEMO` | `0` | Adds sample records to an empty database |
+| `DEX_TIMEZONE` | `America/New_York` | Business dates used for SKUs and exports |
+| `DEX_TCG_CAPACITY` | `500` | Initial TCGplayer listing capacity |
 
 ## Tests
 
@@ -99,4 +121,4 @@ Back up the entire `storage/` folder using the server's normal backup system. It
 python -m unittest discover -s tests -v
 ```
 
-The automated test covers batch creation, SKU assignment, images, grouped inventory, pricing, TCGplayer capacity, and outbound sale completion.
+The automated test covers batch creation, bulk SKU assignment, reopening, images, grouped inventory, settings, exports, pricing, TCGplayer capacity, undo, and outbound sale completion.

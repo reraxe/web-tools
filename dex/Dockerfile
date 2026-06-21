@@ -1,9 +1,15 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.title="Dex" \
+      org.opencontainers.image.description="Digital Encyclopedia Xchange TCG inventory" \
+      org.opencontainers.image.version="v1.2-stable"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEX_DATA_DIR=/data \
     DEX_INBOUND_DIR=/scanner-inbox \
+    DEX_TIMEZONE=America/New_York \
+    DEX_TCG_CAPACITY=500 \
     DEX_HOST=0.0.0.0 \
     DEX_PORT=8080
 

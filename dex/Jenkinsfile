@@ -3,7 +3,8 @@ pipeline {
 
     environment {
         IMAGE_REPOSITORY = 'dex'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_TAG = "v1.2-stable-${BUILD_NUMBER}"
+        RELEASE_TAG = 'v1.2-stable'
         SMOKE_CONTAINER = "dex-smoke-${BUILD_NUMBER}"
     }
 
@@ -51,12 +52,12 @@ pipeline {
             }
         }
 
-        stage('Tag latest') {
+        stage('Tag test release') {
             when {
                 branch 'main'
             }
             steps {
-                sh 'docker tag ${IMAGE_REPOSITORY}:${IMAGE_TAG} ${IMAGE_REPOSITORY}:latest'
+                sh 'docker tag ${IMAGE_REPOSITORY}:${IMAGE_TAG} ${IMAGE_REPOSITORY}:${RELEASE_TAG}'
             }
         }
     }
