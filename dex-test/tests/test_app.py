@@ -141,6 +141,9 @@ class DexApiTest(unittest.TestCase):
         self.assertEqual(order["platform"], "TCGplayer")
         _, sold_card = self.request(f"/api/cards/{card['sku']}")
         self.assertEqual(sold_card["status"], "SOLD")
+        _, order_search = self.request("/api/inventory?q=TEST-1001&status=SOLD")
+        self.assertEqual(len(order_search["groups"]), 1)
+        self.assertEqual(order_search["groups"][0]["copies"][0]["sku"], card["sku"])
         self.request(f"/api/cards/{card['sku']}/recycle", "POST", {"reason": "Audit protection test"})
         with self.assertRaises(urllib.error.HTTPError) as error:
             self.request(f"/api/cards/{card['sku']}/purge", "POST", {})
@@ -151,7 +154,7 @@ class DexApiTest(unittest.TestCase):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v1.1a-test")
+        self.assertEqual(health["version"], "v1.1b-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)

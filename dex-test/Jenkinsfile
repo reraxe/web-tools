@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         IMAGE_REPOSITORY = 'dex'
-        IMAGE_TAG = "v1.1a-test-${BUILD_NUMBER}"
-        RELEASE_TAG = 'v1.1a-test'
+        IMAGE_TAG = "v1.1b-test-${BUILD_NUMBER}"
+        RELEASE_TAG = 'v1.1b-test'
         SMOKE_CONTAINER = "dex-smoke-${BUILD_NUMBER}"
     }
 

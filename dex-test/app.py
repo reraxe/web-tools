@@ -40,7 +40,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v1.1a-test"
+APP_VERSION = "v1.1b-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -437,9 +437,12 @@ def inventory_groups(filters: dict[str, list[str]]) -> list[dict]:
     status = clean_text(filters.get("status", [""])[0], 30)
     platform = clean_text(filters.get("platform", [""])[0], 30)
     if q:
-        clauses.append("(c.name LIKE ? OR c.card_number LIKE ? OR c.sku LIKE ? OR c.location LIKE ?)")
+        clauses.append(
+            "(c.name LIKE ? OR c.card_number LIKE ? OR c.sku LIKE ? OR c.location LIKE ? "
+            "OR b.batch_code LIKE ? OR o.order_number LIKE ?)"
+        )
         needle = f"%{q}%"
-        params.extend([needle] * 4)
+        params.extend([needle] * 6)
     if game:
         clauses.append("b.game = ?")
         params.append(game)
@@ -454,9 +457,12 @@ def inventory_groups(filters: dict[str, list[str]]) -> list[dict]:
         rows = db.execute(
             f"""
             SELECT c.*, b.game, b.set_code, b.batch_code, b.finish_group,
+                   o.order_number AS sale_order_number,
                    b.total_cost AS batch_total_cost,
                    (SELECT COUNT(*) FROM cards bc WHERE bc.batch_id = b.id) AS batch_card_count
             FROM cards c JOIN batches b ON b.id = c.batch_id
+            LEFT JOIN sale_items si ON si.card_id = c.id
+            LEFT JOIN sale_orders o ON o.id = si.order_id
             {where}
             """,
             params,

@@ -1,8 +1,8 @@
 services:
   dex:
     build: .
-    image: "${DEX_IMAGE:-dex:v1.1a-test}"
-    container_name: dex-v1.1a-test
+    image: "${DEX_IMAGE:-dex:v1.1b-test}"
+    container_name: dex-v1.1b-test
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:
@@ -16,5 +16,5 @@ services:
       DEX_TIMEZONE: "America/New_York"
       DEX_TCG_CAPACITY: "500"
     volumes:
-      - ./storage-v1.1a-test:/data
-      - ./scanner-inbox-v1.1a-test:/scanner-inbox
+      - ./storage-v1.1b-test:/data
+      - ./scanner-inbox-v1.1b-test:/scanner-inbox
