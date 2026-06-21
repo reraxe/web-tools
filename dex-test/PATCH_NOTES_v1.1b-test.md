@@ -23,6 +23,7 @@ This release is a quality-of-life pass for faster batch review after the first v
 - Removed separate **Custom Set Code** and **Custom Set Name** fields.
 - Updated release metadata, Docker labels, compose defaults, Jenkins tags, and footer to `v1.1b-test`.
 - Compose now uses separate `storage-v1.1b-test` and `scanner-inbox-v1.1b-test` folders.
+- Hotfix: made batch-card selection visible by default, added click-to-select on the card body, and refreshed browser cache tags so old interface files do not linger.
 
 ## Verified
 

@@ -230,11 +230,11 @@ dialog::backdrop { background: rgba(17, 26, 23, .5); }
 .bulk-action-bar.show { display: flex; }
 .bulk-action-bar strong { margin-right: auto; font-size: 12px; color: var(--green); }
 .batch-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 10px; }
-.batch-card { min-width: 0; position: relative; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.batch-card { min-width: 0; position: relative; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .batch-card.selected { border-color: var(--green-2); box-shadow: 0 0 0 2px rgba(36, 107, 88, .12); }
-.batch-card-check { position: absolute; top: 6px; left: 6px; z-index: 2; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 4px; background: rgba(255,255,255,.92); box-shadow: 0 1px 4px rgba(23,32,30,.16); opacity: 0; transition: opacity .15s ease; }
-.batch-card:hover .batch-card-check, .batch-card.selected .batch-card-check { opacity: 1; }
-.batch-card-check input { width: 15px; height: 15px; min-height: 0; margin: 0; }
+.batch-card-check { position: absolute; top: 6px; left: 6px; z-index: 2; display: grid; place-items: center; width: 23px; height: 23px; border-radius: 4px; background: rgba(255,255,255,.94); box-shadow: 0 1px 4px rgba(23,32,30,.16); opacity: 1; }
+.batch-card-check input { width: 15px; height: 15px; min-height: 0; margin: 0; accent-color: var(--green); cursor: pointer; }
+.batch-card-actions, .batch-card-actions .icon-button { cursor: default; }
 .batch-card > img, .batch-card-placeholder { width: 58px; height: 80px; object-fit: cover; border: 1px solid var(--line); border-radius: 3px; background: var(--surface-2); }
 .batch-card-placeholder { display: grid; place-items: center; color: var(--muted); }
 .batch-card-body { min-width: 0; padding-right: 28px; }

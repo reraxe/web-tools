@@ -972,6 +972,14 @@ document.addEventListener("click", async (event) => {
     detail.hidden = !detail.hidden;
     expandable.classList.toggle("open", !detail.hidden);
   }
+  const batchCard = event.target.closest(".batch-card");
+  if (batchCard && !event.target.closest("button, a, input, label")) {
+    const selector = batchCard.querySelector("[data-batch-select]");
+    if (selector) {
+      selector.checked = !selector.checked;
+      selector.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
 });
 
 document.addEventListener("change", (event) => {
