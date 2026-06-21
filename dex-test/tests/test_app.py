@@ -265,6 +265,45 @@ class DexApiTest(unittest.TestCase):
         _, undo = self.request("/api/undo", "POST", {})
         self.assertIn("Undone", "Undone: " + undo["undone"])
 
+    def test_v11b_batch_recycle_and_undo(self):
+        _, batch = self.request(
+            "/api/batches", "POST",
+            {"game": "One Piece", "set_code": "OP16", "acquisition_type": "Booster Box"},
+        )
+        one_pixel_png = "data:image/png;base64," + base64.b64encode(
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            )
+        ).decode()
+        _, result = self.request(
+            f"/api/batches/{batch['id']}/cards/bulk", "POST",
+            {"cards": [
+                {"front_image": one_pixel_png, "back_image": one_pixel_png},
+                {"front_image": one_pixel_png, "back_image": one_pixel_png},
+            ]},
+        )
+        skus = {card["sku"] for card in result["cards"]}
+        _, recycled = self.request(
+            f"/api/batches/{batch['id']}/recycle", "POST",
+            {"reason": "Duplicate batch test"},
+        )
+        self.assertEqual(recycled["recycled"], 2)
+        self.assertIsNotNone(recycled["batch"]["recycled_at"])
+
+        _, batches = self.request("/api/batches")
+        self.assertNotIn(batch["id"], {item["id"] for item in batches["batches"]})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(f"/api/batches/{batch['id']}")
+        self.assertEqual(error.exception.code, 404)
+
+        _, recycle_bin = self.request(f"/api/recycle?q={batch['batch_code']}")
+        self.assertTrue(skus.issubset({item["sku"] for item in recycle_bin["cards"]}))
+
+        _, undo = self.request("/api/undo", "POST", {})
+        self.assertIn(batch["batch_code"], undo["undone"])
+        _, restored_batch = self.request(f"/api/batches/{batch['id']}")
+        self.assertEqual({card["sku"] for card in restored_batch["cards"]}, skus)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -277,7 +277,7 @@ function parseSetChoice(value) {
 
 function newBatchForm() {
   return `<form id="new-batch-form">
-    <div class="form-grid">
+    <div class="form-grid batch-form-grid">
       <label>Game<select name="game" required><option value="">Select game</option><option>Pokemon</option><option>One Piece</option><option>Riftbound</option></select></label>
       <label>Set<input name="set_choice" list="tcg-set-options" required placeholder="Search OP16, EB03, or Time of Battle" autocomplete="off"><datalist id="tcg-set-options">${setOptionsMarkup()}</datalist><span class="help-text">Use CODE - Set Name. You can type future sets directly.</span></label>
       <label>Color<input name="color" placeholder="Yellow"></label>
@@ -321,7 +321,7 @@ function batchRows(batches) {
     <div><strong>${batch.card_count || 0} cards</strong><small>${batch.review_count || 0} need review</small></div>
     <div><strong>${escapeHtml(batch.acquisition_type)}</strong><small>${formatMoney(batch.total_cost)}</small></div>
     <div><span class="badge ${batch.status === "OPEN" ? "blue" : "green"}">${batch.status === "OPEN" ? "Open" : "Complete"}</span><small>${formatDate(batch.created_at)}</small></div>
-    <div class="batch-actions"><button class="button secondary" data-action="open-batch" data-id="${batch.id}">${icon("arrow-right")}Open</button></div>
+    <div class="batch-actions"><button class="button secondary" data-action="open-batch" data-id="${batch.id}">${icon("arrow-right")}Open</button><button class="icon-button danger-icon" title="Move batch to Recycle Bin" data-action="open-recycle-batch" data-id="${batch.id}" data-code="${escapeHtml(batch.batch_code)}" data-count="${batch.card_count || 0}">${icon("trash-2")}</button></div>
   </div>`).join("")}</div>`;
 }
 
@@ -393,7 +393,7 @@ async function renderBatch(id) {
           <div><span>Source</span><strong>${escapeHtml(b.acquisition_type)}</strong></div><div><span>Cost</span><strong>${formatMoney(b.total_cost)}</strong></div>
           <div><span>Location</span><strong>${escapeHtml(b.location)}</strong></div><div><span>Cards</span><strong>${data.cards.length}</strong></div>
           <div><span>Scanner folder</span><strong>${escapeHtml(b.batch_code)}</strong></div>
-        </div><button class="button secondary" style="width:100%;margin-top:16px" data-action="change-group">${icon("sliders-horizontal")}Change scan group</button></aside>
+        </div><button class="button secondary" style="width:100%;margin-top:16px" data-action="change-group">${icon("sliders-horizontal")}Change scan group</button><button class="button danger" style="width:100%;margin-top:8px" data-action="open-recycle-batch" data-id="${b.id}" data-code="${escapeHtml(b.batch_code)}" data-count="${data.cards.length}">${icon("trash-2")}Move Batch to Recycle Bin</button></aside>
         <section class="ingest-panel"><div class="ingest-head"><h3>Add Scanned Cards</h3><span class="badge blue">SKU Assigned On Save</span></div>
           ${b.status === "OPEN" ? cardIngestForm(b) : ""}${batchCardList(data.cards, b)}
         </section>
@@ -699,6 +699,25 @@ async function recycleCard(event) {
   } catch (error) { toast(error.message, "error"); }
 }
 
+function openRecycleBatch(id, code, count) {
+  const cards = Number(count || 0);
+  const cardText = cards === 1 ? "1 card" : `${cards} cards`;
+  openModal("Move Batch to Recycle Bin", `${code} contains ${cardText}. This is recoverable during the retention period.`, `<form id="recycle-batch-form" data-id="${escapeHtml(id)}"><label>Removal Reason<textarea name="reason" placeholder="Duplicate batch, test import, wrong set, or another reason"></textarea></label><p class="help-text">Every active card in this batch will move to the Recycle Bin. Sold/audit protections and retention rules still apply.</p><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button danger">${icon("trash-2")}Move Batch to Recycle Bin</button></div></form>`);
+  document.querySelector("#recycle-batch-form").addEventListener("submit", recycleBatch);
+}
+
+async function recycleBatch(event) {
+  event.preventDefault();
+  const id = event.currentTarget.dataset.id;
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    const result = await api(`/api/batches/${encodeURIComponent(id)}/recycle`, { method: "POST", body: JSON.stringify(payload) });
+    closeModal(); state.activeBatch = null;
+    toast(`${result.batch.batch_code} moved to Recycle Bin with ${result.recycled} card(s). Use Undo to restore it.`);
+    await loadDashboard(); setView("inbound");
+  } catch (error) { toast(error.message, "error"); }
+}
+
 async function openSettings() {
   try {
     const [settings, activity] = await Promise.all([api("/api/settings"), api("/api/activity")]);
@@ -946,6 +965,7 @@ document.addEventListener("click", async (event) => {
     if (action === "copy-sku") copySku(actionEl.dataset.sku);
     if (action === "swap-images") swapCardImages(actionEl.dataset.sku);
     if (action === "open-recycle-card") openRecycleCard(actionEl.dataset.sku);
+    if (action === "open-recycle-batch") openRecycleBatch(actionEl.dataset.id, actionEl.dataset.code, actionEl.dataset.count);
     if (action === "restore-card") restoreCard(actionEl.dataset.sku);
     if (action === "purge-card") purgeCard(actionEl.dataset.sku);
     if (action === "print-labels") printLabels();

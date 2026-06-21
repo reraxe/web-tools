@@ -114,7 +114,10 @@ def init_db() -> None:
                 acquisition_type TEXT NOT NULL,
                 total_cost REAL NOT NULL DEFAULT 0,
                 location TEXT NOT NULL DEFAULT '',
-                notes TEXT NOT NULL DEFAULT ''
+                notes TEXT NOT NULL DEFAULT '',
+                recycled_at TEXT,
+                recycle_reason TEXT NOT NULL DEFAULT '',
+                purge_after TEXT
             );
 
             CREATE TABLE IF NOT EXISTS cards (
@@ -199,6 +202,13 @@ def init_db() -> None:
         batch_columns = {row["name"] for row in db.execute("PRAGMA table_info(batches)")}
         if "scan_order" not in batch_columns:
             db.execute("ALTER TABLE batches ADD COLUMN scan_order TEXT NOT NULL DEFAULT 'FRONT_FIRST'")
+        for name, declaration in (
+            ("recycled_at", "TEXT"),
+            ("recycle_reason", "TEXT NOT NULL DEFAULT ''"),
+            ("purge_after", "TEXT"),
+        ):
+            if name not in batch_columns:
+                db.execute(f"ALTER TABLE batches ADD COLUMN {name} {declaration}")
         card_columns = {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
         for name, declaration in (
             ("recycled_at", "TEXT"),
@@ -551,7 +561,7 @@ def dashboard() -> dict:
             ).fetchone()
         )
         values["open_batches"] = db.execute(
-            "SELECT COUNT(*) FROM batches WHERE status = 'OPEN'"
+            "SELECT COUNT(*) FROM batches WHERE status = 'OPEN' AND recycled_at IS NULL"
         ).fetchone()[0]
         values["tcg_capacity"] = int(setting(db, "tcg_capacity", str(DEFAULT_TCG_CAPACITY)))
         values["timezone"] = setting(db, "timezone", DEFAULT_TIMEZONE)
@@ -564,6 +574,7 @@ def dashboard() -> dict:
                 """
                 SELECT b.*, COUNT(c.id) AS card_count
                 FROM batches b LEFT JOIN cards c ON c.batch_id = b.id AND c.recycled_at IS NULL
+                WHERE b.recycled_at IS NULL
                 GROUP BY b.id ORDER BY b.created_at DESC LIMIT 5
                 """
             ).fetchall()
@@ -609,6 +620,21 @@ def undo_last_action(db: sqlite3.Connection) -> dict:
                       updated_at = ? WHERE sku = ?""",
             (utcnow(), payload["sku"]),
         )
+    elif action_type == "BATCH_RECYCLE":
+        now = utcnow()
+        db.execute(
+            "UPDATE batches SET recycled_at = NULL, recycle_reason = '', purge_after = NULL WHERE id = ?",
+            (int(payload["batch_id"]),),
+        )
+        skus = [card["sku"] for card in payload.get("cards", []) if card.get("sku")]
+        if skus:
+            placeholders = ",".join("?" for _ in skus)
+            db.execute(
+                f"""UPDATE cards SET recycled_at = NULL, recycle_reason = '', purge_after = NULL,
+                          status = COALESCE(pre_recycle_status, status), pre_recycle_status = NULL,
+                          updated_at = ? WHERE sku IN ({placeholders})""",
+                [now, *skus],
+            )
     elif action_type == "RESTORE":
         db.execute(
             """UPDATE cards SET recycled_at = ?, recycle_reason = ?, purge_after = ?,
@@ -837,6 +863,7 @@ class DexHandler(BaseHTTPRequestHandler):
                         SELECT b.*, COUNT(c.id) AS card_count,
                                SUM(CASE WHEN c.status = 'REVIEW' THEN 1 ELSE 0 END) AS review_count
                         FROM batches b LEFT JOIN cards c ON c.batch_id = b.id AND c.recycled_at IS NULL
+                        WHERE b.recycled_at IS NULL
                         GROUP BY b.id ORDER BY b.created_at DESC
                         """
                     ).fetchall()
@@ -844,7 +871,7 @@ class DexHandler(BaseHTTPRequestHandler):
             elif re.fullmatch(r"/api/batches/\d+", path):
                 batch_id = int(path.rsplit("/", 1)[-1])
                 with connect() as db:
-                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    batch = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     cards = db.execute(
                         "SELECT * FROM cards WHERE batch_id = ? AND recycled_at IS NULL ORDER BY id", (batch_id,)
                     ).fetchall()
@@ -1005,7 +1032,7 @@ class DexHandler(BaseHTTPRequestHandler):
             elif re.fullmatch(r"/api/batches/\d+/cards", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
-                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    batch = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     if not batch:
                         self.send_error_json("Batch not found", 404)
                         return
@@ -1021,7 +1048,7 @@ class DexHandler(BaseHTTPRequestHandler):
                 if len(items) > 100:
                     raise ValueError("A browser upload is limited to 100 cards at a time")
                 with connect() as db:
-                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    batch = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     if not batch:
                         self.send_error_json("Batch not found", 404)
                         return
@@ -1032,7 +1059,7 @@ class DexHandler(BaseHTTPRequestHandler):
             elif re.fullmatch(r"/api/batches/\d+/complete", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
-                    previous = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    previous = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     if not previous:
                         self.send_error_json("Batch not found", 404)
                         return
@@ -1052,7 +1079,7 @@ class DexHandler(BaseHTTPRequestHandler):
             elif re.fullmatch(r"/api/batches/\d+/reopen", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
-                    previous = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    previous = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     if not previous:
                         self.send_error_json("Batch not found", 404)
                         return
@@ -1063,6 +1090,44 @@ class DexHandler(BaseHTTPRequestHandler):
                     })
                     batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
                 self.send_json(dict(batch))
+            elif re.fullmatch(r"/api/batches/\d+/recycle", path):
+                batch_id = int(path.split("/")[3])
+                reason = clean_text(payload.get("reason"), 240)
+                with connect() as db:
+                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                    if not batch:
+                        self.send_error_json("Batch not found", 404)
+                        return
+                    if batch["recycled_at"]:
+                        raise ValueError("Batch is already in the Recycle Bin")
+                    cards = db.execute(
+                        "SELECT id, sku FROM cards WHERE batch_id = ? AND recycled_at IS NULL ORDER BY id",
+                        (batch_id,),
+                    ).fetchall()
+                    retention = max(1, int(setting(db, "recycle_retention_days", "180")))
+                    recycled_at = utcnow()
+                    purge_after = (datetime.now(timezone.utc) + timedelta(days=retention)).isoformat(timespec="seconds")
+                    db.execute(
+                        "UPDATE batches SET recycled_at = ?, recycle_reason = ?, purge_after = ? WHERE id = ?",
+                        (recycled_at, reason, purge_after, batch_id),
+                    )
+                    if cards:
+                        db.execute(
+                            """UPDATE cards SET recycled_at = ?, recycle_reason = ?, purge_after = ?,
+                                      pre_recycle_status = status, updated_at = ?
+                               WHERE batch_id = ? AND recycled_at IS NULL""",
+                            (recycled_at, reason or f"Batch {batch['batch_code']} recycled", purge_after, recycled_at, batch_id),
+                        )
+                    log_action(db, "BATCH_RECYCLE", f"Moved {batch['batch_code']} to Recycle Bin", {
+                        "batch_id": batch_id,
+                        "batch_code": batch["batch_code"],
+                        "recycled_at": recycled_at,
+                        "reason": reason,
+                        "purge_after": purge_after,
+                        "cards": [dict(row) for row in cards],
+                    })
+                    updated = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
+                self.send_json({"batch": dict(updated), "recycled": len(cards), "skus": [row["sku"] for row in cards]})
             elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/swap-images", path):
                 sku = unquote(path.split("/")[3])
                 with connect() as db:
@@ -1118,6 +1183,10 @@ class DexHandler(BaseHTTPRequestHandler):
                                   status = COALESCE(pre_recycle_status, status), pre_recycle_status = NULL,
                                   updated_at = ? WHERE sku = ?""",
                         (utcnow(), sku),
+                    )
+                    db.execute(
+                        "UPDATE batches SET recycled_at = NULL, recycle_reason = '', purge_after = NULL WHERE id = ?",
+                        (card["batch_id"],),
                     )
                     card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
                 self.send_json(dict(card))
@@ -1262,12 +1331,13 @@ class DexHandler(BaseHTTPRequestHandler):
                     raise ValueError("Scan order must be Front First or Back First")
                 assignments = ", ".join(f"{key} = ?" for key in updates)
                 with connect() as db:
-                    db.execute(
-                        f"UPDATE batches SET {assignments} WHERE id = ?",
-                        [*updates.values(), int(batch_match.group(1))],
-                    )
+                    batch_id = int(batch_match.group(1))
+                    if not db.execute("SELECT 1 FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone():
+                        self.send_error_json("Batch not found", 404)
+                        return
+                    db.execute(f"UPDATE batches SET {assignments} WHERE id = ?", [*updates.values(), batch_id])
                     row = db.execute(
-                        "SELECT * FROM batches WHERE id = ?", (int(batch_match.group(1)),)
+                        "SELECT * FROM batches WHERE id = ?", (batch_id,)
                     ).fetchone()
                 if not row:
                     self.send_error_json("Batch not found", 404)

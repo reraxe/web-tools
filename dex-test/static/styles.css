@@ -181,6 +181,14 @@ label { display: grid; gap: 6px; color: #3f4b48; font-size: 11px; font-weight: 7
 .money-input span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .money-input input { width: 100%; padding-left: 25px; }
 
+.batch-form-grid { column-gap: 16px; row-gap: 14px; align-items: start; }
+.batch-form-grid label { grid-template-rows: 14px 40px minmax(12px, auto); align-content: start; }
+.batch-form-grid label.full { grid-template-rows: 14px auto; }
+.batch-form-grid input, .batch-form-grid select, .batch-form-grid textarea, .batch-form-grid .money-input { width: 100%; min-width: 0; }
+.batch-form-grid input, .batch-form-grid select { height: 40px; }
+.batch-form-grid .money-input { height: 40px; }
+.batch-form-grid .help-text { min-height: 12px; line-height: 1.2; }
+
 dialog { width: min(680px, calc(100vw - 28px)); max-height: calc(100vh - 40px); padding: 0; border: 0; border-radius: 8px; box-shadow: var(--shadow); }
 dialog::backdrop { background: rgba(17, 26, 23, .5); }
 .modal-header { padding: 20px 22px 16px; display: flex; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); }
