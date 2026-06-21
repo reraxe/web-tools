@@ -118,6 +118,9 @@ class DexApiTest(unittest.TestCase):
 
         _, dash = self.request("/api/dashboard")
         self.assertEqual(dash["tcg_slots"], 1)
+        self.assertEqual(dash["labels_waiting"], 0)
+        self.request(f"/api/batches/{batch['id']}/complete", "POST", {})
+        _, dash = self.request("/api/dashboard")
         self.assertEqual(dash["labels_waiting"], 1)
 
         status, order = self.request(
@@ -138,12 +141,17 @@ class DexApiTest(unittest.TestCase):
         self.assertEqual(order["platform"], "TCGplayer")
         _, sold_card = self.request(f"/api/cards/{card['sku']}")
         self.assertEqual(sold_card["status"], "SOLD")
+        self.request(f"/api/cards/{card['sku']}/recycle", "POST", {"reason": "Audit protection test"})
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request(f"/api/cards/{card['sku']}/purge", "POST", {})
+        self.assertEqual(error.exception.code, 400)
+        self.request(f"/api/cards/{card['sku']}/restore", "POST", {})
 
     def test_health_and_static_app(self):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v1.1-test")
+        self.assertEqual(health["version"], "v1.1a-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)
@@ -156,6 +164,53 @@ class DexApiTest(unittest.TestCase):
             pairs = self.dex.pair_scan_files(paths)
             self.assertEqual(pairs[0], (paths[0], paths[1]))
             self.assertEqual(pairs[1], (paths[2], paths[3]))
+            back_first = self.dex.pair_scan_files(paths, "BACK_FIRST")
+            self.assertEqual(back_first[0], (paths[0], paths[1]))
+            self.assertEqual(back_first[1], (paths[3], paths[2]))
+
+    def test_v11a_recycle_swap_and_label_gating(self):
+        _, batch = self.request(
+            "/api/batches", "POST",
+            {"game": "One Piece", "set_code": "OP16", "set_name": "The Time of Battle",
+             "acquisition_type": "Existing Inventory", "scan_order": "FRONT_FIRST"},
+        )
+        one_pixel_png = "data:image/png;base64," + base64.b64encode(
+            base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            )
+        ).decode()
+        _, card = self.request(
+            f"/api/batches/{batch['id']}/cards", "POST",
+            {"front_image": one_pixel_png, "back_image": one_pixel_png},
+        )
+        original_front, original_back = card["front_image"], card["back_image"]
+        _, swapped = self.request(f"/api/cards/{card['sku']}/swap-images", "POST", {})
+        self.assertEqual(swapped["front_image"], original_back)
+        self.assertEqual(swapped["back_image"], original_front)
+
+        _, dash = self.request("/api/dashboard")
+        open_labels = dash["labels_waiting"]
+        self.request(f"/api/batches/{batch['id']}/complete", "POST", {})
+        _, dash = self.request("/api/dashboard")
+        self.assertEqual(dash["labels_waiting"], open_labels + 1)
+
+        _, recycled = self.request(
+            f"/api/cards/{card['sku']}/recycle", "POST", {"reason": "Duplicate test scan"}
+        )
+        self.assertIsNotNone(recycled["recycled_at"])
+        _, recycle_bin = self.request("/api/recycle")
+        self.assertIn(card["sku"], {item["sku"] for item in recycle_bin["cards"]})
+        _, inventory = self.request(f"/api/inventory?q={card['sku']}")
+        self.assertEqual(inventory["groups"], [])
+
+        _, restored = self.request(f"/api/cards/{card['sku']}/restore", "POST", {})
+        self.assertIsNone(restored["recycled_at"])
+        _, inventory = self.request(f"/api/inventory?q={card['sku']}")
+        self.assertEqual(len(inventory["groups"]), 1)
+
+        self.request(f"/api/cards/{card['sku']}/recycle", "POST", {"reason": "Purge test"})
+        _, purged = self.request(f"/api/cards/{card['sku']}/purge", "POST", {})
+        self.assertTrue(purged["purged"])
 
     def test_v11_batch_settings_exports_and_undo(self):
         _, settings = self.request("/api/settings")

@@ -2,15 +2,16 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current release: **Dex v1.1-test**
+Current release: **Dex v1.1a-test**
 
 ## Release policy
 
 - Stable releases are preserved and are never overwritten by development work.
 - `v1.1-test` consolidates the first quality-of-life work planned through the former v1.4 roadmap.
+- `v1.1a-test` adds inventory safety and intake corrections discovered during live 29-card batch testing.
 - Automatic card recognition and catalog intelligence begin in `v2.0-test`.
 - Test releases use a separate Docker tag, container, port, and storage volume so test data cannot affect stable inventory.
-- After testing is approved, the same release is promoted from `v1.1-test` to `v1.1-stable`.
+- After testing is approved, the same release is promoted from `v1.1a-test` to `v1.1a-stable`.
 - Urgent fixes to a stable release use a patch version such as `v1.0.1-test` before promotion to `v1.0.1-stable`.
 
 Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1.1_TEST_BACKLOG.md).
@@ -70,7 +71,7 @@ docker compose up -d --build
 
 Compose defaults to Debian user/group `1000:1000`. If the server account uses different IDs, put `PUID` and `PGID` in a `.env` file before starting Dex.
 
-The included test compose file publishes Dex at `http://SERVER-IP:8081` and uses separate test storage. Keep the port blocked from the public internet. Stable remains untouched on its existing port and storage.
+The included test compose file publishes Dex at `http://SERVER-IP:8082` and uses separate test storage. Keep the port blocked from the public internet. Earlier releases remain untouched on their existing ports and storage.
 
 The persistent folders are:
 
@@ -78,6 +79,10 @@ The persistent folders are:
 - `scanner-inbox/`: scanner drop folders created for open batches.
 
 The SQLite database is stored at `storage/dex.db` on the host through the `/data` container volume. Rebuilding or replacing the image does not remove inventory data.
+
+### Test with a copy of v1.1 data
+
+Stop the `v1.1-test` container or create a consistent SQLite backup before copying its data. Copy the complete `storage-v1.1-test` directory to `storage-v1.1a-test`, then start this compose file. Dex adds the new columns automatically while preserving cards, SKUs, images, batches, and sales. The test remains isolated on port `8082`.
 
 ## Jenkins image build
 

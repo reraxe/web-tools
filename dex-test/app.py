@@ -20,7 +20,7 @@ import sqlite3
 import threading
 import time
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import BytesIO
@@ -40,7 +40,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v1.1-test"
+APP_VERSION = "v1.1a-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -194,6 +194,20 @@ def init_db() -> None:
         )
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('timezone', ?)", (DEFAULT_TIMEZONE,))
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('tcg_capacity', ?)", (str(DEFAULT_TCG_CAPACITY),))
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('recycle_retention_days', '180')")
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('recycle_auto_purge', '0')")
+        batch_columns = {row["name"] for row in db.execute("PRAGMA table_info(batches)")}
+        if "scan_order" not in batch_columns:
+            db.execute("ALTER TABLE batches ADD COLUMN scan_order TEXT NOT NULL DEFAULT 'FRONT_FIRST'")
+        card_columns = {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
+        for name, declaration in (
+            ("recycled_at", "TEXT"),
+            ("recycle_reason", "TEXT NOT NULL DEFAULT ''"),
+            ("purge_after", "TEXT"),
+            ("pre_recycle_status", "TEXT"),
+        ):
+            if name not in card_columns:
+                db.execute(f"ALTER TABLE cards ADD COLUMN {name} {declaration}")
 
 
 def as_dict(row: sqlite3.Row | None) -> dict | None:
@@ -277,7 +291,7 @@ def scan_fingerprint(paths: list[Path]) -> str:
     return digest.hexdigest()
 
 
-def pair_scan_files(files: list[Path]) -> list[tuple[Path, Path]]:
+def pair_scan_files(files: list[Path], scan_order: str = "FRONT_FIRST") -> list[tuple[Path, Path]]:
     """Pair explicit front/back names first, then pair remaining files in order."""
     explicit: dict[str, dict[str, Path]] = {}
     remaining: list[Path] = []
@@ -293,7 +307,10 @@ def pair_scan_files(files: list[Path]) -> list[tuple[Path, Path]]:
         for sides in explicit.values()
         if "front" in sides and "back" in sides
     ]
-    pairs.extend(zip(remaining[0::2], remaining[1::2]))
+    sequential = list(zip(remaining[0::2], remaining[1::2]))
+    if scan_order == "BACK_FIRST":
+        sequential = [(back, front) for front, back in sequential]
+    pairs.extend(sequential)
     return pairs
 
 
@@ -332,7 +349,7 @@ def watch_inbound() -> None:
     while True:
         try:
             with connect() as db:
-                batches = db.execute("SELECT id, batch_code FROM batches WHERE status = 'OPEN'").fetchall()
+                batches = db.execute("SELECT id, batch_code, scan_order FROM batches WHERE status = 'OPEN'").fetchall()
             for batch in batches:
                 folder = INBOUND_DIR / batch["batch_code"]
                 if not folder.exists():
@@ -344,11 +361,35 @@ def watch_inbound() -> None:
                     and path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
                     and now - path.stat().st_mtime > 2
                 ]
-                for front, back in pair_scan_files(candidates):
+                for front, back in pair_scan_files(candidates, batch["scan_order"]):
                     ingest_file_pair(batch["id"], front, back)
         except Exception as exc:
             print(f"Inbound watcher: {exc}")
         time.sleep(max(2, SCAN_INTERVAL))
+
+
+def recycle_maintenance() -> None:
+    while True:
+        try:
+            purged: list[str] = []
+            with DB_LOCK, connect() as db:
+                if setting(db, "recycle_auto_purge", "0") == "1":
+                    rows = db.execute(
+                        """SELECT c.id, c.sku FROM cards c
+                           LEFT JOIN sale_items si ON si.card_id = c.id
+                           WHERE c.recycled_at IS NOT NULL AND c.purge_after <= ? AND si.id IS NULL""",
+                        (utcnow(),),
+                    ).fetchall()
+                    for row in rows:
+                        db.execute("DELETE FROM cards WHERE id = ?", (row["id"],))
+                        purged.append(row["sku"])
+            for sku in purged:
+                card_dir = IMAGE_DIR / sku
+                if card_dir.is_dir() and card_dir.resolve().is_relative_to(IMAGE_DIR.resolve()):
+                    shutil.rmtree(card_dir)
+        except Exception as exc:
+            print(f"Recycle maintenance: {exc}")
+        time.sleep(3600)
 
 
 def create_card(db: sqlite3.Connection, batch: sqlite3.Row, payload: dict) -> dict:
@@ -389,7 +430,7 @@ def create_card(db: sqlite3.Connection, batch: sqlite3.Row, payload: dict) -> di
 
 
 def inventory_groups(filters: dict[str, list[str]]) -> list[dict]:
-    clauses = []
+    clauses = ["c.recycled_at IS NULL"]
     params: list[object] = []
     q = clean_text(filters.get("q", [""])[0], 100)
     game = clean_text(filters.get("game", [""])[0], 40)
@@ -491,15 +532,15 @@ def dashboard() -> dict:
             db.execute(
                 """
                 SELECT
-                    COUNT(*) AS total_cards,
-                    SUM(CASE WHEN status = 'IN_STOCK' THEN 1 ELSE 0 END) AS in_stock,
-                    SUM(CASE WHEN status IN ('IN_STOCK', 'REVIEW', 'HOLD') THEN 1 ELSE 0 END) AS physically_available,
-                    SUM(CASE WHEN status = 'REVIEW' THEN 1 ELSE 0 END) AS needs_review,
-                    SUM(CASE WHEN label_printed = 0 AND status != 'SOLD' THEN 1 ELSE 0 END) AS labels_waiting,
-                    SUM(CASE WHEN listing_platform = 'TCGplayer' AND status = 'IN_STOCK' THEN 1 ELSE 0 END) AS tcg_slots,
-                    SUM(CASE WHEN market_average >= 20 AND status = 'IN_STOCK' THEN 1 ELSE 0 END) AS ebay_candidates,
-                    COALESCE(SUM(CASE WHEN status = 'IN_STOCK' THEN market_average ELSE 0 END), 0) AS market_value
-                FROM cards
+                    COUNT(CASE WHEN c.recycled_at IS NULL THEN 1 END) AS total_cards,
+                    SUM(CASE WHEN c.status = 'IN_STOCK' AND c.recycled_at IS NULL THEN 1 ELSE 0 END) AS in_stock,
+                    SUM(CASE WHEN c.status IN ('IN_STOCK', 'REVIEW', 'HOLD') AND c.recycled_at IS NULL THEN 1 ELSE 0 END) AS physically_available,
+                    SUM(CASE WHEN c.status = 'REVIEW' AND c.recycled_at IS NULL THEN 1 ELSE 0 END) AS needs_review,
+                    SUM(CASE WHEN c.label_printed = 0 AND c.status != 'SOLD' AND c.recycled_at IS NULL AND b.status = 'COMPLETE' THEN 1 ELSE 0 END) AS labels_waiting,
+                    SUM(CASE WHEN c.listing_platform = 'TCGplayer' AND c.status = 'IN_STOCK' AND c.recycled_at IS NULL THEN 1 ELSE 0 END) AS tcg_slots,
+                    SUM(CASE WHEN c.market_average >= 20 AND c.status = 'IN_STOCK' AND c.recycled_at IS NULL THEN 1 ELSE 0 END) AS ebay_candidates,
+                    COALESCE(SUM(CASE WHEN c.status = 'IN_STOCK' AND c.recycled_at IS NULL THEN c.market_average ELSE 0 END), 0) AS market_value
+                FROM cards c JOIN batches b ON b.id = c.batch_id
                 """
             ).fetchone()
         )
@@ -508,12 +549,15 @@ def dashboard() -> dict:
         ).fetchone()[0]
         values["tcg_capacity"] = int(setting(db, "tcg_capacity", str(DEFAULT_TCG_CAPACITY)))
         values["timezone"] = setting(db, "timezone", DEFAULT_TIMEZONE)
+        values["recycled_count"] = db.execute(
+            "SELECT COUNT(*) FROM cards WHERE recycled_at IS NOT NULL"
+        ).fetchone()[0]
         values["recent_batches"] = [
             dict(row)
             for row in db.execute(
                 """
                 SELECT b.*, COUNT(c.id) AS card_count
-                FROM batches b LEFT JOIN cards c ON c.batch_id = b.id
+                FROM batches b LEFT JOIN cards c ON c.batch_id = b.id AND c.recycled_at IS NULL
                 GROUP BY b.id ORDER BY b.created_at DESC LIMIT 5
                 """
             ).fetchall()
@@ -551,6 +595,24 @@ def undo_last_action(db: sqlite3.Connection) -> dict:
         db.execute(
             f"UPDATE cards SET {assignments}, updated_at = ? WHERE sku = ?",
             [*before.values(), utcnow(), payload["sku"]],
+        )
+    elif action_type == "RECYCLE":
+        db.execute(
+            """UPDATE cards SET recycled_at = NULL, recycle_reason = '', purge_after = NULL,
+                      status = COALESCE(pre_recycle_status, status), pre_recycle_status = NULL,
+                      updated_at = ? WHERE sku = ?""",
+            (utcnow(), payload["sku"]),
+        )
+    elif action_type == "RESTORE":
+        db.execute(
+            """UPDATE cards SET recycled_at = ?, recycle_reason = ?, purge_after = ?,
+                      pre_recycle_status = status, updated_at = ? WHERE sku = ?""",
+            (payload["recycled_at"], payload.get("reason", ""), payload.get("purge_after"), utcnow(), payload["sku"]),
+        )
+    elif action_type == "IMAGE_SWAP":
+        db.execute(
+            "UPDATE cards SET front_image = back_image, back_image = front_image, updated_at = ? WHERE sku = ?",
+            (utcnow(), payload["sku"]),
         )
     else:
         raise ValueError("The latest action cannot be undone")
@@ -674,6 +736,7 @@ class DexHandler(BaseHTTPRequestHandler):
                 JOIN batches b ON b.id = c.batch_id
                 LEFT JOIN sale_items si ON si.card_id = c.id
                 LEFT JOIN sale_orders o ON o.id = si.order_id
+                WHERE c.recycled_at IS NULL
                 ORDER BY c.id
                 """
             ).fetchall()
@@ -752,6 +815,8 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     values = {row["key"]: row["value"] for row in db.execute("SELECT key, value FROM settings")}
                 values["tcg_capacity"] = int(values.get("tcg_capacity", DEFAULT_TCG_CAPACITY))
+                values["recycle_retention_days"] = int(values.get("recycle_retention_days", 180))
+                values["recycle_auto_purge"] = values.get("recycle_auto_purge", "0") == "1"
                 self.send_json(values)
             elif path == "/api/activity":
                 with connect() as db:
@@ -765,7 +830,7 @@ class DexHandler(BaseHTTPRequestHandler):
                         """
                         SELECT b.*, COUNT(c.id) AS card_count,
                                SUM(CASE WHEN c.status = 'REVIEW' THEN 1 ELSE 0 END) AS review_count
-                        FROM batches b LEFT JOIN cards c ON c.batch_id = b.id
+                        FROM batches b LEFT JOIN cards c ON c.batch_id = b.id AND c.recycled_at IS NULL
                         GROUP BY b.id ORDER BY b.created_at DESC
                         """
                     ).fetchall()
@@ -775,7 +840,7 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
                     cards = db.execute(
-                        "SELECT * FROM cards WHERE batch_id = ? ORDER BY id", (batch_id,)
+                        "SELECT * FROM cards WHERE batch_id = ? AND recycled_at IS NULL ORDER BY id", (batch_id,)
                     ).fetchall()
                 if not batch:
                     self.send_error_json("Batch not found", 404)
@@ -803,12 +868,35 @@ class DexHandler(BaseHTTPRequestHandler):
                         f"""
                         SELECT c.*, b.game, b.set_code FROM cards c
                         JOIN batches b ON b.id = c.batch_id
-                        WHERE (c.label_printed = 0 OR ? != '') AND c.status != 'SOLD' {extra}
+                        WHERE (c.label_printed = 0 OR ? != '')
+                          AND (b.status = 'COMPLETE' OR ? != '')
+                          AND c.status != 'SOLD' AND c.recycled_at IS NULL {extra}
                         ORDER BY c.id
                         """,
-                        ((selected_sku,) + params),
+                        ((selected_sku, selected_sku) + params),
                     ).fetchall()
                 self.send_json({"labels": [dict(row) for row in rows]})
+            elif path == "/api/recycle":
+                search = clean_text(query.get("q", [""])[0], 100)
+                params: list[object] = []
+                search_sql = ""
+                if search:
+                    search_sql = "AND (c.sku LIKE ? OR c.name LIKE ? OR c.card_number LIKE ? OR b.batch_code LIKE ?)"
+                    params.extend([f"%{search}%"] * 4)
+                with connect() as db:
+                    rows = db.execute(
+                        f"""
+                        SELECT c.*, b.game, b.set_code, b.batch_code,
+                               CASE WHEN si.id IS NULL THEN 0 ELSE 1 END AS protected_sale,
+                               MAX(0, CAST(julianday(c.purge_after) - julianday('now') AS INTEGER)) AS days_remaining
+                        FROM cards c JOIN batches b ON b.id = c.batch_id
+                        LEFT JOIN sale_items si ON si.card_id = c.id
+                        WHERE c.recycled_at IS NOT NULL {search_sql}
+                        ORDER BY c.recycled_at DESC
+                        """,
+                        params,
+                    ).fetchall()
+                self.send_json({"cards": [dict(row) for row in rows]})
             elif path == "/api/sales":
                 with connect() as db:
                     rows = db.execute(
@@ -892,8 +980,8 @@ class DexHandler(BaseHTTPRequestHandler):
                         INSERT INTO batches (
                             batch_code, created_at, game, set_code, set_name, color,
                             finish_group, default_condition, acquisition_type,
-                            total_cost, location, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_cost, location, notes, scan_order
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             code, utcnow(), game, set_code, clean_text(payload.get("set_name")),
@@ -902,6 +990,7 @@ class DexHandler(BaseHTTPRequestHandler):
                             clean_text(payload.get("default_condition"), 40) or "Near Mint",
                             acquisition, money(payload.get("total_cost")), location,
                             clean_text(payload.get("notes"), 500),
+                            "BACK_FIRST" if payload.get("scan_order") == "BACK_FIRST" else "FRONT_FIRST",
                         ),
                     )
                     batch = dict(db.execute("SELECT * FROM batches WHERE id = ?", (cursor.lastrowid,)).fetchone())
@@ -968,6 +1057,87 @@ class DexHandler(BaseHTTPRequestHandler):
                     })
                     batch = db.execute("SELECT * FROM batches WHERE id = ?", (batch_id,)).fetchone()
                 self.send_json(dict(batch))
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/swap-images", path):
+                sku = unquote(path.split("/")[3])
+                with connect() as db:
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                    if not card:
+                        self.send_error_json("Card not found", 404)
+                        return
+                    if not card["front_image"] or not card["back_image"]:
+                        raise ValueError("Both card images are required before they can be swapped")
+                    db.execute(
+                        "UPDATE cards SET front_image = ?, back_image = ?, updated_at = ? WHERE sku = ?",
+                        (card["back_image"], card["front_image"], utcnow(), sku),
+                    )
+                    log_action(db, "IMAGE_SWAP", f"Swapped images for {sku}", {"sku": sku})
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                self.send_json(dict(card))
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/recycle", path):
+                sku = unquote(path.split("/")[3])
+                reason = clean_text(payload.get("reason"), 240)
+                with connect() as db:
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                    if not card:
+                        self.send_error_json("Card not found", 404)
+                        return
+                    if card["recycled_at"]:
+                        raise ValueError("Card is already in the Recycle Bin")
+                    retention = max(1, int(setting(db, "recycle_retention_days", "180")))
+                    recycled_at = utcnow()
+                    purge_after = (datetime.now(timezone.utc) + timedelta(days=retention)).isoformat(timespec="seconds")
+                    db.execute(
+                        """UPDATE cards SET recycled_at = ?, recycle_reason = ?, purge_after = ?,
+                                  pre_recycle_status = status, updated_at = ? WHERE sku = ?""",
+                        (recycled_at, reason, purge_after, recycled_at, sku),
+                    )
+                    log_action(db, "RECYCLE", f"Moved {sku} to Recycle Bin", {"sku": sku})
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                self.send_json(dict(card))
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/restore", path):
+                sku = unquote(path.split("/")[3])
+                with connect() as db:
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                    if not card:
+                        self.send_error_json("Card not found", 404)
+                        return
+                    if not card["recycled_at"]:
+                        raise ValueError("Card is not in the Recycle Bin")
+                    log_action(db, "RESTORE", f"Restored {sku}", {
+                        "sku": sku, "recycled_at": card["recycled_at"],
+                        "reason": card["recycle_reason"], "purge_after": card["purge_after"],
+                    })
+                    db.execute(
+                        """UPDATE cards SET recycled_at = NULL, recycle_reason = '', purge_after = NULL,
+                                  status = COALESCE(pre_recycle_status, status), pre_recycle_status = NULL,
+                                  updated_at = ? WHERE sku = ?""",
+                        (utcnow(), sku),
+                    )
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                self.send_json(dict(card))
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/purge", path):
+                sku = unquote(path.split("/")[3])
+                with connect() as db:
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                    if not card:
+                        self.send_error_json("Card not found", 404)
+                        return
+                    if not card["recycled_at"]:
+                        raise ValueError("Move the card to the Recycle Bin before permanently deleting it")
+                    if db.execute("SELECT 1 FROM sale_items WHERE card_id = ?", (card["id"],)).fetchone():
+                        raise ValueError("Sold cards are protected for financial and audit history")
+                    db.execute("DELETE FROM cards WHERE id = ?", (card["id"],))
+                    now = utcnow()
+                    db.execute(
+                        """INSERT INTO activity_log
+                           (created_at, action_type, description, payload, undone_at)
+                           VALUES (?, 'PERMANENT_PURGE', ?, ?, ?)""",
+                        (now, f"Permanently deleted {sku}", json.dumps({"sku": sku}), now),
+                    )
+                card_dir = IMAGE_DIR / sku
+                if card_dir.is_dir() and card_dir.resolve().is_relative_to(IMAGE_DIR.resolve()):
+                    shutil.rmtree(card_dir)
+                self.send_json({"sku": sku, "purged": True})
             elif path == "/api/labels/printed":
                 skus = payload.get("skus", [])
                 if not isinstance(skus, list) or not skus:
@@ -982,7 +1152,10 @@ class DexHandler(BaseHTTPRequestHandler):
                     raise ValueError("SKU is required")
                 with connect() as db:
                     cursor = db.execute(
-                        "UPDATE cards SET label_printed = 0 WHERE sku = ? AND status != 'SOLD'", (sku,)
+                        """UPDATE cards SET label_printed = 0 WHERE sku = ? AND status != 'SOLD'
+                           AND recycled_at IS NULL AND batch_id IN
+                               (SELECT id FROM batches WHERE status = 'COMPLETE')""",
+                        (sku,),
                     )
                 if not cursor.rowcount:
                     raise ValueError("Card was not found or is already sold")
@@ -997,7 +1170,11 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('timezone', ?)", (timezone_name,))
                     db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('tcg_capacity', ?)", (str(capacity),))
-                self.send_json({"timezone": timezone_name, "tcg_capacity": capacity})
+                    retention = max(1, int(payload.get("recycle_retention_days", setting(db, "recycle_retention_days", "180"))))
+                    auto_purge = "1" if str(payload.get("recycle_auto_purge", "0")) in ("1", "true", "on") else "0"
+                    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('recycle_retention_days', ?)", (str(retention),))
+                    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('recycle_auto_purge', ?)", (auto_purge,))
+                self.send_json({"timezone": timezone_name, "tcg_capacity": capacity, "recycle_retention_days": retention, "recycle_auto_purge": auto_purge})
             elif path == "/api/undo":
                 with connect() as db:
                     result = undo_last_action(db)
@@ -1016,7 +1193,7 @@ class DexHandler(BaseHTTPRequestHandler):
                     if len(cards) != len(unique_skus):
                         found = {row["sku"] for row in cards}
                         raise ValueError("Unknown SKU: " + ", ".join(s for s in unique_skus if s not in found))
-                    unavailable = [row["sku"] for row in cards if row["status"] == "SOLD"]
+                    unavailable = [row["sku"] for row in cards if row["status"] == "SOLD" or row["recycled_at"]]
                     if unavailable:
                         raise ValueError("Already sold: " + ", ".join(unavailable))
                     subtotal = money(payload.get("subtotal"))
@@ -1067,7 +1244,7 @@ class DexHandler(BaseHTTPRequestHandler):
             payload = self.read_json()
             batch_match = re.fullmatch(r"/api/batches/(\d+)", path)
             if batch_match:
-                allowed = {"color", "finish_group", "location"}
+                allowed = {"color", "finish_group", "location", "scan_order"}
                 updates = {
                     key: clean_text(value, 80)
                     for key, value in payload.items()
@@ -1075,6 +1252,8 @@ class DexHandler(BaseHTTPRequestHandler):
                 }
                 if not updates:
                     raise ValueError("No scan-group fields supplied")
+                if "scan_order" in updates and updates["scan_order"] not in ("FRONT_FIRST", "BACK_FIRST"):
+                    raise ValueError("Scan order must be Front First or Back First")
                 assignments = ", ".join(f"{key} = ?" for key in updates)
                 with connect() as db:
                     db.execute(
@@ -1141,6 +1320,7 @@ def run() -> None:
     seed_demo()
     if WATCH_INBOUND:
         threading.Thread(target=watch_inbound, name="dex-inbound", daemon=True).start()
+    threading.Thread(target=recycle_maintenance, name="dex-recycle", daemon=True).start()
     server = ThreadingHTTPServer((HOST, PORT), DexHandler)
     print(f"Dex is running at http://127.0.0.1:{PORT}")
     try:

@@ -1,3 +1,13 @@
+const ONE_PIECE_SETS = [
+  ["OP01", "Romance Dawn"], ["OP02", "Paramount War"], ["OP03", "Pillars of Strength"],
+  ["OP04", "Kingdoms of Intrigue"], ["OP05", "Awakening of the New Era"],
+  ["OP06", "Wings of the Captain"], ["OP07", "500 Years in the Future"],
+  ["OP08", "Two Legends"], ["OP09", "Emperors in the New World"], ["OP10", "Royal Blood"],
+  ["OP11", "A Fist of Divine Speed"], ["OP12", "Legacy of the Master"],
+  ["OP13", "Carrying on His Will"], ["OP14", "The Azure Sea's Seven"],
+  ["OP15", "Adventure on Kami's Island"], ["OP16", "The Time of Battle"],
+];
+
 const state = {
   view: "inventory",
   dashboard: null,
@@ -9,6 +19,7 @@ const state = {
   outboundCards: [],
   cameraStream: null,
   intakeDefaults: { rarity: "", variant: "Standard" },
+  pendingBulkFiles: [],
 };
 
 const app = document.querySelector("#app");
@@ -22,6 +33,7 @@ const titles = {
   labels: ["Labels", "Print queued 2 × 1 sleeve labels."],
   outbound: ["Outbound", "Scan sold cards into an order."],
   sales: ["Sales", "Order history and net proceeds."],
+  recycle: ["Recycle Bin", "Restore removed cards or manage eligible permanent deletion."],
 };
 
 function icon(name, className = "") {
@@ -103,6 +115,7 @@ function setView(view, options = {}) {
   if (view === "labels") renderLabels();
   if (view === "outbound") renderOutbound();
   if (view === "sales") renderSales();
+  if (view === "recycle") renderRecycle();
 }
 
 async function loadDashboard() {
@@ -114,6 +127,7 @@ async function loadDashboard() {
   document.querySelector("#capacity-note").textContent = `${Math.max(0, capacity - used)} slots available`;
   document.querySelector("#nav-review-count").textContent = state.dashboard.needs_review || 0;
   document.querySelector("#nav-label-count").textContent = state.dashboard.labels_waiting || 0;
+  document.querySelector("#nav-recycle-count").textContent = state.dashboard.recycled_count || 0;
 }
 
 function summaryStrip() {
@@ -121,7 +135,7 @@ function summaryStrip() {
   return `<section class="summary-strip" aria-label="Inventory summary">
     <div class="metric"><span>In stock</span><strong>${d.in_stock || 0}</strong><small>${d.total_cards || 0} lifetime cards</small></div>
     <div class="metric"><span>Market value</span><strong>${formatMoney(d.market_value, "$0.00")}</strong><small>Based on average prices</small></div>
-    <div class="metric"><span>Needs review</span><strong>${d.needs_review || 0}</strong><small>Identification or details</small></div>
+    <div class="metric"><span>Needs Review</span><strong>${d.needs_review || 0}</strong><small>Identification or details</small></div>
     <div class="metric"><span>eBay candidates</span><strong>${d.ebay_candidates || 0}</strong><small>Average price $20+</small></div>
   </section>`;
 }
@@ -130,7 +144,7 @@ function inventoryToolbar() {
   return `<section class="toolbar" aria-label="Inventory filters">
     <div class="search-box">${icon("search")}<input id="inventory-search" type="search" placeholder="Search card, number, SKU, or drawer" autocomplete="off"></div>
     <select id="inventory-game" aria-label="Filter game"><option value="">All games</option><option>Pokemon</option><option>One Piece</option><option>Riftbound</option></select>
-    <select id="inventory-status" aria-label="Filter status"><option value="">All statuses</option><option value="IN_STOCK">In stock</option><option value="REVIEW">Needs review</option><option value="SOLD">Sold</option><option value="HOLD">Hold</option></select>
+    <select id="inventory-status" aria-label="Filter Status"><option value="">All Statuses</option><option value="IN_STOCK">In Stock</option><option value="REVIEW">Needs Review</option><option value="SOLD">Sold</option><option value="HOLD">Hold</option></select>
     <select id="inventory-sort" aria-label="Sort inventory">
       <option value="average_desc">Average: high to low</option><option value="average_asc">Average: low to high</option>
       <option value="low_desc">Low: high to low</option><option value="high_desc">High: high to low</option>
@@ -152,7 +166,7 @@ function thumbFor(group) {
 
 function statusBadge(status) {
   const map = {
-    IN_STOCK: ["In stock", "green"], REVIEW: ["Needs review", "amber"],
+    IN_STOCK: ["In Stock", "green"], REVIEW: ["Needs Review", "amber"],
     SOLD: ["Sold", "neutral"], HOLD: ["Hold", "coral"],
   };
   const [label, color] = map[status] || [titleCase(status), "neutral"];
@@ -234,17 +248,19 @@ function openModal(title, subtitle, body) {
 function closeModal() { if (modal.open) modal.close(); }
 
 function newBatchForm() {
+  const setOptions = ONE_PIECE_SETS.map(([code, name]) => `<option value="${code} — ${escapeHtml(name)}"></option>`).join("");
   return `<form id="new-batch-form">
     <div class="form-grid">
       <label>Game<select name="game" required><option value="">Select game</option><option>Pokemon</option><option>One Piece</option><option>Riftbound</option></select></label>
-      <label>Set code<input name="set_code" required placeholder="OP16"></label>
-      <label>Set name<input name="set_name" placeholder="The Azure Sea's Seven"></label>
+      <label>Set<input name="set_choice" list="tcg-set-options" required placeholder="Search OP16 or Time of Battle" autocomplete="off"><datalist id="tcg-set-options">${setOptions}<option value="Custom / Other Set"></option></datalist><span class="help-text">Search by code or name.</span></label>
+      <div class="form-grid full custom-set-fields" hidden><label>Custom Set Code<input name="custom_set_code" placeholder="EB03"></label><label>Custom Set Name<input name="custom_set_name" placeholder="One Piece Heroines Edition"></label></div>
       <label>Color<input name="color" placeholder="Yellow"></label>
       <label>Scan group<select name="finish_group"><option>Common / Non-Foil</option><option>Rare / Foil</option><option>Rare / Non-Foil</option><option>Promo</option><option>Mixed</option></select></label>
       <label>Condition<select name="default_condition"><option>Near Mint</option><option>Lightly Played</option><option>Moderately Played</option><option>Heavily Played</option><option>Damaged</option></select></label>
       <label>Acquired as<select name="acquisition_type" required><option>Booster Box</option><option>Single Pack(s)</option><option>Purchased Singles</option><option>Trade</option><option>Existing Inventory</option></select></label>
       <label>Total cost<div class="money-input"><span>$</span><input name="total_cost" inputmode="decimal" type="number" min="0" step=".01" value="0"></div></label>
       <label>Drawer location<input name="location" placeholder="Auto: OP16-Yellow"><span class="help-text">Leave blank to use set and color.</span></label>
+      <label>Scanner Order<select name="scan_order"><option value="FRONT_FIRST">Front First (Face Down)</option><option value="BACK_FIRST">Back First (Face Up)</option></select></label>
       <label class="full">Notes<textarea name="notes" placeholder="Optional batch notes"></textarea></label>
     </div>
     <div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("arrow-right")}Create batch</button></div>
@@ -252,14 +268,34 @@ function newBatchForm() {
 }
 
 function openNewBatch() {
-  openModal("New inbound batch", "One purchase batch can contain several organized scan groups.", newBatchForm());
-  document.querySelector("#new-batch-form").addEventListener("submit", createBatch);
+  openModal("New Inbound Batch", "One purchase batch can contain several organized scan groups.", newBatchForm());
+  const form = document.querySelector("#new-batch-form");
+  form.addEventListener("submit", createBatch);
+  const updateCustomFields = () => {
+    const game = form.elements.game.value;
+    const custom = Boolean(game && game !== "One Piece") || form.elements.set_choice.value === "Custom / Other Set";
+    form.querySelector(".custom-set-fields").hidden = !custom;
+    form.elements.custom_set_code.required = custom;
+  };
+  form.elements.game.addEventListener("change", updateCustomFields);
+  form.elements.set_choice.addEventListener("input", updateCustomFields);
+  updateCustomFields();
 }
 
 async function createBatch(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const payload = Object.fromEntries(form.entries());
+  const setMatch = String(payload.set_choice || "").match(/^([A-Z0-9-]+)\s*[—-]\s*(.+)$/i);
+  if (payload.set_choice === "Custom / Other Set" || payload.game !== "One Piece") {
+    payload.set_code = payload.custom_set_code;
+    payload.set_name = payload.custom_set_name;
+  } else if (setMatch) {
+    payload.set_code = setMatch[1].toUpperCase();
+    payload.set_name = setMatch[2];
+  } else {
+    return toast("Choose a listed set or use Custom / Other Set.", "error");
+  }
   try {
     const batch = await api("/api/batches", { method: "POST", body: JSON.stringify(payload) });
     closeModal(); toast(`${batch.batch_code} is ready for scans.`);
@@ -284,7 +320,7 @@ async function renderInbound(batchId) {
     if (batchId) return renderBatch(Number(batchId));
     const data = await api("/api/batches");
     state.batches = data.batches;
-    app.innerHTML = `<div class="view-stack"><div class="section-header"><div><h2>Inbound batches</h2><p>Booster boxes, packs, trades, and existing stock.</p></div><button class="button primary" data-action="new-batch">${icon("plus")}New batch</button></div>${batchRows(data.batches)}</div>`;
+    app.innerHTML = `<div class="view-stack"><div class="section-header"><div><h2>Inbound Batches</h2><p>Booster boxes, packs, trades, and existing stock.</p></div><button class="button primary" data-action="new-batch">${icon("plus")}New Batch</button></div>${batchRows(data.batches)}</div>`;
     refreshIcons();
   } catch (error) { showError(error); }
 }
@@ -314,7 +350,7 @@ function cardIngestForm(batch) {
 function batchCardList(cards) {
   if (!cards.length) return `<div class="scan-list">${emptyState("scan-line", "Waiting for the first card", "Add one pair or select a whole scan batch. Dex assigns every physical card its own SKU.")}</div>`;
   const review = cards.filter((card) => card.status === "REVIEW").length;
-  return `<section class="batch-cards"><div class="batch-grid-head"><div><h3>Batch cards</h3><p>${cards.length} scanned · ${cards.length - review} ready · ${review} need review</p></div></div><div class="batch-card-grid">${cards.slice().reverse().map((card) => `<article class="batch-card">
+  return `<section class="batch-cards"><div class="batch-grid-head"><div><h3>Batch Cards</h3><p>${cards.length} Scanned · ${cards.length - review} Ready · ${review} Need Review</p></div></div><div class="batch-card-grid">${cards.slice().reverse().map((card) => `<article class="batch-card">
     ${card.front_image ? `<img src="/media/${encodeURI(card.front_image)}" alt="">` : `<div class="batch-card-placeholder">${icon("image")}</div>`}
     <div class="batch-card-body"><strong>${escapeHtml(card.name)}</strong><small>${escapeHtml(card.card_number || "Identification pending")}</small><code>${escapeHtml(card.sku)}</code><div>${statusBadge(card.status)}</div></div>
     <div class="batch-card-actions"><button class="icon-button" title="Reprint label" data-action="reprint-label" data-sku="${escapeHtml(card.sku)}">${icon("printer")}</button><button class="icon-button" title="Edit card" data-action="edit-card" data-sku="${escapeHtml(card.sku)}">${icon("square-pen")}</button></div>
@@ -356,6 +392,7 @@ function changeGroupForm(batch) {
     <label>Color<input name="color" value="${escapeHtml(batch.color)}" placeholder="Yellow"></label>
     <label>Finish / rarity group<select name="finish_group">${["Common / Non-Foil","Rare / Foil","Rare / Non-Foil","Promo","Mixed"].map((value) => `<option ${batch.finish_group === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
     <label class="full">Drawer location<input name="location" value="${escapeHtml(batch.location)}" placeholder="OP16-Yellow"></label>
+    <label class="full">Scanner Order<select name="scan_order"><option value="FRONT_FIRST" ${batch.scan_order !== "BACK_FIRST" ? "selected" : ""}>Front First (Face Down)</option><option value="BACK_FIRST" ${batch.scan_order === "BACK_FIRST" ? "selected" : ""}>Back First (Face Up)</option></select></label>
   </div><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("check")}Use this group</button></div></form>`;
 }
 
@@ -394,7 +431,7 @@ function fileToDataUrl(file) {
   });
 }
 
-function pairBulkFiles(fileList) {
+function pairBulkFiles(fileList, scanOrder = "FRONT_FIRST") {
   const files = [...fileList].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const explicit = new Map();
   const remaining = [];
@@ -406,32 +443,56 @@ function pairBulkFiles(fileList) {
     if (!explicit.has(key)) explicit.set(key, {});
     explicit.get(key)[match[2].toLowerCase()] = file;
   }
-  const pairs = [...explicit.values()].filter((item) => item.front && item.back).map((item) => [item.front, item.back]);
-  for (let index = 0; index + 1 < remaining.length; index += 2) pairs.push([remaining[index], remaining[index + 1]]);
-  return { pairs, unmatched: files.length - pairs.length * 2 };
+  const pairs = [...explicit.values()].filter((item) => item.front && item.back).map((item) => ({ front: item.front, back: item.back, explicit: true }));
+  for (let index = 0; index + 1 < remaining.length; index += 2) {
+    const first = remaining[index]; const second = remaining[index + 1];
+    pairs.push(scanOrder === "BACK_FIRST" ? { front: second, back: first, explicit: false } : { front: first, back: second, explicit: false });
+  }
+  const used = new Set(pairs.flatMap((pair) => [pair.front, pair.back]));
+  return { pairs, unmatched: files.filter((file) => !used.has(file)) };
 }
 
-async function addBulkScans(event) {
-  const input = event.currentTarget;
-  const { pairs, unmatched } = pairBulkFiles(input.files);
+function pairReviewRows(scanOrder) {
+  const { pairs, unmatched } = pairBulkFiles(state.pendingBulkFiles, scanOrder);
+  return `<div class="pair-review-summary"><strong>${pairs.length} Card Pairs</strong><span>${unmatched.length ? `${unmatched.length} unmatched file(s)` : "All files paired"}</span></div><div class="pair-review-list">${pairs.map((pair, index) => `<div><b>${index + 1}</b><span><small>Front</small>${escapeHtml(pair.front.name)}</span><span><small>Back</small>${escapeHtml(pair.back.name)}</span><em>${pair.explicit ? "Named" : scanOrder === "BACK_FIRST" ? "Back First" : "Front First"}</em></div>`).join("")}</div>${unmatched.length ? `<p class="warning-text">Skipped: ${unmatched.map((file) => escapeHtml(file.name)).join(", ")}</p>` : ""}`;
+}
+
+function addBulkScans(event) {
+  state.pendingBulkFiles = [...event.currentTarget.files];
+  if (!state.pendingBulkFiles.length) return;
+  const order = state.activeBatch.batch.scan_order || "FRONT_FIRST";
+  openModal("Review Scan Pairs", "Confirm front/back orientation before Dex creates physical-card records.", `<form id="bulk-review-form"><label>Scanner Order<select name="scan_order"><option value="FRONT_FIRST" ${order !== "BACK_FIRST" ? "selected" : ""}>Front First (Face Down)</option><option value="BACK_FIRST" ${order === "BACK_FIRST" ? "selected" : ""}>Back First (Face Up)</option></select></label><div id="pair-review-list">${pairReviewRows(order)}</div><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("images")}Import Pairs</button></div></form>`);
+  const form = document.querySelector("#bulk-review-form");
+  form.elements.scan_order.addEventListener("change", () => { document.querySelector("#pair-review-list").innerHTML = pairReviewRows(form.elements.scan_order.value); });
+  form.addEventListener("submit", importBulkScans);
+}
+
+async function importBulkScans(event) {
+  event.preventDefault();
+  const submit = event.currentTarget.querySelector('button[type="submit"], button:not([type])');
+  const scanOrder = event.currentTarget.elements.scan_order.value;
+  const { pairs, unmatched } = pairBulkFiles(state.pendingBulkFiles, scanOrder);
   if (!pairs.length) return toast("Select at least one complete front/back pair.", "error");
-  if (unmatched && !confirm(`${unmatched} file(s) could not be paired and will be skipped. Continue?`)) { input.value = ""; return; }
-  input.disabled = true;
+  if (unmatched.length && !confirm(`${unmatched.length} unmatched file(s) will be skipped. Continue?`)) return;
+  submit.disabled = true;
   toast(`Preparing ${pairs.length} card pair(s)...`);
   try {
+    await api(`/api/batches/${state.activeBatch.batch.id}`, { method: "PATCH", body: JSON.stringify({ scan_order: scanOrder }) });
     const cards = [];
-    for (const [front, back] of pairs) {
+    for (const pair of pairs) {
       cards.push({
         rarity: state.intakeDefaults.rarity,
         variant: state.intakeDefaults.variant,
-        front_image: await fileToDataUrl(front),
-        back_image: await fileToDataUrl(back),
+        front_image: await fileToDataUrl(pair.front),
+        back_image: await fileToDataUrl(pair.back),
       });
     }
     const result = await api(`/api/batches/${state.activeBatch.batch.id}/cards/bulk`, { method: "POST", body: JSON.stringify({ cards }) });
+    state.pendingBulkFiles = [];
+    closeModal();
     toast(`${result.created} physical card(s) added and assigned SKUs.`);
     await loadDashboard(); await renderBatch(state.activeBatch.batch.id);
-  } catch (error) { toast(error.message, "error"); input.disabled = false; }
+  } catch (error) { toast(error.message, "error"); submit.disabled = false; }
 }
 
 async function addScannedCard(event) {
@@ -463,7 +524,7 @@ async function reopenBatch(id) {
 async function reprintLabel(sku) {
   try {
     await api("/api/labels/requeue", { method: "POST", body: JSON.stringify({ sku }) });
-    toast(`${sku} added to the label queue.`); await loadDashboard(); setView("labels");
+    closeModal(); toast(`${sku} added to the label queue.`); await loadDashboard(); setView("labels");
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -475,20 +536,21 @@ async function completeBatch(id) {
 }
 
 function editCardForm(card) {
-  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="form-grid">
-    <label>SKU<input value="${escapeHtml(card.sku)}" disabled></label>
-    <label>Status<select name="status">${["IN_STOCK","REVIEW","HOLD","SOLD"].map((v) => `<option ${card.status === v ? "selected" : ""}>${v}</option>`).join("")}</select></label>
-    <label>Card number<input name="card_number" value="${escapeHtml(card.card_number)}"></label>
-    <label>Card name<input name="name" value="${escapeHtml(card.name)}"></label>
+  const evidence = (side) => card[`${side}_image`] ? `<a href="/media/${encodeURI(card[`${side}_image`])}" target="_blank" rel="noopener"><img src="/media/${encodeURI(card[`${side}_image`])}" alt="${titleCase(side)} scan for ${escapeHtml(card.sku)}"><span>${titleCase(side)} · Open Full Resolution</span></a>` : `<div class="missing-evidence">${icon("image-off")}<span>No ${titleCase(side)} Image</span></div>`;
+  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="card-evidence">${evidence("front")}${evidence("back")}</div><div class="evidence-actions"><button type="button" class="button secondary" data-action="swap-images" data-sku="${escapeHtml(card.sku)}">${icon("arrow-left-right")}Swap Front/Back</button></div><div class="form-grid">
+    <label>SKU<div class="input-action"><input value="${escapeHtml(card.sku)}" disabled><button type="button" class="icon-button" title="Copy SKU" data-action="copy-sku" data-sku="${escapeHtml(card.sku)}">${icon("copy")}</button></div></label>
+    <label>Status<select name="status">${["IN_STOCK","REVIEW","HOLD","SOLD"].map((v) => `<option value="${v}" ${card.status === v ? "selected" : ""}>${v === "IN_STOCK" ? "In Stock" : v === "REVIEW" ? "Needs Review" : titleCase(v)}</option>`).join("")}</select></label>
+    <label>Card Number<input name="card_number" value="${escapeHtml(card.card_number)}"></label>
+    <label>Card Name<input name="name" value="${escapeHtml(card.name)}"></label>
     <label>Rarity<input name="rarity" value="${escapeHtml(card.rarity)}"></label>
     <label>Variant<input name="variant" value="${escapeHtml(card.variant)}"></label>
-    <label>Drawer location<input name="location" value="${escapeHtml(card.location)}"></label>
-    <label>Listing platform<select name="listing_platform"><option value="">Unlisted</option><option ${card.listing_platform === "TCGplayer" ? "selected" : ""}>TCGplayer</option><option ${card.listing_platform === "eBay" ? "selected" : ""}>eBay</option></select></label>
-    <label>Market low<div class="money-input"><span>$</span><input name="market_low" type="number" step=".01" min="0" value="${card.market_low ?? ""}"></div></label>
-    <label>Market average<div class="money-input"><span>$</span><input name="market_average" type="number" step=".01" min="0" value="${card.market_average ?? ""}"></div></label>
-    <label>Market high<div class="money-input"><span>$</span><input name="market_high" type="number" step=".01" min="0" value="${card.market_high ?? ""}"></div></label>
-    <label>Listing price<div class="money-input"><span>$</span><input name="listing_price" type="number" step=".01" min="0" value="${card.listing_price ?? ""}"></div></label>
-  </div><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("save")}Save card</button></div></form>`;
+    <label>Drawer Location<input name="location" value="${escapeHtml(card.location)}"></label>
+    <label>Listing Platform<select name="listing_platform"><option value="">Unlisted</option><option ${card.listing_platform === "TCGplayer" ? "selected" : ""}>TCGplayer</option><option ${card.listing_platform === "eBay" ? "selected" : ""}>eBay</option></select></label>
+    <label>Market Low<div class="money-input"><span>$</span><input name="market_low" type="number" step=".01" min="0" value="${card.market_low ?? ""}"></div></label>
+    <label>Market Average<div class="money-input"><span>$</span><input name="market_average" type="number" step=".01" min="0" value="${card.market_average ?? ""}"></div></label>
+    <label>Market High<div class="money-input"><span>$</span><input name="market_high" type="number" step=".01" min="0" value="${card.market_high ?? ""}"></div></label>
+    <label>Listing Price<div class="money-input"><span>$</span><input name="listing_price" type="number" step=".01" min="0" value="${card.listing_price ?? ""}"></div></label>
+  </div><div class="form-actions card-form-actions"><div><button type="button" class="button danger" data-action="open-recycle-card" data-sku="${escapeHtml(card.sku)}">${icon("trash-2")}Move to Recycle Bin</button><button type="button" class="button secondary" data-action="reprint-label" data-sku="${escapeHtml(card.sku)}">${icon("printer")}Reprint Label</button></div><div><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("save")}Save Card</button></div></div></form>`;
 }
 
 async function openEditCard(sku) {
@@ -508,14 +570,49 @@ async function saveCard(event) {
   } catch (error) { toast(error.message, "error"); }
 }
 
+async function copySku(sku) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(sku);
+    else {
+      const input = document.createElement("textarea"); input.value = sku; document.body.appendChild(input); input.select(); document.execCommand("copy"); input.remove();
+    }
+    toast(`${sku} copied.`);
+  } catch { toast("Could not copy the SKU on this device.", "error"); }
+}
+
+async function swapCardImages(sku) {
+  try {
+    await api(`/api/cards/${encodeURIComponent(sku)}/swap-images`, { method: "POST", body: "{}" });
+    toast("Front and back images swapped."); await openEditCard(sku);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function openRecycleCard(sku) {
+  openModal("Move to Recycle Bin", `The SKU ${sku} can be restored during the retention period.`, `<form id="recycle-card-form" data-sku="${escapeHtml(sku)}"><label>Removal Reason<textarea name="reason" placeholder="Duplicate scan, incorrect entry, returned card, or another reason"></textarea></label><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button danger">${icon("trash-2")}Move to Recycle Bin</button></div></form>`);
+  document.querySelector("#recycle-card-form").addEventListener("submit", recycleCard);
+}
+
+async function recycleCard(event) {
+  event.preventDefault();
+  const sku = event.currentTarget.dataset.sku;
+  const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  try {
+    await api(`/api/cards/${encodeURIComponent(sku)}/recycle`, { method: "POST", body: JSON.stringify(payload) });
+    closeModal(); toast(`${sku} moved to Recycle Bin. Use Undo to restore it.`); await loadDashboard();
+    state.activeBatch ? await renderBatch(state.activeBatch.batch.id) : setView("inventory");
+  } catch (error) { toast(error.message, "error"); }
+}
+
 async function openSettings() {
   try {
     const [settings, activity] = await Promise.all([api("/api/settings"), api("/api/activity")]);
     const history = activity.actions.length ? activity.actions.map((item) => `<li><strong>${escapeHtml(item.description)}</strong><small>${formatDate(item.created_at)}${item.undone_at ? " · Undone" : ""}</small></li>`).join("") : `<li><small>No actions recorded yet.</small></li>`;
-    openModal("Dex settings", "Change seller limits without rebuilding Dex.", `<form id="settings-form"><div class="form-grid">
-      <label>Business timezone<input name="timezone" value="${escapeHtml(settings.timezone || "America/New_York")}"></label>
-      <label>TCGplayer capacity<input name="tcg_capacity" type="number" min="1" step="1" value="${settings.tcg_capacity || 500}"></label>
-    </div><h3 class="subheading">Recent actions</h3><ul class="activity-list">${history}</ul><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("save")}Save settings</button></div></form>`);
+    openModal("Dex Settings", "Change seller limits and Recycle Bin retention without rebuilding Dex.", `<form id="settings-form"><div class="form-grid">
+      <label>Business Timezone<input name="timezone" value="${escapeHtml(settings.timezone || "America/New_York")}"></label>
+      <label>TCGplayer Capacity<input name="tcg_capacity" type="number" min="1" step="1" value="${settings.tcg_capacity || 500}"></label>
+      <label>Recycle Retention (Days)<input name="recycle_retention_days" type="number" min="1" step="1" value="${settings.recycle_retention_days || 180}"></label>
+      <label class="toggle-label"><input name="recycle_auto_purge" type="checkbox" value="1" ${settings.recycle_auto_purge ? "checked" : ""}>Automatically Purge Eligible Cards</label>
+    </div><h3 class="subheading">Recent Actions</h3><ul class="activity-list">${history}</ul><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("save")}Save Settings</button></div></form>`);
     document.querySelector("#settings-form").addEventListener("submit", saveSettings);
   } catch (error) { toast(error.message, "error"); }
 }
@@ -680,6 +777,42 @@ async function renderSales() {
   } catch (error) { showError(error); }
 }
 
+function recycleRows(cards) {
+  if (!cards.length) return emptyState("trash-2", "Recycle Bin Is Empty", "Removed cards remain recoverable here during the retention period.");
+  return `<div class="recycle-list">${cards.map((card) => `<article class="recycle-row">${card.front_image ? `<img class="card-thumb" src="/media/${encodeURI(card.front_image)}" alt="">` : `<span class="card-thumb placeholder">${icon("image")}</span>`}<div><strong>${escapeHtml(card.name)}</strong><small>${escapeHtml(card.sku)} · ${escapeHtml(card.game)} · ${escapeHtml(card.set_code)}</small></div><div><strong>${formatDate(card.recycled_at)}</strong><small>${escapeHtml(card.recycle_reason || "No reason provided")}</small></div><div><strong>${card.protected_sale ? "Protected Record" : `${card.days_remaining ?? 0} Days`}</strong><small>${card.protected_sale ? "Sale history retained" : "Until purge eligible"}</small></div><div class="batch-actions"><button class="button secondary" data-action="restore-card" data-sku="${escapeHtml(card.sku)}">${icon("rotate-ccw")}Restore</button><button class="icon-button danger-icon" title="Permanently Delete" data-action="purge-card" data-sku="${escapeHtml(card.sku)}" ${card.protected_sale ? "disabled" : ""}>${icon("trash-2")}</button></div></article>`).join("")}</div>`;
+}
+
+async function renderRecycle() {
+  loading();
+  try {
+    await loadDashboard();
+    app.innerHTML = `<div class="view-stack"><div class="section-header"><div><h2>Recycled Cards</h2><p>Restore entries or permanently delete eligible records.</p></div></div><div class="toolbar"><div class="search-box">${icon("search")}<input id="recycle-search" type="search" placeholder="Search SKU, card, number, or batch"></div><span class="filter-count">${state.dashboard.recycled_count || 0} Items</span></div><div id="recycle-results"><div class="skeleton"></div></div></div>`;
+    refreshIcons();
+    const load = async () => {
+      const q = document.querySelector("#recycle-search")?.value || "";
+      const data = await api(`/api/recycle?q=${encodeURIComponent(q)}`);
+      document.querySelector("#recycle-results").innerHTML = recycleRows(data.cards); refreshIcons();
+    };
+    document.querySelector("#recycle-search").addEventListener("input", debounce(load, 220));
+    await load();
+  } catch (error) { showError(error); }
+}
+
+async function restoreCard(sku) {
+  try {
+    await api(`/api/cards/${encodeURIComponent(sku)}/restore`, { method: "POST", body: "{}" });
+    toast(`${sku} restored with its original identity.`); await renderRecycle();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function purgeCard(sku) {
+  if (!confirm(`Permanently delete ${sku} and its scan images? This cannot be undone.`)) return;
+  try {
+    await api(`/api/cards/${encodeURIComponent(sku)}/purge`, { method: "POST", body: "{}" });
+    toast(`${sku} permanently deleted.`); await renderRecycle();
+  } catch (error) { toast(error.message, "error"); }
+}
+
 function showError(error) {
   app.innerHTML = emptyState("triangle-alert", "Dex hit a snag", error.message || "Something went wrong.", `<button class="button secondary" onclick="location.reload()">Try again</button>`);
   refreshIcons();
@@ -714,6 +847,11 @@ document.addEventListener("click", async (event) => {
     if (action === "change-group") openChangeGroup();
     if (action === "edit-card") openEditCard(actionEl.dataset.sku);
     if (action === "reprint-label") reprintLabel(actionEl.dataset.sku);
+    if (action === "copy-sku") copySku(actionEl.dataset.sku);
+    if (action === "swap-images") swapCardImages(actionEl.dataset.sku);
+    if (action === "open-recycle-card") openRecycleCard(actionEl.dataset.sku);
+    if (action === "restore-card") restoreCard(actionEl.dataset.sku);
+    if (action === "purge-card") purgeCard(actionEl.dataset.sku);
     if (action === "print-labels") printLabels();
     if (action === "go-outbound") setView("outbound");
     if (action === "start-camera") startCamera();
