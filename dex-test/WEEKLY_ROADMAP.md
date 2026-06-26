@@ -11,6 +11,7 @@ Dex should move in weekly, low-drama steps.
 - End of week: decide whether the active test version is stable enough to promote.
 - Stable versions are used for real inventory work.
 - Test versions are where we add new features and shake them down.
+- Every release package should ship with patch notes and a short README/docs summary so the GitHub push explains both what changed in Dex and what changed in the operator instructions.
 
 ## Promotion Rule
 

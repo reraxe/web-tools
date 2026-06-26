@@ -15,6 +15,7 @@ Current release: **Dex v2.0-test**
 - Test releases use a separate Docker tag, container, port, and storage volume so test data cannot affect stable inventory.
 - Stable releases are the versions intended for weeklong real inventory work before the next test lane begins.
 - Urgent fixes to a stable release use a patch version such as `v1.0.1-test` before promotion to `v1.0.1-stable`.
+- Every release response should include patch notes plus a README/docs note that calls out any setup, workflow, folder, or operator-facing documentation changes.
 
 Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1.1_TEST_BACKLOG.md).
 
