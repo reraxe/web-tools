@@ -13,6 +13,15 @@ const ONE_PIECE_SETS = [
   ["Premium Booster", "PRB02", "ONE PIECE CARD THE BEST Vol. 2"],
 ];
 
+const CARD_COLORS = [
+  "RED", "GREEN", "BLUE", "PURPLE", "BLACK", "YELLOW",
+  "RED/GREEN", "RED/BLUE", "RED/PURPLE", "RED/BLACK", "RED/YELLOW",
+  "GREEN/BLUE", "GREEN/PURPLE", "GREEN/BLACK", "GREEN/YELLOW",
+  "BLUE/PURPLE", "BLUE/BLACK", "BLUE/YELLOW",
+  "PURPLE/BLACK", "PURPLE/YELLOW", "BLACK/YELLOW",
+  "MULTI", "MIXED", "COLORLESS",
+];
+
 const state = {
   view: "inventory",
   dashboard: null,
@@ -22,12 +31,15 @@ const state = {
   labels: [],
   selectedLabels: new Set(),
   outboundCards: [],
+  samSource: null,
   cameraStream: null,
   intakeDefaults: { rarity: "", variant: "Standard" },
   pendingBulkFiles: [],
   selectedBatchCards: new Set(),
   inventoryPreset: null,
 };
+
+const BULK_IMPORT_CHUNK_SIZE = 8;
 
 const app = document.querySelector("#app");
 const modal = document.querySelector("#modal");
@@ -37,6 +49,7 @@ const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "nume
 const titles = {
   inventory: ["Inventory", "Every physical card, accounted for."],
   inbound: ["Inbound", "From scanner to labeled inventory."],
+  sam: ["SAM", "Source database and assisted matches."],
   labels: ["Labels", "Print queued 2 × 1 sleeve labels."],
   outbound: ["Outbound", "Scan sold cards into an order."],
   sales: ["Sales", "Order history and net proceeds."],
@@ -119,6 +132,7 @@ function setView(view, options = {}) {
   stopCamera();
   if (view === "inventory") renderInventory();
   if (view === "inbound") renderInbound(options.batchId);
+  if (view === "sam") renderSAM();
   if (view === "labels") renderLabels();
   if (view === "outbound") renderOutbound();
   if (view === "sales") renderSales();
@@ -178,6 +192,37 @@ function statusBadge(status) {
   };
   const [label, color] = map[status] || [titleCase(status), "neutral"];
   return `<span class="badge ${color}">${label}</span>`;
+}
+
+function confidenceLabel(value) {
+  const number = Number(value || 0);
+  return number ? `${Math.round(number * 100)}%` : "";
+}
+
+function samBadge(card) {
+  if (!card.match_confidence) return `<span class="sam-chip manual">Manual</span>`;
+  const label = confidenceLabel(card.match_confidence);
+  const strong = Number(card.match_confidence) >= 0.9;
+  return `<span class="sam-chip ${strong ? "strong" : "soft"}">${escapeHtml(card.match_source || "SAM")} ${label}</span>`;
+}
+
+function batchIdentityKey(card) {
+  const number = String(card.card_number || "").trim().toUpperCase();
+  if (!number) return "";
+  return [number, String(card.variant || "Standard").trim().toUpperCase()].join("|");
+}
+
+function batchIdentityCounts(cards) {
+  return cards.reduce((counts, card) => {
+    const key = batchIdentityKey(card);
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    return counts;
+  }, new Map());
+}
+
+function batchCountBadge(card, counts) {
+  const count = counts.get(batchIdentityKey(card)) || 0;
+  return count > 1 ? `<span class="batch-count-badge" title="${count} copies of this identified card in this batch">x${count}</span>` : "";
 }
 
 function platformBadge(group) {
@@ -266,6 +311,14 @@ function setOptionsMarkup() {
   return ONE_PIECE_SETS.map(([group, code, name]) => `<option value="${code} - ${escapeHtml(name)}">${escapeHtml(group)}</option>`).join("");
 }
 
+function colorOptionsMarkup() {
+  return CARD_COLORS.map((color) => `<option value="${escapeHtml(color)}"></option>`).join("");
+}
+
+function colorField(name, value = "", placeholder = "Search RED, BLUE, PURPLE, or MIXED") {
+  return `<input name="${name}" list="tcg-color-options" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" autocomplete="off"><datalist id="tcg-color-options">${colorOptionsMarkup()}</datalist>`;
+}
+
 function parseSetChoice(value) {
   const text = String(value || "").trim();
   const match = text.match(/^([A-Z0-9]+)\s*[-:]\s*(.+)$/i);
@@ -275,12 +328,18 @@ function parseSetChoice(value) {
   return text ? { set_code: text.slice(0, 20).toUpperCase(), set_name: text } : null;
 }
 
+function normalizeColorChoice(value) {
+  const text = String(value || "").trim();
+  const known = CARD_COLORS.find((color) => color.toLowerCase() === text.toLowerCase());
+  return known || text;
+}
+
 function newBatchForm() {
   return `<form id="new-batch-form">
     <div class="form-grid batch-form-grid">
       <label>Game<select name="game" required><option value="">Select game</option><option>Pokemon</option><option>One Piece</option><option>Riftbound</option></select></label>
       <label>Set<input name="set_choice" list="tcg-set-options" required placeholder="Search OP16, EB03, or Time of Battle" autocomplete="off"><datalist id="tcg-set-options">${setOptionsMarkup()}</datalist><span class="help-text">Use CODE - Set Name. You can type future sets directly.</span></label>
-      <label>Color<input name="color" placeholder="Yellow"></label>
+      <label>Color${colorField("color")}<span class="help-text">Pick a known color or type a custom drawer label.</span></label>
       <label>Scan group<select name="finish_group"><option>Common / Non-Foil</option><option>Rare / Foil</option><option>Rare / Non-Foil</option><option>Promo</option><option>Mixed</option></select></label>
       <label>Condition<select name="default_condition"><option>Near Mint</option><option>Lightly Played</option><option>Moderately Played</option><option>Heavily Played</option><option>Damaged</option></select></label>
       <label>Acquired as<select name="acquisition_type" required><option>Booster Box</option><option>Single Pack(s)</option><option>Purchased Singles</option><option>Trade</option><option>Existing Inventory</option></select></label>
@@ -307,6 +366,7 @@ async function createBatch(event) {
   if (!parsedSet) return toast("Enter a set, like OP16 - The Time of Battle.", "error");
   payload.set_code = parsedSet.set_code;
   payload.set_name = parsedSet.set_name;
+  payload.color = normalizeColorChoice(payload.color);
   try {
     const batch = await api("/api/batches", { method: "POST", body: JSON.stringify(payload) });
     closeModal(); toast(`${batch.batch_code} is ready for scans.`);
@@ -366,12 +426,14 @@ function batchCardList(cards, batch) {
   if (!cards.length) return `<div class="scan-list">${emptyState("scan-line", "Waiting for the first card", "Add one pair or select a whole scan batch. Dex assigns every physical card its own SKU.")}</div>`;
   const review = cards.filter((card) => card.status === "REVIEW").length;
   const selected = state.selectedBatchCards.size;
-  return `<section class="batch-cards"><div class="batch-grid-head"><div><h3>Batch Cards</h3><p>${cards.length} Scanned - ${cards.length - review} Ready - ${review} Need Review</p></div><div class="batch-select-actions"><button class="button secondary" data-action="select-visible-batch">${icon("check-square")}Select All</button><button class="button secondary" data-action="clear-batch-selection" ${selected ? "" : "disabled"}>${icon("x")}Clear</button></div></div>
-  <div class="bulk-action-bar ${selected ? "show" : ""}"><strong>${selected} Selected</strong><button class="button secondary" data-action="bulk-edit">${icon("square-pen")}Bulk Edit</button><button class="button secondary" data-action="bulk-reprint-labels">${icon("printer")}Print/Reprint Labels</button><button class="button danger" data-action="bulk-recycle">${icon("trash-2")}Move to Recycle Bin</button></div>
+  const identityCounts = batchIdentityCounts(cards);
+  return `<section class="batch-cards"><div class="batch-grid-head"><div><h3>Batch Cards</h3><p>${cards.length} Scanned - ${cards.length - review} Ready - ${review} Need Review</p></div><div class="batch-select-actions"><button class="button secondary" data-action="sam-match-batch">${icon("sparkles")}SAM Match All</button><button class="button secondary" data-action="select-visible-batch">${icon("check-square")}Select All</button><button class="button secondary" data-action="clear-batch-selection" ${selected ? "" : "disabled"}>${icon("x")}Clear</button></div></div>
+  <div class="bulk-action-bar ${selected ? "show" : ""}"><strong>${selected} Selected</strong><button class="button secondary" data-action="sam-match-selected">${icon("sparkles")}SAM Match Selected</button><button class="button secondary" data-action="bulk-edit">${icon("square-pen")}Bulk Edit</button><button class="button secondary" data-action="bulk-reprint-labels">${icon("printer")}Print/Reprint Labels</button><button class="button danger" data-action="bulk-recycle">${icon("trash-2")}Move to Recycle Bin</button></div>
   <div class="batch-card-grid">${cards.slice().reverse().map((card) => `<article class="batch-card ${state.selectedBatchCards.has(card.sku) ? "selected" : ""}">
     <label class="batch-card-check" title="Select ${escapeHtml(card.sku)}"><input type="checkbox" data-batch-select="${escapeHtml(card.sku)}" ${state.selectedBatchCards.has(card.sku) ? "checked" : ""}></label>
+    ${batchCountBadge(card, identityCounts)}
     ${card.front_image ? `<img src="/media/${encodeURI(card.front_image)}" alt="">` : `<div class="batch-card-placeholder">${icon("image")}</div>`}
-    <div class="batch-card-body"><strong>${escapeHtml(card.name)}</strong><small>${escapeHtml(card.card_number || "Identification pending")}</small><code>${escapeHtml(card.sku)}</code><div>${statusBadge(card.status)}</div></div>
+    <div class="batch-card-body"><strong>${escapeHtml(card.name)}</strong><small>${escapeHtml(card.card_number || "Identification pending")}</small><code>${escapeHtml(card.sku)}</code><div class="batch-card-badges">${statusBadge(card.status)}${samBadge(card)}</div></div>
     <div class="batch-card-actions"><button class="icon-button" title="Reprint label" data-action="reprint-label" data-sku="${escapeHtml(card.sku)}">${icon("printer")}</button><button class="icon-button" title="Edit card" data-action="edit-card" data-sku="${escapeHtml(card.sku)}">${icon("square-pen")}</button></div>
   </article>`).join("")}</div>${batch.status === "OPEN" ? `<div class="bottom-finish-bar"><div><strong>${cards.length} Cards In Batch</strong><small>${review} Need Review - ${cards.length} Labels Will Queue</small></div><button class="button primary" data-action="complete-batch" data-id="${batch.id}">${icon("printer")}Finish & Print Labels</button></div>` : ""}</section>`;
 }
@@ -410,7 +472,7 @@ async function renderBatch(id) {
 
 function changeGroupForm(batch) {
   return `<form id="change-group-form" data-id="${batch.id}"><div class="form-grid">
-    <label>Color<input name="color" value="${escapeHtml(batch.color)}" placeholder="Yellow"></label>
+    <label>Color${colorField("color", batch.color)}<span class="help-text">Pick a known color or type a custom drawer label.</span></label>
     <label>Finish / rarity group<select name="finish_group">${["Common / Non-Foil","Rare / Foil","Rare / Non-Foil","Promo","Mixed"].map((value) => `<option ${batch.finish_group === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>
     <label class="full">Drawer location<input name="location" value="${escapeHtml(batch.location)}" placeholder="OP16-Yellow"></label>
     <label class="full">Scanner Order<select name="scan_order"><option value="FRONT_FIRST" ${batch.scan_order !== "BACK_FIRST" ? "selected" : ""}>Front First (Face Down)</option><option value="BACK_FIRST" ${batch.scan_order === "BACK_FIRST" ? "selected" : ""}>Back First (Face Up)</option></select></label>
@@ -427,6 +489,7 @@ function openChangeGroup() {
 async function saveScanGroup(event) {
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+  payload.color = normalizeColorChoice(payload.color);
   const batchId = event.currentTarget.dataset.id;
   try {
     await api(`/api/batches/${batchId}`, { method: "PATCH", body: JSON.stringify(payload) });
@@ -496,24 +559,35 @@ async function importBulkScans(event) {
   if (!pairs.length) return toast("Select at least one complete front/back pair.", "error");
   if (unmatched.length && !confirm(`${unmatched.length} unmatched file(s) will be skipped. Continue?`)) return;
   submit.disabled = true;
+  let created = 0;
   toast(`Preparing ${pairs.length} card pair(s)...`);
   try {
-    await api(`/api/batches/${state.activeBatch.batch.id}`, { method: "PATCH", body: JSON.stringify({ scan_order: scanOrder }) });
-    const cards = [];
-    for (const pair of pairs) {
-      cards.push({
-        rarity: state.intakeDefaults.rarity,
-        variant: state.intakeDefaults.variant,
-        front_image: await fileToDataUrl(pair.front),
-        back_image: await fileToDataUrl(pair.back),
-      });
+    const batchId = state.activeBatch.batch.id;
+    await api(`/api/batches/${batchId}`, { method: "PATCH", body: JSON.stringify({ scan_order: scanOrder }) });
+    for (let start = 0; start < pairs.length; start += BULK_IMPORT_CHUNK_SIZE) {
+      const chunk = pairs.slice(start, start + BULK_IMPORT_CHUNK_SIZE);
+      const end = start + chunk.length;
+      toast(`Importing card pairs ${start + 1}-${end} of ${pairs.length}...`);
+      const cards = [];
+      for (const pair of chunk) {
+        cards.push({
+          rarity: state.intakeDefaults.rarity,
+          variant: state.intakeDefaults.variant,
+          front_image: await fileToDataUrl(pair.front),
+          back_image: await fileToDataUrl(pair.back),
+        });
+      }
+      const result = await api(`/api/batches/${batchId}/cards/bulk`, { method: "POST", body: JSON.stringify({ cards }) });
+      created += result.created || 0;
     }
-    const result = await api(`/api/batches/${state.activeBatch.batch.id}/cards/bulk`, { method: "POST", body: JSON.stringify({ cards }) });
     state.pendingBulkFiles = [];
     closeModal();
-    toast(`${result.created} physical card(s) added and assigned SKUs.`);
-    await loadDashboard(); await renderBatch(state.activeBatch.batch.id);
-  } catch (error) { toast(error.message, "error"); submit.disabled = false; }
+    toast(`${created} physical card(s) added and assigned SKUs.`);
+    await loadDashboard(); await renderBatch(batchId);
+  } catch (error) {
+    toast(created ? `Import stopped after ${created} card(s): ${error.message}` : error.message, "error");
+    submit.disabled = false;
+  }
 }
 
 async function addScannedCard(event) {
@@ -632,8 +706,10 @@ async function bulkEditCards(event) {
 }
 
 function editCardForm(card) {
+  const sourceImage = card.source_full_image_url || card.source_small_image_url;
+  const sourceBlock = card.source_card_id ? `<div class="source-reference"><div>${sourceImage ? `<img src="${sourceImage}" alt="">` : icon("image")}</div><section><span>Matched Source</span><strong>${escapeHtml(card.source_card_number || card.card_number)}</strong><small>${escapeHtml(card.source_name || card.name)}${card.match_confidence ? ` · ${confidenceLabel(card.match_confidence)} confidence` : ""}</small></section></div>` : `<div class="source-reference empty">${icon("sparkles")}<section><span>SAM</span><strong>No source match yet</strong><small>Use SAM Match to compare this scan with the local source database.</small></section></div>`;
   const evidence = (side) => card[`${side}_image`] ? `<a href="/media/${encodeURI(card[`${side}_image`])}" target="_blank" rel="noopener"><img src="/media/${encodeURI(card[`${side}_image`])}" alt="${titleCase(side)} scan for ${escapeHtml(card.sku)}"><span>${titleCase(side)} · Open Full Resolution</span></a>` : `<div class="missing-evidence">${icon("image-off")}<span>No ${titleCase(side)} Image</span></div>`;
-  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="card-evidence">${evidence("front")}${evidence("back")}</div><div class="evidence-actions"><button type="button" class="button secondary" data-action="swap-images" data-sku="${escapeHtml(card.sku)}">${icon("arrow-left-right")}Swap Front/Back</button></div><div class="form-grid">
+  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="card-evidence">${evidence("front")}${evidence("back")}</div><div class="evidence-actions"><button type="button" class="button secondary" data-action="swap-images" data-sku="${escapeHtml(card.sku)}">${icon("arrow-left-right")}Swap Front/Back</button><button type="button" class="button secondary" data-action="sam-match-card" data-sku="${escapeHtml(card.sku)}">${icon("sparkles")}SAM Match</button></div>${sourceBlock}<div class="form-grid">
     <label>SKU<div class="input-action"><input value="${escapeHtml(card.sku)}" disabled><button type="button" class="icon-button" title="Copy SKU" data-action="copy-sku" data-sku="${escapeHtml(card.sku)}">${icon("copy")}</button></div></label>
     <label>Status<select name="status">${["IN_STOCK","REVIEW","HOLD","SOLD"].map((v) => `<option value="${v}" ${card.status === v ? "selected" : ""}>${v === "IN_STOCK" ? "In Stock" : v === "REVIEW" ? "Needs Review" : titleCase(v)}</option>`).join("")}</select></label>
     <label>Card Number<input name="card_number" value="${escapeHtml(card.card_number)}"></label>
@@ -738,6 +814,70 @@ async function saveSettings(event) {
   try {
     await api("/api/settings", { method: "POST", body: JSON.stringify(payload) });
     closeModal(); toast("Settings saved."); await loadDashboard();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+function sourceCardRows(cards) {
+  if (!cards.length) return emptyState("database", "No source cards indexed", "Place One Piece card images or a card-list CSV in the source database folder, then rescan.");
+  return `<div class="source-card-grid">${cards.map((card) => `<article class="source-card">
+    ${card.small_image_url || card.full_image_url ? `<img src="${card.small_image_url || card.full_image_url}" alt="">` : `<span>${icon("image")}</span>`}
+    <div><strong>${escapeHtml(card.card_number)}</strong><small>${escapeHtml(card.name || "Image only")} · ${escapeHtml(card.set_name || card.set_code)}</small></div>
+    <em>${escapeHtml(card.rarity || "No rarity")}</em>
+  </article>`).join("")}</div>`;
+}
+
+async function renderSAM() {
+  loading();
+  try {
+    const data = await api("/api/sam/source");
+    state.samSource = data;
+    const s = data.summary;
+    app.innerHTML = `<div class="view-stack">
+      <section class="summary-strip">
+        <div class="metric"><span>Source Cards</span><strong>${s.total || 0}</strong><small>Local One Piece records</small></div>
+        <div class="metric"><span>With Images</span><strong>${s.with_images || 0}</strong><small>Ready for visual matching</small></div>
+        <div class="metric"><span>Sets Indexed</span><strong>${s.sets || 0}</strong><small>Reference folders detected</small></div>
+        <div class="metric"><span>Confidence</span><strong>${Math.round((s.threshold || 0.84) * 100)}%</strong><small>Minimum auto-match score</small></div>
+      </section>
+      <section class="sam-panel">
+        <div><h2>SAM Source Database</h2><p>${escapeHtml(s.source_path || "No source path configured")}</p><small>${s.last_scan ? `Last scan: ${formatDate(s.last_scan)}` : "Not scanned yet"}</small></div>
+        <button class="button primary" data-action="rescan-source">${icon("refresh-cw")}Rescan Source</button>
+      </section>
+      ${sourceCardRows(data.cards || [])}
+    </div>`;
+    refreshIcons();
+  } catch (error) { showError(error); }
+}
+
+async function rescanSource() {
+  try {
+    toast("SAM is scanning the source database...");
+    const result = await api("/api/sam/source/rescan", { method: "POST", body: "{}" });
+    toast(`SAM indexed ${result.indexed || 0} card(s).`);
+    await renderSAM();
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function samMatchCard(sku) {
+  try {
+    const result = await api(`/api/cards/${encodeURIComponent(sku)}/sam`, { method: "POST", body: "{}" });
+    toast(result.matched ? `${sku} matched by ${result.match_source} (${confidenceLabel(result.confidence)}).` : `${sku}: ${result.reason || "No confident match."}`, result.matched ? "success" : "error");
+    await loadDashboard();
+    if (modal.open) await openEditCard(sku);
+    else if (state.activeBatch) await renderBatch(state.activeBatch.batch.id);
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function samMatchBatch(selectedOnly = false) {
+  const batch = state.activeBatch?.batch;
+  if (!batch) return;
+  const skus = selectedOnly ? selectedBatchSkus() : [];
+  if (selectedOnly && !skus.length) return toast("Select at least one card for SAM.", "error");
+  try {
+    toast(selectedOnly ? `SAM is matching ${skus.length} selected card(s)...` : "SAM is matching this batch...");
+    const result = await api(`/api/batches/${batch.id}/sam`, { method: "POST", body: JSON.stringify({ skus }) });
+    toast(`SAM matched ${result.matched || 0} of ${result.checked || 0} card(s).`);
+    await loadDashboard(); await renderBatch(batch.id);
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -980,6 +1120,10 @@ document.addEventListener("click", async (event) => {
     if (action === "bulk-recycle") bulkRecycleCards();
     if (action === "bulk-reprint-labels") bulkReprintLabels();
     if (action === "bulk-edit") openBulkEdit();
+    if (action === "rescan-source") rescanSource();
+    if (action === "sam-match-card") samMatchCard(actionEl.dataset.sku);
+    if (action === "sam-match-batch") samMatchBatch(false);
+    if (action === "sam-match-selected") samMatchBatch(true);
     if (action === "search-sale-order") {
       state.inventoryPreset = { q: actionEl.dataset.order || "", status: "SOLD", sort: "average_desc" };
       setView("inventory");

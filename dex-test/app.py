@@ -35,16 +35,42 @@ DATA_DIR = Path(os.environ.get("DEX_DATA_DIR", ROOT / "data")).resolve()
 DB_PATH = Path(os.environ.get("DEX_DB_PATH", DATA_DIR / "dex.db")).resolve()
 IMAGE_DIR = Path(os.environ.get("DEX_IMAGE_DIR", DATA_DIR / "images")).resolve()
 INBOUND_DIR = Path(os.environ.get("DEX_INBOUND_DIR", DATA_DIR / "inbound")).resolve()
+SOURCE_DB_DIR = Path(os.environ.get("DEX_SOURCE_DB_DIR", DATA_DIR / "source-database")).resolve()
 HOST = os.environ.get("DEX_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v1.1b-test"
+APP_VERSION = "v2.0-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
 GAME_PREFIXES = {"Pokemon": "PKM", "One Piece": "OP", "Riftbound": "RFB"}
+ONE_PIECE_SET_NAMES = {
+    "OP01": "Romance Dawn",
+    "OP02": "Paramount War",
+    "OP03": "Pillars of Strength",
+    "OP04": "Kingdoms of Intrigue",
+    "OP05": "Awakening of the New Era",
+    "OP06": "Wings of the Captain",
+    "OP07": "500 Years in the Future",
+    "OP08": "Two Legends",
+    "OP09": "Emperors in the New World",
+    "OP10": "Royal Blood",
+    "OP11": "A Fist of Divine Speed",
+    "OP12": "Legacy of the Master",
+    "OP13": "Carrying on His Will",
+    "OP14": "The Azure Sea's Seven",
+    "OP15": "Adventure on Kami's Island",
+    "OP16": "The Time of Battle",
+    "EB01": "Memorial Collection",
+    "EB02": "Anime 25th Collection",
+    "EB03": "One Piece Heroines Edition",
+    "PRB01": "Premium Booster -The Best-",
+    "PRB02": "ONE PIECE CARD THE BEST Vol. 2",
+}
+CARD_NUMBER_RE = re.compile(r"\b((?:OP|EB|ST|PRB|P)\d{1,3})[-_ ]?(\d{3}[A-Z]?)\b", re.I)
+SAM_MATCH_THRESHOLD = 0.84
 DB_LOCK = threading.Lock()
 
 
@@ -96,6 +122,7 @@ def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     INBOUND_DIR.mkdir(parents=True, exist_ok=True)
+    SOURCE_DB_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as db:
         db.executescript(
             """
@@ -115,6 +142,8 @@ def init_db() -> None:
                 total_cost REAL NOT NULL DEFAULT 0,
                 location TEXT NOT NULL DEFAULT '',
                 notes TEXT NOT NULL DEFAULT '',
+                scan_order TEXT NOT NULL DEFAULT 'FRONT_FIRST',
+                scan_mode TEXT NOT NULL DEFAULT 'FRONT_BACK',
                 recycled_at TEXT,
                 recycle_reason TEXT NOT NULL DEFAULT '',
                 purge_after TEXT
@@ -145,7 +174,29 @@ def init_db() -> None:
                 market_updated_at TEXT,
                 listing_platform TEXT,
                 listing_price REAL,
-                listing_reference TEXT
+                listing_reference TEXT,
+                source_card_id INTEGER REFERENCES source_cards(id),
+                match_confidence REAL,
+                match_source TEXT NOT NULL DEFAULT 'Manual',
+                match_reviewed INTEGER NOT NULL DEFAULT 0,
+                matched_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS source_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                game TEXT NOT NULL DEFAULT 'One Piece',
+                card_number TEXT NOT NULL,
+                set_code TEXT NOT NULL,
+                set_name TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                rarity TEXT NOT NULL DEFAULT '',
+                color TEXT NOT NULL DEFAULT '',
+                card_type TEXT NOT NULL DEFAULT '',
+                full_image TEXT,
+                small_image TEXT,
+                image_hash TEXT,
+                updated_at TEXT NOT NULL,
+                UNIQUE(game, card_number)
             );
 
             CREATE TABLE IF NOT EXISTS sale_orders (
@@ -191,6 +242,9 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
             CREATE INDEX IF NOT EXISTS idx_cards_identity
                 ON cards(card_number, variant, condition);
+            CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_card_id);
+            CREATE INDEX IF NOT EXISTS idx_source_cards_identity ON source_cards(game, card_number);
+            CREATE INDEX IF NOT EXISTS idx_source_cards_set ON source_cards(game, set_code);
             CREATE INDEX IF NOT EXISTS idx_sales_date ON sale_orders(sold_at);
             CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_log(created_at);
             """
@@ -199,9 +253,12 @@ def init_db() -> None:
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('tcg_capacity', ?)", (str(DEFAULT_TCG_CAPACITY),))
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('recycle_retention_days', '180')")
         db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('recycle_auto_purge', '0')")
+        db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('sam_source_path', ?)", (str(SOURCE_DB_DIR),))
         batch_columns = {row["name"] for row in db.execute("PRAGMA table_info(batches)")}
         if "scan_order" not in batch_columns:
             db.execute("ALTER TABLE batches ADD COLUMN scan_order TEXT NOT NULL DEFAULT 'FRONT_FIRST'")
+        if "scan_mode" not in batch_columns:
+            db.execute("ALTER TABLE batches ADD COLUMN scan_mode TEXT NOT NULL DEFAULT 'FRONT_BACK'")
         for name, declaration in (
             ("recycled_at", "TEXT"),
             ("recycle_reason", "TEXT NOT NULL DEFAULT ''"),
@@ -215,6 +272,11 @@ def init_db() -> None:
             ("recycle_reason", "TEXT NOT NULL DEFAULT ''"),
             ("purge_after", "TEXT"),
             ("pre_recycle_status", "TEXT"),
+            ("source_card_id", "INTEGER REFERENCES source_cards(id)"),
+            ("match_confidence", "REAL"),
+            ("match_source", "TEXT NOT NULL DEFAULT 'Manual'"),
+            ("match_reviewed", "INTEGER NOT NULL DEFAULT 0"),
+            ("matched_at", "TEXT"),
         ):
             if name not in card_columns:
                 db.execute(f"ALTER TABLE cards ADD COLUMN {name} {declaration}")
@@ -233,6 +295,286 @@ def money(value: object) -> float:
         return round(max(0.0, float(value or 0)), 2)
     except (TypeError, ValueError):
         return 0.0
+
+
+def normalize_card_number(value: object) -> str:
+    text = str(value or "").upper().replace("_", "-")
+    match = CARD_NUMBER_RE.search(text)
+    if not match:
+        return ""
+    prefix = match.group(1).upper()
+    number = match.group(2).upper()
+    return f"{prefix}-{number}"
+
+
+def source_relative_path(path: Path) -> str:
+    return str(path.resolve().relative_to(SOURCE_DB_DIR.resolve())).replace("\\", "/")
+
+
+def source_media_url(path: str | None) -> str:
+    return f"/source-media/{quote(path)}" if path else ""
+
+
+def image_bit_hash(path: Path) -> str:
+    try:
+        from PIL import Image, ImageOps  # type: ignore
+
+        with Image.open(path) as image:
+            image = ImageOps.exif_transpose(image).convert("L")
+            image = ImageOps.autocontrast(image)
+            average_image = image.resize((16, 16))
+            pixels = list(average_image.tobytes())
+            average = sum(pixels) / max(1, len(pixels))
+            bits = ["1" if pixel >= average else "0" for pixel in pixels]
+
+            difference_image = image.resize((17, 16))
+            diff = list(difference_image.tobytes())
+            for y in range(16):
+                row = y * 17
+                for x in range(16):
+                    bits.append("1" if diff[row + x] > diff[row + x + 1] else "0")
+            return f"{int(''.join(bits), 2):0{len(bits) // 4}x}"
+    except Exception:
+        return ""
+
+
+def image_hash_similarity(left: str | None, right: str | None) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    try:
+        distance = (int(left, 16) ^ int(right, 16)).bit_count()
+    except ValueError:
+        return 0.0
+    return round(1 - (distance / (len(left) * 4)), 4)
+
+
+def source_metadata_rows() -> dict[str, dict]:
+    aliases = {
+        "card_number": ("card_number", "card number", "number", "code", "id", "product id"),
+        "name": ("name", "card name", "product name"),
+        "set_code": ("set_code", "set code", "set", "set id"),
+        "set_name": ("set_name", "set name", "set title"),
+        "rarity": ("rarity",),
+        "color": ("color", "colour"),
+        "card_type": ("card_type", "type", "card type"),
+    }
+    rows: dict[str, dict] = {}
+    for csv_path in SOURCE_DB_DIR.rglob("*.csv"):
+        try:
+            with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                reader = csv.DictReader(handle)
+                if not reader.fieldnames:
+                    continue
+                normalized = {field.lower().strip(): field for field in reader.fieldnames}
+                for raw in reader:
+                    row: dict[str, str] = {}
+                    for target, names in aliases.items():
+                        for name in names:
+                            source = normalized.get(name)
+                            if source and raw.get(source):
+                                row[target] = clean_text(raw.get(source), 180)
+                                break
+                    card_number = normalize_card_number(row.get("card_number"))
+                    if not card_number:
+                        continue
+                    set_code = normalize_card_number(card_number).split("-", 1)[0]
+                    row["card_number"] = card_number
+                    row["set_code"] = clean_text(row.get("set_code"), 40).upper() or set_code
+                    row["set_name"] = row.get("set_name") or ONE_PIECE_SET_NAMES.get(row["set_code"], row["set_code"])
+                    rows[card_number] = {**rows.get(card_number, {}), **row}
+        except OSError:
+            continue
+    return rows
+
+
+def scan_source_database(db: sqlite3.Connection) -> dict:
+    metadata = source_metadata_rows()
+    records: dict[str, dict] = {}
+    image_suffixes = {".jpg", ".jpeg", ".png", ".webp"}
+    for path in SOURCE_DB_DIR.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in image_suffixes:
+            continue
+        card_number = normalize_card_number(path.stem)
+        if not card_number:
+            continue
+        set_code = card_number.split("-", 1)[0]
+        record = records.setdefault(
+            card_number,
+            {
+                "card_number": card_number,
+                "set_code": set_code,
+                "set_name": ONE_PIECE_SET_NAMES.get(set_code, set_code),
+                "name": "",
+                "rarity": "",
+                "color": "",
+                "card_type": "",
+                "full_image": "",
+                "small_image": "",
+                "image_hash": "",
+            },
+        )
+        rel = source_relative_path(path)
+        if "small" in path.stem.lower():
+            record["small_image"] = rel
+        else:
+            record["full_image"] = rel
+
+    for card_number, row in metadata.items():
+        set_code = row.get("set_code") or card_number.split("-", 1)[0]
+        record = records.setdefault(
+            card_number,
+            {
+                "card_number": card_number,
+                "set_code": set_code,
+                "set_name": ONE_PIECE_SET_NAMES.get(set_code, set_code),
+                "name": "",
+                "rarity": "",
+                "color": "",
+                "card_type": "",
+                "full_image": "",
+                "small_image": "",
+                "image_hash": "",
+            },
+        )
+        record.update({key: row.get(key, record.get(key, "")) for key in ("set_code", "set_name", "name", "rarity", "color", "card_type")})
+
+    indexed = 0
+    hashed = 0
+    now = utcnow()
+    for record in records.values():
+        image_rel = record.get("full_image") or record.get("small_image")
+        if image_rel:
+            record["image_hash"] = image_bit_hash(SOURCE_DB_DIR / image_rel)
+            hashed += 1 if record["image_hash"] else 0
+        db.execute(
+            """
+            INSERT INTO source_cards (
+                game, card_number, set_code, set_name, name, rarity, color, card_type,
+                full_image, small_image, image_hash, updated_at
+            ) VALUES ('One Piece', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(game, card_number) DO UPDATE SET
+                set_code = excluded.set_code,
+                set_name = excluded.set_name,
+                name = excluded.name,
+                rarity = excluded.rarity,
+                color = excluded.color,
+                card_type = excluded.card_type,
+                full_image = excluded.full_image,
+                small_image = excluded.small_image,
+                image_hash = excluded.image_hash,
+                updated_at = excluded.updated_at
+            """,
+            (
+                record["card_number"], clean_text(record["set_code"], 40).upper(),
+                clean_text(record["set_name"]), clean_text(record["name"]),
+                clean_text(record["rarity"], 60), clean_text(record["color"], 40),
+                clean_text(record["card_type"], 60), record.get("full_image") or None,
+                record.get("small_image") or None, record.get("image_hash") or None, now,
+            ),
+        )
+        indexed += 1
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sam_source_path', ?)", (str(SOURCE_DB_DIR),))
+    db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('sam_last_scan', ?)", (now,))
+    return {"indexed": indexed, "hashed": hashed, "source_path": str(SOURCE_DB_DIR), "scanned_at": now}
+
+
+def source_summary(db: sqlite3.Connection) -> dict:
+    row = db.execute(
+        """
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN image_hash IS NOT NULL AND image_hash != '' THEN 1 ELSE 0 END) AS with_images,
+               COUNT(DISTINCT set_code) AS sets
+        FROM source_cards
+        """
+    ).fetchone()
+    return {
+        "source_path": setting(db, "sam_source_path", str(SOURCE_DB_DIR)),
+        "last_scan": setting(db, "sam_last_scan", ""),
+        "total": int(row["total"] or 0),
+        "with_images": int(row["with_images"] or 0),
+        "sets": int(row["sets"] or 0),
+        "threshold": SAM_MATCH_THRESHOLD,
+    }
+
+
+def source_payload(row: sqlite3.Row | None) -> dict | None:
+    if not row:
+        return None
+    item = dict(row)
+    item["full_image_url"] = source_media_url(item.get("full_image"))
+    item["small_image_url"] = source_media_url(item.get("small_image"))
+    return item
+
+
+def apply_source_match(db: sqlite3.Connection, card: sqlite3.Row, source: sqlite3.Row, confidence: float, match_source: str) -> dict:
+    now = utcnow()
+    current_name = card["name"] if card["name"] != "Needs identification" else ""
+    name = source["name"] or current_name or "Needs identification"
+    set_name = source["set_name"] or card["set_name"]
+    rarity = source["rarity"] or card["rarity"]
+    color = source["color"] or card["color"]
+    status = "IN_STOCK" if name != "Needs identification" and source["card_number"] else card["status"]
+    db.execute(
+        """
+        UPDATE cards SET
+            card_number = ?, name = ?, set_name = ?, rarity = ?, color = ?,
+            status = ?, source_card_id = ?, match_confidence = ?, match_source = ?,
+            match_reviewed = ?, matched_at = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            source["card_number"], name, set_name, rarity, color, status,
+            source["id"], confidence, match_source, 1 if confidence >= SAM_MATCH_THRESHOLD else 0,
+            now, now, card["id"],
+        ),
+    )
+    return dict(db.execute("SELECT * FROM cards WHERE id = ?", (card["id"],)).fetchone())
+
+
+def sam_match_card(db: sqlite3.Connection, card: sqlite3.Row, batch: sqlite3.Row | None = None) -> dict:
+    if card["recycled_at"]:
+        return {"sku": card["sku"], "matched": False, "reason": "Card is in the Recycle Bin"}
+    normalized = normalize_card_number(card["card_number"])
+    source = None
+    if normalized:
+        source = db.execute(
+            "SELECT * FROM source_cards WHERE game = 'One Piece' AND card_number = ?",
+            (normalized,),
+        ).fetchone()
+        if source:
+            card = db.execute("SELECT * FROM cards WHERE id = ?", (card["id"],)).fetchone()
+            updated = apply_source_match(db, card, source, 1.0, "Card Number")
+            return {"sku": card["sku"], "matched": True, "confidence": 1.0, "match_source": "Card Number", "card": updated, "source": source_payload(source)}
+
+    front_image = card["front_image"]
+    if not front_image:
+        return {"sku": card["sku"], "matched": False, "reason": "No front scan available"}
+    scan_hash = image_bit_hash(DATA_DIR / front_image)
+    if not scan_hash:
+        return {"sku": card["sku"], "matched": False, "reason": "Front scan could not be read"}
+
+    params: list[object] = []
+    where = "WHERE game = 'One Piece' AND image_hash IS NOT NULL AND image_hash != ''"
+    set_code = (batch["set_code"] if batch else "").upper()
+    if set_code:
+        where += " AND set_code = ?"
+        params.append(set_code)
+    candidates = db.execute(f"SELECT * FROM source_cards {where}", params).fetchall()
+    best: tuple[float, sqlite3.Row] | None = None
+    for candidate in candidates:
+        confidence = image_hash_similarity(scan_hash, candidate["image_hash"])
+        if best is None or confidence > best[0]:
+            best = (confidence, candidate)
+    if not best or best[0] < SAM_MATCH_THRESHOLD:
+        return {
+            "sku": card["sku"],
+            "matched": False,
+            "confidence": best[0] if best else 0,
+            "reason": "No confident SAM match",
+            "candidate": source_payload(best[1]) if best else None,
+        }
+    updated = apply_source_match(db, card, best[1], best[0], "Image Fingerprint")
+    return {"sku": card["sku"], "matched": True, "confidence": best[0], "match_source": "Image Fingerprint", "card": updated, "source": source_payload(best[1])}
 
 
 def make_batch_code(db: sqlite3.Connection, game: str) -> str:
@@ -355,11 +697,41 @@ def ingest_file_pair(batch_id: int, front_source: Path, back_source: Path) -> di
         return dict(db.execute("SELECT * FROM cards WHERE id = ?", (cursor.lastrowid,)).fetchone())
 
 
+def ingest_front_file(batch_id: int, front_source: Path) -> dict | None:
+    fingerprint = scan_fingerprint([front_source])
+    with DB_LOCK, connect() as db:
+        if db.execute("SELECT 1 FROM processed_scans WHERE fingerprint = ?", (fingerprint,)).fetchone():
+            return None
+        batch = db.execute("SELECT * FROM batches WHERE id = ? AND status = 'OPEN'", (batch_id,)).fetchone()
+        if not batch:
+            return None
+        sku = next_sku(db, batch["game"])
+        front = copy_scan_image(sku, "front", front_source)
+        now = utcnow()
+        cursor = db.execute(
+            """
+            INSERT INTO cards (
+                sku, batch_id, created_at, updated_at, name, set_name, color,
+                variant, condition, status, location, front_image, source_hash
+            ) VALUES (?, ?, ?, ?, 'Needs identification', ?, ?, 'Standard', ?, 'REVIEW', ?, ?, ?)
+            """,
+            (
+                sku, batch_id, now, now, batch["set_name"], batch["color"],
+                batch["default_condition"], batch["location"], front, fingerprint,
+            ),
+        )
+        db.execute(
+            "INSERT INTO processed_scans (fingerprint, batch_id, processed_at) VALUES (?, ?, ?)",
+            (fingerprint, batch_id, now),
+        )
+        return dict(db.execute("SELECT * FROM cards WHERE id = ?", (cursor.lastrowid,)).fetchone())
+
+
 def watch_inbound() -> None:
     while True:
         try:
             with connect() as db:
-                batches = db.execute("SELECT id, batch_code, scan_order FROM batches WHERE status = 'OPEN'").fetchall()
+                batches = db.execute("SELECT id, batch_code, scan_order, scan_mode FROM batches WHERE status = 'OPEN'").fetchall()
             for batch in batches:
                 folder = INBOUND_DIR / batch["batch_code"]
                 if not folder.exists():
@@ -371,6 +743,10 @@ def watch_inbound() -> None:
                     and path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
                     and now - path.stat().st_mtime > 2
                 ]
+                if batch["scan_mode"] == "FRONT_ONLY":
+                    for front in sorted(candidates, key=lambda item: item.name.lower()):
+                        ingest_front_file(batch["id"], front)
+                    continue
                 for front, back in pair_scan_files(candidates, batch["scan_order"]):
                     ingest_file_pair(batch["id"], front, back)
         except Exception as exc:
@@ -731,7 +1107,11 @@ class DexHandler(BaseHTTPRequestHandler):
     def serve_file(self, path: Path, cache: bool = True) -> None:
         try:
             resolved = path.resolve()
-            allowed = resolved.is_relative_to(STATIC_DIR.resolve()) or resolved.is_relative_to(DATA_DIR)
+            allowed = (
+                resolved.is_relative_to(STATIC_DIR.resolve())
+                or resolved.is_relative_to(DATA_DIR)
+                or resolved.is_relative_to(SOURCE_DB_DIR.resolve())
+            )
             if not allowed or not resolved.is_file():
                 self.send_error(404)
                 return
@@ -850,6 +1230,20 @@ class DexHandler(BaseHTTPRequestHandler):
                 values["recycle_retention_days"] = int(values.get("recycle_retention_days", 180))
                 values["recycle_auto_purge"] = values.get("recycle_auto_purge", "0") == "1"
                 self.send_json(values)
+            elif path == "/api/sam/source":
+                with connect() as db:
+                    rows = db.execute(
+                        """
+                        SELECT * FROM source_cards
+                        ORDER BY set_code, card_number
+                        LIMIT 400
+                        """
+                    ).fetchall()
+                    payload = {
+                        "summary": source_summary(db),
+                        "cards": [source_payload(row) for row in rows],
+                    }
+                self.send_json(payload)
             elif path == "/api/activity":
                 with connect() as db:
                     rows = db.execute(
@@ -873,7 +1267,14 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     batch = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     cards = db.execute(
-                        "SELECT * FROM cards WHERE batch_id = ? AND recycled_at IS NULL ORDER BY id", (batch_id,)
+                        """
+                        SELECT c.*, sc.card_number AS source_card_number, sc.name AS source_name,
+                               sc.full_image AS source_full_image, sc.small_image AS source_small_image
+                        FROM cards c LEFT JOIN source_cards sc ON sc.id = c.source_card_id
+                        WHERE c.batch_id = ? AND c.recycled_at IS NULL
+                        ORDER BY c.id
+                        """,
+                        (batch_id,),
                     ).fetchall()
                 if not batch:
                     self.send_error_json("Batch not found", 404)
@@ -884,14 +1285,23 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     row = db.execute(
                         """SELECT c.*, b.game, b.set_code, b.batch_code, b.acquisition_type,
-                                  b.total_cost, b.finish_group
-                           FROM cards c JOIN batches b ON b.id = c.batch_id WHERE c.sku = ?""",
+                                  b.total_cost, b.finish_group,
+                                  sc.card_number AS source_card_number, sc.name AS source_name,
+                                  sc.set_code AS source_set_code, sc.set_name AS source_set_name,
+                                  sc.rarity AS source_rarity, sc.color AS source_color,
+                                  sc.full_image AS source_full_image, sc.small_image AS source_small_image
+                           FROM cards c JOIN batches b ON b.id = c.batch_id
+                           LEFT JOIN source_cards sc ON sc.id = c.source_card_id
+                           WHERE c.sku = ?""",
                         (sku,),
                     ).fetchone()
                 if not row:
                     self.send_error_json("Card not found", 404)
                 else:
-                    self.send_json(dict(row))
+                    item = dict(row)
+                    item["source_full_image_url"] = source_media_url(item.get("source_full_image"))
+                    item["source_small_image_url"] = source_media_url(item.get("source_small_image"))
+                    self.send_json(item)
             elif path == "/api/labels":
                 with connect() as db:
                     selected_sku = clean_text(query.get("sku", [""])[0], 40)
@@ -946,6 +1356,9 @@ class DexHandler(BaseHTTPRequestHandler):
             elif path.startswith("/media/"):
                 rel = unquote(path.removeprefix("/media/"))
                 self.serve_file(DATA_DIR / rel)
+            elif path.startswith("/source-media/"):
+                rel = unquote(path.removeprefix("/source-media/"))
+                self.serve_file(SOURCE_DB_DIR / rel)
             elif path == "/":
                 self.serve_file(STATIC_DIR / "index.html", cache=False)
             else:
@@ -996,7 +1409,12 @@ class DexHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
         try:
             payload = self.read_json()
-            if path == "/api/batches":
+            if path == "/api/sam/source/rescan":
+                with DB_LOCK, connect() as db:
+                    result = scan_source_database(db)
+                    result["summary"] = source_summary(db)
+                self.send_json(result)
+            elif path == "/api/batches":
                 game = clean_text(payload.get("game"), 40)
                 set_code = clean_text(payload.get("set_code"), 40).upper()
                 acquisition = clean_text(payload.get("acquisition_type"), 40)
@@ -1013,8 +1431,8 @@ class DexHandler(BaseHTTPRequestHandler):
                         INSERT INTO batches (
                             batch_code, created_at, game, set_code, set_name, color,
                             finish_group, default_condition, acquisition_type,
-                            total_cost, location, notes, scan_order
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_cost, location, notes, scan_order, scan_mode
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             code, utcnow(), game, set_code, clean_text(payload.get("set_name")),
@@ -1024,6 +1442,7 @@ class DexHandler(BaseHTTPRequestHandler):
                             acquisition, money(payload.get("total_cost")), location,
                             clean_text(payload.get("notes"), 500),
                             "BACK_FIRST" if payload.get("scan_order") == "BACK_FIRST" else "FRONT_FIRST",
+                            "FRONT_ONLY" if payload.get("scan_mode") == "FRONT_ONLY" else "FRONT_BACK",
                         ),
                     )
                     batch = dict(db.execute("SELECT * FROM batches WHERE id = ?", (cursor.lastrowid,)).fetchone())
@@ -1056,6 +1475,27 @@ class DexHandler(BaseHTTPRequestHandler):
                         raise ValueError("Reopen this batch before adding cards")
                     cards = [create_card(db, batch, item if isinstance(item, dict) else {}) for item in items]
                 self.send_json({"cards": cards, "created": len(cards)}, 201)
+            elif re.fullmatch(r"/api/batches/\d+/sam", path):
+                batch_id = int(path.split("/")[3])
+                requested = payload.get("skus", [])
+                if requested is not None and not isinstance(requested, list):
+                    raise ValueError("Selected SKUs must be a list")
+                requested_skus = [clean_text(sku, 40).upper() for sku in requested if clean_text(sku, 40)]
+                with DB_LOCK, connect() as db:
+                    batch = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
+                    if not batch:
+                        self.send_error_json("Batch not found", 404)
+                        return
+                    params: list[object] = [batch_id]
+                    where = "batch_id = ? AND recycled_at IS NULL"
+                    if requested_skus:
+                        placeholders = ",".join("?" for _ in requested_skus)
+                        where += f" AND sku IN ({placeholders})"
+                        params.extend(requested_skus)
+                    cards = db.execute(f"SELECT * FROM cards WHERE {where} ORDER BY id", params).fetchall()
+                    results = [sam_match_card(db, card, batch) for card in cards]
+                matched = sum(1 for result in results if result.get("matched"))
+                self.send_json({"batch_id": batch_id, "matched": matched, "checked": len(results), "results": results})
             elif re.fullmatch(r"/api/batches/\d+/complete", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
@@ -1144,6 +1584,16 @@ class DexHandler(BaseHTTPRequestHandler):
                     log_action(db, "IMAGE_SWAP", f"Swapped images for {sku}", {"sku": sku})
                     card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
                 self.send_json(dict(card))
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/sam", path):
+                sku = unquote(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                    if not card:
+                        self.send_error_json("Card not found", 404)
+                        return
+                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (card["batch_id"],)).fetchone()
+                    result = sam_match_card(db, card, batch)
+                self.send_json(result)
             elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/recycle", path):
                 sku = unquote(path.split("/")[3])
                 reason = clean_text(payload.get("reason"), 240)
@@ -1319,7 +1769,7 @@ class DexHandler(BaseHTTPRequestHandler):
             payload = self.read_json()
             batch_match = re.fullmatch(r"/api/batches/(\d+)", path)
             if batch_match:
-                allowed = {"color", "finish_group", "location", "scan_order"}
+                allowed = {"color", "finish_group", "location", "scan_order", "scan_mode"}
                 updates = {
                     key: clean_text(value, 80)
                     for key, value in payload.items()
@@ -1329,6 +1779,8 @@ class DexHandler(BaseHTTPRequestHandler):
                     raise ValueError("No scan-group fields supplied")
                 if "scan_order" in updates and updates["scan_order"] not in ("FRONT_FIRST", "BACK_FIRST"):
                     raise ValueError("Scan order must be Front First or Back First")
+                if "scan_mode" in updates and updates["scan_mode"] not in ("FRONT_BACK", "FRONT_ONLY"):
+                    raise ValueError("Scan type must be Front + Back or Front Only")
                 assignments = ", ".join(f"{key} = ?" for key in updates)
                 with connect() as db:
                     batch_id = int(batch_match.group(1))

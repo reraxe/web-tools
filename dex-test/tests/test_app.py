@@ -21,6 +21,7 @@ class DexApiTest(unittest.TestCase):
                 "DEX_DB_PATH": str(root / "data" / "dex.db"),
                 "DEX_IMAGE_DIR": str(root / "data" / "images"),
                 "DEX_INBOUND_DIR": str(root / "data" / "inbound"),
+                "DEX_SOURCE_DB_DIR": str(root / "source-database"),
                 "DEX_WATCH_INBOUND": "0",
                 "DEX_SEED_DEMO": "0",
             }
@@ -154,7 +155,7 @@ class DexApiTest(unittest.TestCase):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v1.1b-test")
+        self.assertEqual(health["version"], "v2.0-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)
@@ -303,6 +304,46 @@ class DexApiTest(unittest.TestCase):
         self.assertIn(batch["batch_code"], undo["undone"])
         _, restored_batch = self.request(f"/api/batches/{batch['id']}")
         self.assertEqual({card["sku"] for card in restored_batch["cards"]}, skus)
+
+    def test_v20_sam_source_scan_and_match(self):
+        raw_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+        source_dir = self.dex.SOURCE_DB_DIR
+        (source_dir / "OP16").mkdir(parents=True, exist_ok=True)
+        (source_dir / "OP16" / "OP16-067.png").write_bytes(raw_png)
+        (source_dir / "cards.csv").write_text(
+            "card_number,name,set_code,set_name,rarity,color,card_type\n"
+            "OP16-067,Tsuru,OP16,The Time of Battle,Uncommon,Purple,Character\n",
+            encoding="utf-8",
+        )
+
+        _, source = self.request("/api/sam/source/rescan", "POST", {})
+        self.assertGreaterEqual(source["indexed"], 1)
+        self.assertGreaterEqual(source["summary"]["with_images"], 1)
+
+        _, batch = self.request(
+            "/api/batches", "POST",
+            {"game": "One Piece", "set_code": "OP16", "set_name": "The Time of Battle",
+             "color": "Purple", "acquisition_type": "Booster Box"},
+        )
+        scan = "data:image/png;base64," + base64.b64encode(raw_png).decode()
+        _, result = self.request(
+            f"/api/batches/{batch['id']}/cards/bulk", "POST",
+            {"cards": [{"front_image": scan}]},
+        )
+        sku = result["cards"][0]["sku"]
+        _, match = self.request(f"/api/cards/{sku}/sam", "POST", {})
+        self.assertTrue(match["matched"])
+        self.assertGreaterEqual(match["confidence"], 0.84)
+
+        _, card = self.request(f"/api/cards/{sku}")
+        self.assertEqual(card["card_number"], "OP16-067")
+        self.assertEqual(card["name"], "Tsuru")
+        self.assertEqual(card["rarity"], "Uncommon")
+        self.assertEqual(card["color"], "Purple")
+        self.assertEqual(card["status"], "IN_STOCK")
+        self.assertEqual(card["match_source"], "Image Fingerprint")
 
 
 if __name__ == "__main__":
