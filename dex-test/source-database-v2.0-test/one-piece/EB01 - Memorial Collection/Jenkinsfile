@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_REPOSITORY = 'dex'
+        IMAGE_TAG = "v2.0-test-${BUILD_NUMBER}"
+        RELEASE_TAG = 'v2.0-test'
+        SMOKE_CONTAINER = "dex-smoke-${BUILD_NUMBER}"
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build image') {
+            steps {
+                sh 'docker build --pull -t ${IMAGE_REPOSITORY}:${IMAGE_TAG} .'
+            }
+        }
+
+        stage('Smoke test') {
+            steps {
+                sh '''
+                    docker run -d --name ${SMOKE_CONTAINER} \
+                      -e DEX_WATCH_INBOUND=0 \
+                      -e DEX_SEED_DEMO=0 \
+                      ${IMAGE_REPOSITORY}:${IMAGE_TAG}
+
+                    healthy=0
+                    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                      if docker exec ${SMOKE_CONTAINER} python -c \
+                        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"; then
+                        healthy=1
+                        break
+                      fi
+                      sleep 1
+                    done
+
+                    if [ "$healthy" -ne 1 ]; then
+                      docker logs ${SMOKE_CONTAINER}
+                      exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Tag test release') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh 'docker tag ${IMAGE_REPOSITORY}:${IMAGE_TAG} ${IMAGE_REPOSITORY}:${RELEASE_TAG}'
+            }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker rm -f ${SMOKE_CONTAINER} >/dev/null 2>&1 || true'
+        }
+    }
+}
