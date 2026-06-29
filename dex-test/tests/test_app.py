@@ -2,6 +2,7 @@ import base64
 import importlib.util
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -344,6 +345,94 @@ class DexApiTest(unittest.TestCase):
         self.assertEqual(card["color"], "Purple")
         self.assertEqual(card["status"], "IN_STOCK")
         self.assertEqual(card["match_source"], "Image Fingerprint")
+
+    def test_v20_upgrade_adds_sam_columns_before_indexes(self):
+        with tempfile.TemporaryDirectory() as legacy_root:
+            legacy_root = Path(legacy_root)
+            db_path = legacy_root / "data" / "dex.db"
+            db_path.parent.mkdir(parents=True)
+            legacy = sqlite3.connect(db_path)
+            try:
+                legacy.executescript(
+                    """
+                    CREATE TABLE batches (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        batch_code TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,
+                        completed_at TEXT,
+                        status TEXT NOT NULL DEFAULT 'OPEN',
+                        game TEXT NOT NULL,
+                        set_code TEXT NOT NULL,
+                        set_name TEXT NOT NULL DEFAULT '',
+                        color TEXT NOT NULL DEFAULT '',
+                        finish_group TEXT NOT NULL DEFAULT 'Non-Foil',
+                        default_condition TEXT NOT NULL DEFAULT 'Near Mint',
+                        acquisition_type TEXT NOT NULL,
+                        total_cost REAL NOT NULL DEFAULT 0,
+                        location TEXT NOT NULL DEFAULT '',
+                        notes TEXT NOT NULL DEFAULT ''
+                    );
+                    CREATE TABLE cards (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        sku TEXT NOT NULL UNIQUE,
+                        batch_id INTEGER NOT NULL REFERENCES batches(id),
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        card_number TEXT NOT NULL DEFAULT '',
+                        name TEXT NOT NULL DEFAULT 'Needs identification',
+                        set_name TEXT NOT NULL DEFAULT '',
+                        rarity TEXT NOT NULL DEFAULT '',
+                        color TEXT NOT NULL DEFAULT '',
+                        variant TEXT NOT NULL DEFAULT 'Standard',
+                        condition TEXT NOT NULL DEFAULT 'Near Mint',
+                        status TEXT NOT NULL DEFAULT 'REVIEW',
+                        location TEXT NOT NULL DEFAULT '',
+                        front_image TEXT,
+                        back_image TEXT,
+                        source_hash TEXT,
+                        label_printed INTEGER NOT NULL DEFAULT 0,
+                        market_low REAL,
+                        market_average REAL,
+                        market_high REAL,
+                        market_updated_at TEXT,
+                        listing_platform TEXT,
+                        listing_price REAL,
+                        listing_reference TEXT
+                    );
+                    """
+                )
+                legacy.commit()
+            finally:
+                legacy.close()
+
+            saved = (
+                self.dex.DATA_DIR,
+                self.dex.DB_PATH,
+                self.dex.IMAGE_DIR,
+                self.dex.INBOUND_DIR,
+                self.dex.SOURCE_DB_DIR,
+            )
+            try:
+                self.dex.DATA_DIR = legacy_root / "data"
+                self.dex.DB_PATH = db_path
+                self.dex.IMAGE_DIR = legacy_root / "data" / "images"
+                self.dex.INBOUND_DIR = legacy_root / "data" / "inbound"
+                self.dex.SOURCE_DB_DIR = legacy_root / "source-database"
+                self.dex.init_db()
+                with self.dex.connect() as db:
+                    columns = {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
+                    indexes = {row["name"] for row in db.execute("PRAGMA index_list(cards)")}
+                self.assertIn("source_card_id", columns)
+                self.assertIn("match_confidence", columns)
+                self.assertIn("idx_cards_source", indexes)
+            finally:
+                (
+                    self.dex.DATA_DIR,
+                    self.dex.DB_PATH,
+                    self.dex.IMAGE_DIR,
+                    self.dex.INBOUND_DIR,
+                    self.dex.SOURCE_DB_DIR,
+                ) = saved
 
 
 if __name__ == "__main__":

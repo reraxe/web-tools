@@ -85,6 +85,8 @@ The persistent folders are:
 
 The SQLite database is stored at `storage/dex.db` on the host through the `/data` container volume. Rebuilding or replacing the image does not remove inventory data.
 
+When upgrading an older Dex database to `v2.0-test`, Dex automatically adds the SAM matching columns and indexes during startup. Keep the existing `storage/` folder mounted so the upgrade runs against the real inventory database.
+
 ### SAM source database
 
 Put One Piece source images under `source-database-v2.0-test`. Filenames such as `OP16-067.png`, `EB01-001.jpg`, or `PRB02-018.png` let SAM identify the card number. A CSV in the same folder can add names, rarity, color, and card type. Useful CSV columns are `card_number`, `name`, `set_code`, `set_name`, `rarity`, `color`, and `card_type`.

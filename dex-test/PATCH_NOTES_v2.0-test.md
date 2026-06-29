@@ -44,6 +44,10 @@ This test release introduces SAM, Dex's local One Piece card matcher. SAM compar
 - Compose now creates a separate `source-database-v2.0-test` volume folder.
 - Batch card tiles now show match status in addition to inventory status.
 
+## Fixed
+
+- Fixed v1.x to v2.0-test database upgrades so SAM card columns are added before Dex builds the `source_card_id` index.
+
 ## Still Manual
 
 - SAM does not yet pull live data from OPTCG API.

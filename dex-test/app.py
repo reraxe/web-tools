@@ -242,7 +242,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_cards_status ON cards(status);
             CREATE INDEX IF NOT EXISTS idx_cards_identity
                 ON cards(card_number, variant, condition);
-            CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_card_id);
             CREATE INDEX IF NOT EXISTS idx_source_cards_identity ON source_cards(game, card_number);
             CREATE INDEX IF NOT EXISTS idx_source_cards_set ON source_cards(game, set_code);
             CREATE INDEX IF NOT EXISTS idx_sales_date ON sale_orders(sold_at);
@@ -280,6 +279,7 @@ def init_db() -> None:
         ):
             if name not in card_columns:
                 db.execute(f"ALTER TABLE cards ADD COLUMN {name} {declaration}")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_card_id)")
 
 
 def as_dict(row: sqlite3.Row | None) -> dict | None:
