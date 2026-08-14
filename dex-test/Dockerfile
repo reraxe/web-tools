@@ -19,7 +19,10 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py ./
+COPY dex_migrations.py dex_economics.py dex_legacy_economics.py ./
 COPY static ./static
+
+RUN python -c "import dex_migrations, dex_economics, dex_legacy_economics"
 
 RUN useradd --uid 10001 --create-home dex \
     && mkdir -p /data /scanner-inbox /source-database \

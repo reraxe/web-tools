@@ -48,6 +48,7 @@ Upload these paths while preserving their repository-relative locations:
 ```text
 VERSION
 app.py
+Dockerfile
 dex_migrations.py
 dex_economics.py
 dex_legacy_economics.py

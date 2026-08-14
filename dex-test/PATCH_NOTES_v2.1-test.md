@@ -53,6 +53,12 @@ This release is implemented in gated phases. Each phase must pass its complete t
 - A 2,500-card legacy batch preview averaged 11.37 ms over five runs; maximum 12.58 ms.
 - Read-only integration tests confirmed that preview requests do not mutate batches, cards, activity, or migration records.
 
+## Deployment Packaging Fix
+
+- Correct the Docker build so `dex_migrations.py`, `dex_economics.py`, and `dex_legacy_economics.py` are copied beside `/app/app.py`.
+- Add a build-time import assertion so an image build fails immediately if any required v2.1-test Python module is missing.
+- No application behavior, economics logic, database schema, or Phase 3 work is included in this fix.
+
 ## Verification
 
 - Existing v2.0-test API/integration tests pass unchanged.
