@@ -81,6 +81,10 @@ function formatCents(value, fallback = "Unknown") {
   return value === null || value === undefined ? fallback : moneyFormat.format(Number(value) / 100);
 }
 
+function centsInputValue(value) {
+  return value === null || value === undefined ? "" : (Number(value) / 100).toFixed(2);
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
@@ -347,7 +351,20 @@ function newBatchForm() {
       <label>Scan group<select name="finish_group"><option>Common / Non-Foil</option><option>Rare / Foil</option><option>Rare / Non-Foil</option><option>Promo</option><option>Mixed</option></select></label>
       <label>Condition<select name="default_condition"><option>Near Mint</option><option>Lightly Played</option><option>Moderately Played</option><option>Heavily Played</option><option>Damaged</option></select></label>
       <label>Acquired as<select name="acquisition_type" required><option>Booster Box</option><option>Single Pack(s)</option><option>Purchased Singles</option><option>Trade</option><option>Existing Inventory</option></select></label>
-      <label>Total cost<div class="money-input"><span>$</span><input name="total_cost" inputmode="decimal" type="number" min="0" step=".01" value="0"></div></label>
+      <label>Economics mode<select name="economics_mode"><option value="SEALED_RIP">Sealed product / rip</option><option value="SINGLES_KNOWN_COST">Purchased singles — known line costs</option><option value="SINGLES_LUMP_SUM">Purchased singles — lump-sum lot</option></select></label>
+      <label>Product / lot name<input name="product_name" required placeholder="OP-16 Booster Box"></label>
+      <label>Units acquired<input name="units_acquired" type="number" min="0" step="1" value="1"><span class="help-text">Use whole sealed units; singles modes use 0.</span></label>
+      <label>Receipt / Acquisition Group<input name="receipt_group_reference" placeholder="RECEIPT-2026-001"></label>
+      <label>Invoice / order reference<input name="invoice_reference" placeholder="Optional receipt or order number"></label>
+      <label>Purchase subtotal<div class="money-input"><span>$</span><input name="purchase_subtotal" inputmode="decimal" type="number" min="0" step=".01"></div></label>
+      <label>Tax<div class="money-input"><span>$</span><input name="acquisition_tax" inputmode="decimal" type="number" min="0" step=".01"></div></label>
+      <label>Inbound shipping<div class="money-input"><span>$</span><input name="inbound_shipping" inputmode="decimal" type="number" min="0" step=".01"></div></label>
+      <label>Acquisition fees<div class="money-input"><span>$</span><input name="acquisition_fees" inputmode="decimal" type="number" min="0" step=".01"></div></label>
+      <label>Discounts / credits<div class="money-input"><span>$</span><input name="acquisition_discount" inputmode="decimal" type="number" min="0" step=".01"></div></label>
+      <label>Final USD actually paid<div class="money-input"><span>$</span><input name="final_usd_paid" inputmode="decimal" type="number" min="0" step=".01"></div><span class="help-text">Authoritative for all future basis and P/L.</span></label>
+      <label>Original currency<input name="original_currency" maxlength="3" placeholder="JPY"></label>
+      <label>Original foreign amount<input name="original_foreign_amount" inputmode="decimal" type="number" min="0" step=".01" placeholder="Reference only"></label>
+      <label class="full checkbox-label"><input name="cost_reconciliation_acknowledged" type="checkbox" value="1">Acknowledge an intentional difference between components and final USD paid.</label>
       <label>Drawer location<input name="location" placeholder="Auto: OP16-Yellow"><span class="help-text">Leave blank to use set and color.</span></label>
       <label>Scanner Order<select name="scan_order"><option value="FRONT_FIRST">Front First (Face Down)</option><option value="BACK_FIRST">Back First (Face Up)</option></select></label>
       <label class="full">Notes<textarea name="notes" placeholder="Optional batch notes"></textarea></label>
@@ -490,20 +507,55 @@ function estimatedEconomicsPanel(estimate) {
   </section>`;
 }
 
+function acquisitionFactsPanel(facts) {
+  const cost = facts.authoritative_cost;
+  const breakdown = facts.cost_breakdown;
+  const group = facts.receipt_group;
+  const difference = breakdown.difference_cents;
+  const reconciliation = difference === null
+    ? "Incomplete — final USD amount is unknown"
+    : difference === 0
+      ? "Reconciled exactly"
+      : `${formatCents(Math.abs(difference))} ${difference > 0 ? "unitemized" : "over-itemized"}${breakdown.acknowledged ? " — acknowledged" : ""}`;
+  const groupRows = group.batches.map((batch) => `<li><strong>${escapeHtml(batch.batch_code)}</strong><span>${escapeHtml(batch.product_name || "Unnamed product")}</span><em>${formatCents(batch.final_usd_paid_cents)}</em></li>`).join("");
+  return `<section class="acquisition-facts" aria-labelledby="acquisition-facts-title">
+    <div class="acquisition-facts-head"><div><span>Phase 3 Acquisition Facts</span><h3 id="acquisition-facts-title">${escapeHtml(facts.product_name || "Acquisition details incomplete")}</h3><p>USD is authoritative. Original-currency values are reference only; no FX calculation is performed.</p></div><button class="button secondary" data-action="edit-acquisition">${icon("receipt-text")}Edit acquisition</button></div>
+    <div class="acquisition-facts-grid">
+      <div><span>Final USD paid</span><strong>${cost.known ? formatCents(cost.final_usd_paid_cents) : "Cost Unknown / Incomplete"}</strong><small>Authoritative landed cost</small></div>
+      <div><span>Acquisition mode</span><strong>${escapeHtml(titleCase(facts.economics_mode))}</strong><small>${facts.units_acquired === null ? "Quantity incomplete" : `${facts.units_acquired} sealed unit(s)`}</small></div>
+      <div><span>Receipt / Group</span><strong>${escapeHtml(group.reference || "Not grouped")}</strong><small>Informational link only</small></div>
+      <div><span>USD reconciliation</span><strong>${escapeHtml(reconciliation)}</strong><small>Components: ${formatCents(breakdown.component_total_cents, "$0.00")}</small></div>
+    </div>
+    <details><summary>Cost breakdown and references</summary><div class="acquisition-breakdown">
+      <div><span>Subtotal</span><strong>${formatCents(breakdown.purchase_subtotal_cents)}</strong></div>
+      <div><span>Tax</span><strong>${formatCents(breakdown.acquisition_tax_cents)}</strong></div>
+      <div><span>Inbound shipping</span><strong>${formatCents(breakdown.inbound_shipping_cents)}</strong></div>
+      <div><span>Fees</span><strong>${formatCents(breakdown.acquisition_fees_cents)}</strong></div>
+      <div><span>Discounts</span><strong>${formatCents(breakdown.acquisition_discount_cents)}</strong></div>
+      <div><span>Original reference</span><strong>${facts.original_foreign_amount_minor === null ? "Not provided" : `${escapeHtml(facts.original_currency)} ${centsInputValue(facts.original_foreign_amount_minor)}`}</strong></div>
+    </div></details>
+    ${group.reference ? `<details><summary>Receipt / Acquisition Group (${group.batches.length} batch${group.batches.length === 1 ? "" : "es"})</summary><ul class="receipt-group-list">${groupRows}</ul><p class="acquisition-notice">${escapeHtml(group.notice)}</p></details>` : ""}
+    <div class="acquisition-version">Status: ${escapeHtml(facts.economics_status)} · Calculation version: ${escapeHtml(facts.calculation_version)}</div>
+  </section>`;
+}
+
 async function renderBatch(id) {
   loading();
   try {
-    const [data, economics] = await Promise.all([
+    const [data, economics, acquisition] = await Promise.all([
       api(`/api/batches/${id}`),
       api(`/api/batches/${id}/economics/estimate`),
+      api(`/api/batches/${id}/economics`),
     ]);
     data.economics = economics;
+    data.acquisition = acquisition;
     state.activeBatch = data;
     const b = data.batch;
     const validSkus = new Set(data.cards.map((card) => card.sku));
     state.selectedBatchCards = new Set([...state.selectedBatchCards].filter((sku) => validSkus.has(sku)));
     app.innerHTML = `<div class="view-stack">
       <div class="section-header"><div><button class="button secondary" data-action="back-batches">${icon("arrow-left")}All Batches</button></div>${b.status === "OPEN" ? `<button class="button primary" data-action="complete-batch" data-id="${b.id}">${icon("printer")}Finish & Print Labels</button>` : `<div class="batch-actions"><span class="badge green">Complete</span><button class="button primary" data-action="reopen-batch" data-id="${b.id}">${icon("plus")}Add More Cards</button></div>`}</div>
+      ${acquisitionFactsPanel(acquisition)}
       ${estimatedEconomicsPanel(economics)}
       <div class="batch-workspace">
         <aside class="batch-summary"><h3>${escapeHtml(b.batch_code)}</h3><div class="detail-list">
@@ -525,6 +577,52 @@ async function renderBatch(id) {
     }
     document.querySelector("#bulk-images")?.addEventListener("change", addBulkScans);
   } catch (error) { showError(error); }
+}
+
+function acquisitionEditForm(facts) {
+  const b = facts.cost_breakdown;
+  const modeOptions = [
+    ["SEALED_RIP", "Sealed product / rip"],
+    ["SINGLES_KNOWN_COST", "Purchased singles — known line costs"],
+    ["SINGLES_LUMP_SUM", "Purchased singles — lump-sum lot"],
+  ];
+  return `<form id="acquisition-edit-form" data-id="${facts.batch_id}"><div class="form-grid">
+    <label>Economics mode<select name="economics_mode">${modeOptions.map(([value, label]) => `<option value="${value}" ${facts.economics_mode === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+    <label>Product / lot name<input name="product_name" required value="${escapeHtml(facts.product_name)}"></label>
+    <label>Product code<input name="product_code" value="${escapeHtml(facts.product_code)}"></label>
+    <label>Units acquired<input name="units_acquired" type="number" min="0" step="1" value="${facts.units_acquired ?? ""}"></label>
+    <label>Receipt / Acquisition Group<input name="receipt_group_reference" value="${escapeHtml(facts.receipt_group.reference)}"></label>
+    <label>Invoice / order reference<input name="invoice_reference" value="${escapeHtml(facts.invoice_reference)}"></label>
+    <label>Purchase subtotal<div class="money-input"><span>$</span><input name="purchase_subtotal" type="number" min="0" step=".01" value="${centsInputValue(b.purchase_subtotal_cents)}"></div></label>
+    <label>Tax<div class="money-input"><span>$</span><input name="acquisition_tax" type="number" min="0" step=".01" value="${centsInputValue(b.acquisition_tax_cents)}"></div></label>
+    <label>Inbound shipping<div class="money-input"><span>$</span><input name="inbound_shipping" type="number" min="0" step=".01" value="${centsInputValue(b.inbound_shipping_cents)}"></div></label>
+    <label>Acquisition fees<div class="money-input"><span>$</span><input name="acquisition_fees" type="number" min="0" step=".01" value="${centsInputValue(b.acquisition_fees_cents)}"></div></label>
+    <label>Discounts / credits<div class="money-input"><span>$</span><input name="acquisition_discount" type="number" min="0" step=".01" value="${centsInputValue(b.acquisition_discount_cents)}"></div></label>
+    <label>Final USD actually paid<div class="money-input"><span>$</span><input name="final_usd_paid" type="number" min="0" step=".01" value="${centsInputValue(facts.authoritative_cost.final_usd_paid_cents)}"></div></label>
+    <label>Original currency<input name="original_currency" maxlength="3" value="${escapeHtml(facts.original_currency)}"></label>
+    <label>Original foreign amount<input name="original_foreign_amount" type="number" min="0" step=".01" value="${centsInputValue(facts.original_foreign_amount_minor)}"></label>
+    <label class="full checkbox-label"><input name="cost_reconciliation_acknowledged" type="checkbox" value="1" ${b.acknowledged ? "checked" : ""}>Acknowledge an intentional difference. DEX still uses final USD paid as authoritative.</label>
+  </div><div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Cancel</button><button class="button primary">${icon("save")}Save acquisition facts</button></div></form>`;
+}
+
+function openAcquisitionEdit() {
+  const facts = state.activeBatch?.acquisition;
+  if (!facts) return;
+  openModal("Acquisition Facts", "Receipt groups link batches but never allocate shared costs automatically.", acquisitionEditForm(facts));
+  document.querySelector("#acquisition-edit-form").addEventListener("submit", saveAcquisition);
+}
+
+async function saveAcquisition(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const batchId = form.dataset.id;
+  const payload = Object.fromEntries(new FormData(form).entries());
+  payload.cost_reconciliation_acknowledged = form.elements.cost_reconciliation_acknowledged.checked;
+  try {
+    await api(`/api/batches/${batchId}/economics`, { method: "PATCH", body: JSON.stringify(payload) });
+    closeModal(); toast("Acquisition facts updated and audited.");
+    await renderBatch(batchId);
+  } catch (error) { toast(error.message, "error"); }
 }
 
 function changeGroupForm(batch) {
@@ -1157,6 +1255,7 @@ document.addEventListener("click", async (event) => {
     if (action === "complete-batch") completeBatch(actionEl.dataset.id);
     if (action === "reopen-batch") reopenBatch(actionEl.dataset.id);
     if (action === "change-group") openChangeGroup();
+    if (action === "edit-acquisition") openAcquisitionEdit();
     if (action === "edit-card") openEditCard(actionEl.dataset.sku);
     if (action === "reprint-label") reprintLabel(actionEl.dataset.sku);
     if (action === "copy-sku") copySku(actionEl.dataset.sku);

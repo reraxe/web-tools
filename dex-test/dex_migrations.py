@@ -28,7 +28,43 @@ class MigrationError(RuntimeError):
     """Raised after a failed migration has been rolled back."""
 
 
-DEFAULT_MIGRATIONS: tuple[Migration, ...] = ()
+def _phase3_acquisition_facts(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(batches)")}
+    additions = (
+        ("economics_mode", "TEXT NOT NULL DEFAULT 'LEGACY' CHECK (economics_mode IN ('LEGACY', 'SEALED_RIP', 'SINGLES_KNOWN_COST', 'SINGLES_LUMP_SUM'))"),
+        ("economics_status", "TEXT NOT NULL DEFAULT 'ESTIMATED' CHECK (economics_status IN ('ESTIMATED', 'DRAFT', 'FINALIZED'))"),
+        ("product_name", "TEXT NOT NULL DEFAULT ''"),
+        ("product_code", "TEXT NOT NULL DEFAULT ''"),
+        ("receipt_group_reference", "TEXT NOT NULL DEFAULT ''"),
+        ("invoice_reference", "TEXT NOT NULL DEFAULT ''"),
+        ("reporting_currency", "TEXT NOT NULL DEFAULT 'USD' CHECK (reporting_currency = 'USD')"),
+        ("original_currency", "TEXT NOT NULL DEFAULT ''"),
+        ("original_foreign_amount_minor", "INTEGER CHECK (original_foreign_amount_minor IS NULL OR original_foreign_amount_minor >= 0)"),
+        ("final_usd_paid_cents", "INTEGER CHECK (final_usd_paid_cents IS NULL OR final_usd_paid_cents >= 0)"),
+        ("units_acquired", "INTEGER CHECK (units_acquired IS NULL OR units_acquired >= 0)"),
+        ("purchase_subtotal_cents", "INTEGER CHECK (purchase_subtotal_cents IS NULL OR purchase_subtotal_cents >= 0)"),
+        ("acquisition_tax_cents", "INTEGER CHECK (acquisition_tax_cents IS NULL OR acquisition_tax_cents >= 0)"),
+        ("inbound_shipping_cents", "INTEGER CHECK (inbound_shipping_cents IS NULL OR inbound_shipping_cents >= 0)"),
+        ("acquisition_fees_cents", "INTEGER CHECK (acquisition_fees_cents IS NULL OR acquisition_fees_cents >= 0)"),
+        ("acquisition_discount_cents", "INTEGER CHECK (acquisition_discount_cents IS NULL OR acquisition_discount_cents >= 0)"),
+        ("cost_reconciliation_acknowledged", "INTEGER NOT NULL DEFAULT 0 CHECK (cost_reconciliation_acknowledged IN (0, 1))"),
+        ("acquisition_updated_at", "TEXT"),
+    )
+    for name, declaration in additions:
+        if name not in columns:
+            connection.execute(f"ALTER TABLE batches ADD COLUMN {name} {declaration}")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_batches_receipt_group ON batches(receipt_group_reference)"
+    )
+
+
+DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        "0001_phase3_acquisition_facts",
+        "add Phase 3 acquisition facts and receipt group references",
+        _phase3_acquisition_facts,
+    ),
+)
 
 
 def _create_ledger(connection: sqlite3.Connection) -> None:

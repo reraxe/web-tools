@@ -194,6 +194,104 @@ class DexApiTest(unittest.TestCase):
             }
         self.assertEqual(after, before)
 
+    def test_phase3_acquisition_facts_receipt_group_audit_and_csv(self):
+        common = {
+            "game": "One Piece",
+            "set_code": "OP16",
+            "set_name": "The Time of Battle",
+            "color": "Yellow",
+            "finish_group": "Sealed",
+            "acquisition_type": "Booster Box",
+            "economics_mode": "SEALED_RIP",
+            "receipt_group_reference": "phase3-receipt-001",
+            "invoice_reference": "ORDER-PHASE3",
+        }
+        status, boxes = self.request(
+            "/api/batches", "POST",
+            common | {
+                "product_name": "OP16 Booster Box",
+                "product_code": "OP16-BOX",
+                "units_acquired": 6,
+                "original_currency": "CAD",
+                "original_foreign_amount": "900.00",
+                "purchase_subtotal": "600.00",
+                "acquisition_tax": "48.00",
+                "inbound_shipping": "15.00",
+                "acquisition_fees": "2.00",
+                "acquisition_discount": "5.00",
+                "final_usd_paid": "660.00",
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(boxes["total_cost"], 660.0)
+        self.assertEqual(boxes["final_usd_paid_cents"], 66000)
+
+        status, decks = self.request(
+            "/api/batches", "POST",
+            common | {
+                "set_code": "ST27",
+                "set_name": "Starter Deck 27",
+                "acquisition_type": "Starter Deck",
+                "product_name": "ST27 Starter Deck",
+                "product_code": "ST27-DECK",
+                "units_acquired": 2,
+                "purchase_subtotal": "80.00",
+                "acquisition_tax": "6.40",
+                "inbound_shipping": "0.00",
+                "acquisition_fees": "0.00",
+                "acquisition_discount": "0.00",
+                "final_usd_paid": "86.40",
+            },
+        )
+        self.assertEqual(status, 201)
+
+        _, facts = self.request(f"/api/batches/{boxes['id']}/economics")
+        self.assertEqual(facts["authoritative_cost"]["final_usd_paid_cents"], 66000)
+        self.assertTrue(facts["cost_breakdown"]["reconciled"])
+        self.assertEqual(facts["receipt_group"]["reference"], "PHASE3-RECEIPT-001")
+        self.assertEqual(len(facts["receipt_group"]["batches"]), 2)
+        self.assertEqual(facts["receipt_group"]["known_assigned_cost_cents"], 74640)
+        self.assertIn("not allocated automatically", facts["receipt_group"]["notice"])
+
+        with self.assertRaises(urllib.error.HTTPError) as mismatch_error:
+            self.request(
+                f"/api/batches/{boxes['id']}/economics", "PATCH",
+                {"final_usd_paid": "665.00", "cost_reconciliation_acknowledged": False},
+            )
+        self.assertEqual(mismatch_error.exception.code, 400)
+        mismatch_body = json.loads(mismatch_error.exception.read())
+        self.assertIn("$5.00 above", mismatch_body["error"])
+
+        _, updated = self.request(
+            f"/api/batches/{boxes['id']}/economics", "PATCH",
+            {"final_usd_paid": "665.00", "cost_reconciliation_acknowledged": True},
+        )
+        self.assertEqual(updated["authoritative_cost"]["final_usd_paid_cents"], 66500)
+        self.assertEqual(updated["cost_breakdown"]["difference_cents"], 500)
+        self.assertTrue(updated["cost_breakdown"]["acknowledged"])
+        with self.dex.connect() as db:
+            batch_row = db.execute("SELECT * FROM batches WHERE id = ?", (boxes["id"],)).fetchone()
+            audit = db.execute(
+                "SELECT action_type, payload FROM activity_log WHERE action_type='ACQUISITION_UPDATE' ORDER BY id DESC"
+            ).fetchone()
+        self.assertEqual(batch_row["total_cost"], 665.0)
+        self.assertEqual(audit["action_type"], "ACQUISITION_UPDATE")
+        self.assertIn("final_usd_paid_cents", json.loads(audit["payload"])["changes"])
+
+        with urllib.request.urlopen(self.base + "/api/export/inventory.csv", timeout=5) as response:
+            header = response.read().decode("utf-8-sig").splitlines()[0]
+        self.assertIn("receipt_group_reference", header)
+        self.assertIn("final_usd_paid_cents", header)
+
+        with self.dex.connect() as db:
+            db.execute("UPDATE batches SET economics_status='FINALIZED' WHERE id = ?", (decks["id"],))
+        with self.assertRaises(urllib.error.HTTPError) as finalized_error:
+            self.request(
+                f"/api/batches/{decks['id']}/economics", "PATCH",
+                {"product_name": "Silently rewritten"},
+            )
+        self.assertEqual(finalized_error.exception.code, 400)
+
     def test_scan_filename_pairing(self):
         with tempfile.TemporaryDirectory() as folder:
             paths = [Path(folder) / name for name in ("001_front.png", "001_back.png", "002.png", "003.png")]
@@ -455,9 +553,16 @@ class DexApiTest(unittest.TestCase):
                 with self.dex.connect() as db:
                     columns = {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
                     indexes = {row["name"] for row in db.execute("PRAGMA index_list(cards)")}
+                    batch_columns = {row["name"] for row in db.execute("PRAGMA table_info(batches)")}
+                    migration = db.execute(
+                        "SELECT migration_id FROM schema_migrations WHERE migration_id='0001_phase3_acquisition_facts'"
+                    ).fetchone()
                 self.assertIn("source_card_id", columns)
                 self.assertIn("match_confidence", columns)
                 self.assertIn("idx_cards_source", indexes)
+                self.assertIn("final_usd_paid_cents", batch_columns)
+                self.assertIn("receipt_group_reference", batch_columns)
+                self.assertIsNotNone(migration)
             finally:
                 (
                     self.dex.DATA_DIR,

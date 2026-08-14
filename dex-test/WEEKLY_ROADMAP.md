@@ -61,9 +61,9 @@ Goal: connect acquisition cost to sealed inventory, partial rips, resulting phys
 
 Implementation gates:
 
-- Phase 1: transactional migration foundation, deterministic exact-cent allocation, and approved-rule fixtures.
-- Phase 2: read-only estimated legacy economics.
-- Phase 3: acquisition cost facts and Receipt/Acquisition Groups.
+- Phase 1: complete — transactional migration foundation, deterministic exact-cent allocation, and approved-rule fixtures.
+- Phase 2: complete — read-only estimated legacy economics.
+- Phase 3: complete — acquisition cost facts and informational Receipt/Acquisition Groups.
 - Phase 4: explicit rip sessions, bulk reserves, and immutable card basis.
 - Phase 5: sealed-unit inventory and separate sealed-product sales.
 - Phase 6: batch economics UI and versioned exports.

@@ -28,6 +28,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from dex_acquisition import EDITABLE_FIELDS, acquisition_payload, normalize_acquisition_input
 from dex_migrations import apply_migrations
 from dex_legacy_economics import estimate_legacy_batch, open_readonly_database
 
@@ -1044,13 +1045,43 @@ def seed_demo() -> None:
             """
             INSERT INTO batches (
                 batch_code, created_at, status, game, set_code, set_name, color,
-                finish_group, acquisition_type, total_cost, location
+                finish_group, acquisition_type, total_cost, location,
+                economics_mode, economics_status, product_name, product_code,
+                receipt_group_reference, invoice_reference, reporting_currency,
+                original_currency, original_foreign_amount_minor,
+                final_usd_paid_cents, units_acquired, purchase_subtotal_cents,
+                acquisition_tax_cents, inbound_shipping_cents,
+                acquisition_fees_cents, acquisition_discount_cents,
+                acquisition_updated_at
             ) VALUES (?, ?, 'OPEN', 'One Piece', 'OP16', 'The Azure Sea''s Seven',
-                      'Yellow', 'Rare / Foil', 'Booster Box', 114.99, 'OP16-Yellow')
+                      'Yellow', 'Rare / Foil', 'Booster Box', 660.00, 'OP16-Yellow',
+                      'SEALED_RIP', 'DRAFT', 'OP16 Booster Box', 'OP16-BOX',
+                      'DEMO-RECEIPT-001', 'DEMO-ORDER-001', 'USD', 'CAD', 90000,
+                      66000, 6, 60000, 4800, 1500, 200, 500, ?)
             """,
-            (code, now),
+            (code, now, now),
         )
         batch_id = cursor.lastrowid
+        second_code = make_batch_code(db, "One Piece")
+        db.execute(
+            """
+            INSERT INTO batches (
+                batch_code, created_at, status, game, set_code, set_name, color,
+                finish_group, acquisition_type, total_cost, location,
+                economics_mode, economics_status, product_name, product_code,
+                receipt_group_reference, invoice_reference, reporting_currency,
+                final_usd_paid_cents, units_acquired, purchase_subtotal_cents,
+                acquisition_tax_cents, inbound_shipping_cents,
+                acquisition_fees_cents, acquisition_discount_cents,
+                acquisition_updated_at
+            ) VALUES (?, ?, 'OPEN', 'One Piece', 'ST27', 'Starter Deck 27',
+                      'Mixed', 'Sealed', 'Starter Deck', 86.40, 'ST27-Sealed',
+                      'SEALED_RIP', 'DRAFT', 'ST27 Starter Deck', 'ST27-DECK',
+                      'DEMO-RECEIPT-001', 'DEMO-ORDER-001', 'USD',
+                      8640, 2, 8000, 640, 0, 0, 0, ?)
+            """,
+            (second_code, now, now),
+        )
         demo = [
             ("OP16-112", "Boa Hancock", "Super Rare", 6.25, 8.41, 11.80, "TCGplayer"),
             ("OP16-042", "Kikunojo", "Rare", 1.19, 1.88, 2.75, "TCGplayer"),
@@ -1145,9 +1176,19 @@ class DexHandler(BaseHTTPRequestHandler):
                        o.shipping_collected AS order_shipping_collected,
                        o.platform_fees AS order_platform_fees,
                        o.postage_cost AS order_postage_cost,
-                       CASE WHEN o.id IS NULL THEN NULL ELSE
-                           o.subtotal + o.shipping_collected - o.platform_fees - o.postage_cost
-                       END AS order_net_proceeds
+                        CASE WHEN o.id IS NULL THEN NULL ELSE
+                            o.subtotal + o.shipping_collected - o.platform_fees - o.postage_cost
+                        END AS order_net_proceeds,
+                        b.economics_mode, b.economics_status, b.product_name,
+                        b.product_code, b.receipt_group_reference, b.invoice_reference,
+                        b.reporting_currency, b.original_currency,
+                        b.original_foreign_amount_minor,
+                        b.final_usd_paid_cents, b.units_acquired,
+                        b.purchase_subtotal_cents, b.acquisition_tax_cents,
+                        b.inbound_shipping_cents, b.acquisition_fees_cents,
+                        b.acquisition_discount_cents,
+                        b.cost_reconciliation_acknowledged,
+                        b.acquisition_updated_at
                 FROM cards c
                 JOIN batches b ON b.id = c.batch_id
                 LEFT JOIN sale_items si ON si.card_id = c.id
@@ -1165,7 +1206,14 @@ class DexHandler(BaseHTTPRequestHandler):
             "market_high", "market_updated_at", "listing_platform", "listing_price",
             "sale_price", "sold_at", "sale_platform", "order_number",
             "order_subtotal", "order_shipping_collected", "order_platform_fees",
-            "order_postage_cost", "order_net_proceeds",
+            "order_postage_cost", "order_net_proceeds", "economics_mode",
+            "economics_status", "product_name", "product_code",
+            "receipt_group_reference", "invoice_reference", "reporting_currency",
+            "original_currency", "original_foreign_amount_minor",
+            "final_usd_paid_cents", "units_acquired", "purchase_subtotal_cents",
+            "acquisition_tax_cents", "inbound_shipping_cents",
+            "acquisition_fees_cents", "acquisition_discount_cents",
+            "cost_reconciliation_acknowledged", "acquisition_updated_at",
         ]
         writer.writerow(headers)
         writer.writerows(tuple(row) for row in rows)
@@ -1274,6 +1322,14 @@ class DexHandler(BaseHTTPRequestHandler):
                     self.send_error_json("Batch not found", 404)
                 else:
                     self.send_json(estimate)
+            elif re.fullmatch(r"/api/batches/\d+/economics", path):
+                batch_id = int(path.split("/")[3])
+                with connect() as db:
+                    facts = acquisition_payload(db, batch_id)
+                if facts is None:
+                    self.send_error_json("Batch not found", 404)
+                else:
+                    self.send_json(facts)
             elif re.fullmatch(r"/api/batches/\d+", path):
                 batch_id = int(path.rsplit("/", 1)[-1])
                 with connect() as db:
@@ -1432,31 +1488,55 @@ class DexHandler(BaseHTTPRequestHandler):
                 acquisition = clean_text(payload.get("acquisition_type"), 40)
                 if game not in GAME_PREFIXES or not set_code or not acquisition:
                     raise ValueError("Game, set, and acquisition type are required")
+                economics = None
+                if "economics_mode" in payload:
+                    economics = normalize_acquisition_input(payload)
                 with connect() as db:
                     code = make_batch_code(db, game)
                     location = clean_text(payload.get("location"), 80)
                     if not location:
                         color = clean_text(payload.get("color"), 40)
                         location = f"{set_code}-{color}" if color else set_code
+                    now = utcnow()
+                    base_fields = {
+                        "batch_code": code,
+                        "created_at": now,
+                        "game": game,
+                        "set_code": set_code,
+                        "set_name": clean_text(payload.get("set_name")),
+                        "color": clean_text(payload.get("color"), 40),
+                        "finish_group": clean_text(payload.get("finish_group"), 60) or "Non-Foil",
+                        "default_condition": clean_text(payload.get("default_condition"), 40) or "Near Mint",
+                        "acquisition_type": acquisition,
+                        "total_cost": money(payload.get("total_cost")),
+                        "location": location,
+                        "notes": clean_text(payload.get("notes"), 500),
+                        "scan_order": "BACK_FIRST" if payload.get("scan_order") == "BACK_FIRST" else "FRONT_FIRST",
+                        "scan_mode": "FRONT_ONLY" if payload.get("scan_mode") == "FRONT_ONLY" else "FRONT_BACK",
+                    }
+                    if economics is not None:
+                        for field in EDITABLE_FIELDS:
+                            base_fields[field] = economics[field]
+                        base_fields["reporting_currency"] = "USD"
+                        base_fields["economics_status"] = (
+                            "ESTIMATED" if economics["economics_mode"] == "LEGACY" else "DRAFT"
+                        )
+                        base_fields["acquisition_updated_at"] = now
+                        final_cents = economics["final_usd_paid_cents"]
+                        base_fields["total_cost"] = 0.0 if final_cents is None else final_cents / 100
+                    columns = ", ".join(base_fields)
+                    placeholders = ", ".join("?" for _ in base_fields)
                     cursor = db.execute(
-                        """
-                        INSERT INTO batches (
-                            batch_code, created_at, game, set_code, set_name, color,
-                            finish_group, default_condition, acquisition_type,
-                            total_cost, location, notes, scan_order, scan_mode
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            code, utcnow(), game, set_code, clean_text(payload.get("set_name")),
-                            clean_text(payload.get("color"), 40),
-                            clean_text(payload.get("finish_group"), 60) or "Non-Foil",
-                            clean_text(payload.get("default_condition"), 40) or "Near Mint",
-                            acquisition, money(payload.get("total_cost")), location,
-                            clean_text(payload.get("notes"), 500),
-                            "BACK_FIRST" if payload.get("scan_order") == "BACK_FIRST" else "FRONT_FIRST",
-                            "FRONT_ONLY" if payload.get("scan_mode") == "FRONT_ONLY" else "FRONT_BACK",
-                        ),
+                        f"INSERT INTO batches ({columns}) VALUES ({placeholders})",
+                        tuple(base_fields.values()),
                     )
+                    if economics is not None:
+                        log_action(
+                            db,
+                            "ACQUISITION_CREATE",
+                            f"Recorded acquisition facts for {code}",
+                            {"batch_id": cursor.lastrowid, "facts": {field: economics[field] for field in EDITABLE_FIELDS}},
+                        )
                     batch = dict(db.execute("SELECT * FROM batches WHERE id = ?", (cursor.lastrowid,)).fetchone())
                 (INBOUND_DIR / code).mkdir(parents=True, exist_ok=True)
                 self.send_json(batch, 201)
@@ -1779,6 +1859,47 @@ class DexHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path.rstrip("/")
         try:
             payload = self.read_json()
+            economics_match = re.fullmatch(r"/api/batches/(\d+)/economics", path)
+            if economics_match:
+                batch_id = int(economics_match.group(1))
+                with DB_LOCK, connect() as db:
+                    previous = db.execute(
+                        "SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)
+                    ).fetchone()
+                    if not previous:
+                        self.send_error_json("Batch not found", 404)
+                        return
+                    if previous["economics_status"] == "FINALIZED":
+                        raise ValueError("Finalized economics require the audited correction workflow")
+                    economics = normalize_acquisition_input(payload, dict(previous))
+                    updates = {field: economics[field] for field in EDITABLE_FIELDS}
+                    updates["reporting_currency"] = "USD"
+                    updates["economics_status"] = (
+                        "ESTIMATED" if economics["economics_mode"] == "LEGACY" else "DRAFT"
+                    )
+                    updates["acquisition_updated_at"] = utcnow()
+                    final_cents = economics["final_usd_paid_cents"]
+                    updates["total_cost"] = 0.0 if final_cents is None else final_cents / 100
+                    changed = {
+                        field: {"before": previous[field], "after": value}
+                        for field, value in updates.items()
+                        if previous[field] != value
+                    }
+                    if changed:
+                        assignments = ", ".join(f"{field} = ?" for field in updates)
+                        db.execute(
+                            f"UPDATE batches SET {assignments} WHERE id = ?",
+                            [*updates.values(), batch_id],
+                        )
+                        log_action(
+                            db,
+                            "ACQUISITION_UPDATE",
+                            f"Updated acquisition facts for {previous['batch_code']}",
+                            {"batch_id": batch_id, "changes": changed},
+                        )
+                    facts = acquisition_payload(db, batch_id)
+                self.send_json(facts)
+                return
             batch_match = re.fullmatch(r"/api/batches/(\d+)", path)
             if batch_match:
                 allowed = {"color", "finish_group", "location", "scan_order", "scan_mode"}

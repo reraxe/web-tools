@@ -55,6 +55,7 @@ dex_legacy_economics.py
 static/index.html
 static/app.js
 static/styles.css
+scripts/preprod_phase2_gate.sh
 tests/test_app.py
 tests/test_phase1_migrations.py
 tests/test_phase1_economics.py

@@ -213,6 +213,7 @@ Future rules can include:
 - Connect acquisition cost to sealed units, rip sessions, resulting physical cards, sales, remaining value, cost recovery, and operational profit/loss.
 - Preserve estimate-only legacy economics until an operator explicitly finalizes a guided conversion.
 - Deliver the approved work in gated phases, ending with Operational Economics.
+- Phase 3 currently records authoritative USD acquisition facts and informational Receipt/Acquisition Groups; rip allocation and permanent basis remain deferred to Phase 4.
 
 ### v2.2-test
 

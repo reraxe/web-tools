@@ -27,6 +27,9 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 - `static/index.html`: browser interface.
 - `static/app.js` and `static/styles.css`: frontend behavior and styling.
 - `app.py`: web API, scanner-folder watcher, and SQLite access.
+- `dex_acquisition.py`: Phase 3 acquisition-fact validation, exact-cent normalization, and receipt-group reporting.
+- `dex_migrations.py`: transactional, versioned SQLite migrations and migration ledger.
+- `dex_legacy_economics.py`: read-only Phase 2 legacy economics estimates.
 - `Dockerfile`: production image build.
 - `Jenkinsfile`: Docker build and container smoke test.
 - `compose.yaml`: persistent home-server deployment.
@@ -44,6 +47,8 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 7. Scan sleeve QR codes into an eBay or TCGplayer outbound order.
 
 Existing batches also show a read-only **Estimated Economics** panel in v2.1-test Phase 2. The panel is explicitly estimate-only, reports valuation coverage and freshness, and never assigns permanent cost basis or converts legacy inventory.
+
+Phase 3 adds a separate **Acquisition Cost Facts** panel and editor. A batch may record an acquisition mode, one homogeneous product and quantity, final USD paid, itemized cost components, optional original-currency reference values, invoice reference, and Receipt/Acquisition Group reference. Final USD paid is authoritative. Linked receipt groups are informational and never allocate shared shipping, tax, fees, or discounts automatically. Phase 3 does not create rip sessions, permanent card basis, sealed sales, or economics finalization.
 
 The database is the source of truth. A complete inventory CSV can be downloaded at any time for reporting or an additional portable backup.
 
@@ -66,6 +71,8 @@ To preview the interface with sample cards:
 $env:DEX_SEED_DEMO="1"
 python app.py
 ```
+
+The disposable demo includes two homogeneous sealed-product batches on `DEMO-RECEIPT-001`: six OP16 booster boxes at $660.00 and two ST27 starter decks at $86.40. Their assigned batch costs reconcile to $746.40 while remaining separate batches.
 
 ## Debian Docker deployment
 
@@ -90,7 +97,7 @@ The persistent folders are:
 
 The SQLite database is stored at `storage/dex.db` on the host through the `/data` container volume. Rebuilding or replacing the image does not remove inventory data.
 
-When upgrading an older Dex database to `v2.0-test`, Dex automatically adds the SAM matching columns and indexes during startup. Keep the existing `storage/` folder mounted so the upgrade runs against the real inventory database.
+When upgrading an older Dex database, Dex keeps the existing SAM compatibility behavior and applies the registered Phase 3 acquisition-fact migration once. Always test the release against a disposable legacy database copy before an operator-approved production upgrade; see [`MIGRATION_NOTES_v2.1-test.md`](MIGRATION_NOTES_v2.1-test.md).
 
 ### SAM source database
 
@@ -102,7 +109,7 @@ See [`SAM_SOURCE_DATABASE_PLAN.md`](SAM_SOURCE_DATABASE_PLAN.md) for the recomme
 
 ## Jenkins image build
 
-Point a Pipeline job at this GitHub repository. Jenkins reads `Jenkinsfile`, builds the image, starts a temporary container, checks `/api/health`, and tags successful `main` builds as `dex:v2.0-test`.
+Point a Pipeline job at this GitHub repository. Jenkins reads `Jenkinsfile`, builds the image, starts a temporary container, and checks `/api/health`. Image tags, branches, and live deployment remain operator-controlled; inspect the current Jenkins and Compose files before any server action.
 
 The Jenkins agent needs Docker access. A registry push stage can be added using the server's existing Jenkins credentials and naming convention.
 
@@ -136,6 +143,6 @@ Back up the entire `storage/` folder using the server's normal backup system. It
 python -m unittest discover -s tests -v
 ```
 
-The suite covers batch creation, bulk SKU assignment, reopening, images, grouped inventory, settings, exports, pricing, TCGplayer capacity, undo, outbound sale completion, Recycle Bin behavior, SAM source matching, transactional migrations, deterministic cent allocation, and read-only legacy economics.
+The 35-test Phase 3 suite covers batch creation, bulk SKU assignment, reopening, images, grouped inventory, settings, exports, pricing, TCGplayer capacity, undo, outbound sale completion, Recycle Bin behavior, SAM source matching, transactional migrations, deterministic cent allocation, read-only legacy economics, acquisition validation, authoritative USD reconciliation, receipt groups, audit history, CSV compatibility, finalized-edit protection, runtime packaging, and disposable legacy migration compatibility.
 
-For the Git-ready Phase 2 checkpoint manifest, deployment warnings, rollback procedure, and post-upload validation steps, see [`RELEASE_CHECKPOINT_v2.1-test_PHASE2.md`](RELEASE_CHECKPOINT_v2.1-test_PHASE2.md). Migration behavior is documented in [`MIGRATION_NOTES_v2.1-test.md`](MIGRATION_NOTES_v2.1-test.md).
+The preserved Phase 2 restore point remains documented in [`RELEASE_CHECKPOINT_v2.1-test_PHASE2.md`](RELEASE_CHECKPOINT_v2.1-test_PHASE2.md). For the Phase 3 upload manifest, deployment warnings, rollback procedure, and validation steps, see [`RELEASE_CHECKPOINT_v2.1-test_PHASE3.md`](RELEASE_CHECKPOINT_v2.1-test_PHASE3.md). Migration behavior is documented in [`MIGRATION_NOTES_v2.1-test.md`](MIGRATION_NOTES_v2.1-test.md).

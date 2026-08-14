@@ -1,6 +1,6 @@
 # Dex v2.1-test Patch Notes
 
-Status: active development; Phase 2 complete
+Status: active development; Phase 3 complete
 
 ## Focus
 
@@ -29,9 +29,21 @@ This release is implemented in gated phases. Each phase must pass its complete t
 - Include calculation version `acquisition-rip-v1` in the response and panel.
 - Local app health metadata, footer, and frontend cache tags report `v2.1-test`; production deployment configuration remains unchanged.
 
+## Phase 3: Acquisition Cost Facts and Receipt/Acquisition Groups
+
+- Add authoritative acquisition facts to each batch without assigning permanent card basis.
+- Support `SEALED_RIP`, `SINGLES_KNOWN_COST`, and `SINGLES_LUMP_SUM` modes while keeping legacy batches estimate-only.
+- Store final USD paid and cost components in exact integer cents. Final USD paid is the sole authoritative amount; optional original currency and amount are reference-only.
+- Require correction or an explicit acknowledgement when entered components do not reconcile to final USD paid.
+- Preserve legacy `total_cost` compatibility by deterministically mirroring operator-entered final USD paid.
+- Link separate homogeneous product batches with an informational Receipt/Acquisition Group reference. DEX reports each batch's assigned cost and never allocates shared transaction charges automatically.
+- Add a batch acquisition editor, read API, audited material updates, finalized-edit protection, and backwards-compatible appended inventory CSV fields.
+- Add a transactional migration for acquisition columns and the receipt-group index. Existing legacy costs are not backfilled into permanent economics.
+- Expand the disposable demo with six OP16 booster boxes and two ST27 starter decks on one $746.40 receipt group.
+- Do not add rip sessions, card basis, sealed-unit inventory/sales, or economics finalization.
+
 ## Approved Remaining Phases
 
-- Phase 3: acquisition cost facts and Receipt/Acquisition Groups.
 - Phase 4: explicit rip sessions, unscanned-bulk reserves, and immutable card basis.
 - Phase 5: sealed-unit inventory and separate sealed-product sales.
 - Phase 6: batch economics UI and versioned exports.
@@ -42,22 +54,25 @@ This release is implemented in gated phases. Each phase must pass its complete t
 ## Compatibility and Deployment
 
 - Dex v2.0-test remains the documented baseline.
-- Phase 1 adds no acquisition-economics fields, screens, routes, or operator-visible workflow changes.
-- Existing databases gain only the internal `schema_migrations` ledger; Phase 2 adds no schema migration.
-- Production/server Docker, Compose, Jenkins, ports, volumes, containers, and tags are unchanged during Phase 1.
+- Phase 1 added no operator-visible behavior; Phase 2 remained strictly read-only.
+- Phase 3 adds the registered `0001_phase3_acquisition_facts` migration. It adds batch columns and a receipt-group index but does not backfill legacy cost into finalized economics.
+- Docker packaging includes every Python module imported by `app.py`. Compose, Jenkins, ports, volumes, containers, and server credentials remain unchanged and operator-controlled.
 
-## Phase 2 Checkpoint Test Results
+## Phase 3 Checkpoint Test Results
 
-- `python -m unittest discover -s tests -q`: 26 tests passed in 1.385 seconds in the isolated checkpoint package.
-- `node --check static/app.js`: passed.
-- A 2,500-card legacy batch preview averaged 11.37 ms over five runs; maximum 12.58 ms.
-- Read-only integration tests confirmed that preview requests do not mutate batches, cards, activity, or migration records.
+- `python -m unittest discover -s tests -q`: 35 tests passed in 1.411 seconds in the development workspace.
+- `node --check static/app.js`: passed with the bundled Node runtime.
+- Phase 3 validation, receipt-group, API, audit, CSV, finalized-lock, runtime-packaging, one-time migration, rollback, and UI-contract tests passed.
+- All Phase 1 and Phase 2 regression tests passed, including the existing 2,500-card performance guard.
+- Disposable migration tests confirmed the legacy source fixture remains unchanged and no permanent cost is backfilled.
+- A disposable seeded API smoke test confirmed 6 OP16 boxes at $660.00 plus 2 ST27 decks at $86.40 reconcile to $746.40 under one informational receipt group.
 
 ## Deployment Packaging Fix
 
 - Correct the Docker build so `dex_migrations.py`, `dex_economics.py`, and `dex_legacy_economics.py` are copied beside `/app/app.py`.
 - Add a build-time import assertion so an image build fails immediately if any required v2.1-test Python module is missing.
 - No application behavior, economics logic, database schema, or Phase 3 work is included in this fix.
+- Add `scripts/preprod_phase2_gate.sh`, an operator-confirmed, fail-closed pre-production gate that builds the dynamically resolved Compose image and validates it only against a timestamped SQLite/storage copy on a loopback-only temporary port.
 
 ## Verification
 

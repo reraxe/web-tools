@@ -383,7 +383,7 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 
 ### Phase 3: Acquisition cost facts and receipt groups
 
-- **Approval status:** approved with all previously approved decision amendments and the constraints below.
+- **Approval status:** approved and completed; all Phase 3 tests pass.
 - Add batch economics, optional foreign-currency reference fields, Receipt/Acquisition Group references, and cost-breakdown UI.
 - Preserve `total_cost` compatibility.
 - Add audit entries and CSV fields for acquisition changes.
