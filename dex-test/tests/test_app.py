@@ -156,10 +156,43 @@ class DexApiTest(unittest.TestCase):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v2.0-test")
+        self.assertEqual(health["version"], "v2.1-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)
+
+    def test_phase1_migration_ledger_initialized(self):
+        with self.dex.connect() as db:
+            table = db.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+            ).fetchone()
+        self.assertIsNotNone(table)
+
+    def test_phase2_estimated_economics_api_is_read_only(self):
+        _, batch = self.request(
+            "/api/batches", "POST",
+            {"game": "One Piece", "set_code": "OP16", "acquisition_type": "Booster Box", "total_cost": 120},
+        )
+        with self.dex.connect() as db:
+            before = {
+                "cards": db.execute("SELECT COUNT(*) FROM cards").fetchone()[0],
+                "activity": db.execute("SELECT COUNT(*) FROM activity_log").fetchone()[0],
+                "migrations": db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
+                "batch": tuple(db.execute("SELECT * FROM batches WHERE id = ?", (batch["id"],)).fetchone()),
+            }
+        status, estimate = self.request(f"/api/batches/{batch['id']}/economics/estimate")
+        self.assertEqual(status, 200)
+        self.assertEqual(estimate["state"], "ESTIMATED")
+        self.assertEqual(estimate["notice"], "Estimate only. Cost basis not finalized.")
+        self.assertIsNone(estimate["acquisition"]["authoritative_cost_cents"])
+        with self.dex.connect() as db:
+            after = {
+                "cards": db.execute("SELECT COUNT(*) FROM cards").fetchone()[0],
+                "activity": db.execute("SELECT COUNT(*) FROM activity_log").fetchone()[0],
+                "migrations": db.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0],
+                "batch": tuple(db.execute("SELECT * FROM batches WHERE id = ?", (batch["id"],)).fetchone()),
+            }
+        self.assertEqual(after, before)
 
     def test_scan_filename_pairing(self):
         with tempfile.TemporaryDirectory() as folder:

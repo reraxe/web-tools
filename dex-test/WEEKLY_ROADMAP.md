@@ -25,7 +25,7 @@ A test version can become stable after:
 - Recycle Bin/undo behavior works
 - user has run at least one real inventory session without major pain
 
-## Current Active Lane
+## Preserved Baseline
 
 ### v2.0-test: SAM One Piece Recognition
 
@@ -53,9 +53,36 @@ Potential promotion:
 
 See `DEX_OPERATING_MODEL.md` for the full Dex, SAM, Janna, and Project: Goose workflow.
 
+## Current Active Lane
+
+### v2.1-test: Acquisition and Rip Batch Economics
+
+Goal: connect acquisition cost to sealed inventory, partial rips, resulting physical cards, realized sales, remaining value, cost recovery, and operational profit/loss.
+
+Implementation gates:
+
+- Phase 1: transactional migration foundation, deterministic exact-cent allocation, and approved-rule fixtures.
+- Phase 2: read-only estimated legacy economics.
+- Phase 3: acquisition cost facts and Receipt/Acquisition Groups.
+- Phase 4: explicit rip sessions, bulk reserves, and immutable card basis.
+- Phase 5: sealed-unit inventory and separate sealed-product sales.
+- Phase 6: batch economics UI and versioned exports.
+- Phase 7A: corrections and dispositions.
+- Phase 7B: refunds, returns, chargebacks, and post-sale corrections.
+- Phase 7C: portfolio Operational Economics.
+
+Rules:
+
+- Finish and test each phase before starting the next.
+- Keep v2.0-test as the implementation baseline.
+- Keep production/server deployment configuration unchanged until an explicitly approved deployment step.
+- Treat DEX economics as operational reporting, not tax-accounting conclusions.
+
+See `PATCH_PLAN_ACQUISITION_RIP_BATCH.md` for the approved design and safeguards.
+
 ## Next Planned Versions
 
-### v2.1-test: What's New Hub
+### v2.2-test: What's New Hub
 
 Goal: put Dex updates, daily agenda, roadmap, and known issues inside the app.
 
@@ -73,7 +100,7 @@ Why next:
 - It helps us test weekly without losing track of what changed.
 - It makes Dex feel more like an operating system for the business.
 
-### v2.2-test: One Piece API Cache + Manual Market Watch
+### v2.3-test: One Piece API Cache + Manual Market Watch
 
 Goal: start Janna, the Market Watch layer, and turn Dex into a card knowledge and market awareness tool.
 
@@ -85,7 +112,7 @@ Scope:
 - Tag posts by game, set, marketplace, and watchlist.
 - Summarize market notes into hold, watch, list, and research signals.
 
-### v2.3-test: Inventory Signals
+### v2.4-test: Inventory Signals
 
 Goal: start Project: Goose as recommendation-only inventory and sales support.
 
@@ -98,7 +125,7 @@ Scope:
 - Show sell, hold, watch, and review recommendations from Janna signals.
 - Begin CardDex/MTGJSON source planning.
 
-### v2.4-test: Pricing Recommendations
+### v2.5-test: Pricing Recommendations
 
 Goal: let Goose suggest price changes without silently changing business-critical fields.
 
@@ -110,7 +137,7 @@ Scope:
 - Add one-click apply after user review.
 - Keep automatic price adjustment out of scope until the algorithm is proven.
 
-### v2.5-test: Portfolio Analytics
+### v2.6-test: Portfolio Analytics
 
 Goal: add stock-portfolio-style inventory value tracking.
 
@@ -125,7 +152,7 @@ Scope:
 
 See `PORTFOLIO_ANALYTICS_PLAN.md` for the full value graph, snapshot, and top-movers plan.
 
-### v2.6-test: Marketplace Connector Prep
+### v2.7-test: Marketplace Connector Prep
 
 Goal: prepare eBay connection once developer approval and HTTPS are ready.
 
@@ -137,7 +164,7 @@ Scope:
 - Listing/order mapping table.
 - No auto-posting until the flow is proven.
 
-### v2.7-test: Broader Card Knowledge Sources
+### v2.8-test: Broader Card Knowledge Sources
 
 Goal: expand source data planning beyond One Piece.
 

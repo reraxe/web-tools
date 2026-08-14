@@ -1,0 +1,15 @@
+[
+  {"id": "full_box_rip", "mode": "SEALED_RIP", "requires": ["exact_cent_allocation", "all_cards_accounted"]},
+  {"id": "partial_rip", "mode": "SEALED_RIP", "requires": ["authoritative_unit_cost", "sealed_quantity_reconciliation"]},
+  {"id": "known_cost_singles", "mode": "SINGLES_KNOWN_COST", "requires": ["actual_line_item_cost"]},
+  {"id": "lump_sum_singles", "mode": "SINGLES_LUMP_SUM", "requires": ["equal_default", "manual_override_before_finalization"]},
+  {"id": "sealed_only_sale", "order_type": "SEALED", "requires": ["no_card_lines", "stable_unit_ids"]},
+  {"id": "card_only_sale", "order_type": "CARD", "requires": ["no_sealed_lines", "stable_sale_allocation"]},
+  {"id": "rejected_mixed_order", "requires": ["reject_card_and_sealed_lines"]},
+  {"id": "partial_refund", "requires": ["immutable_event_id", "no_automatic_inventory_restore"]},
+  {"id": "recycle_and_disposition", "requires": ["reason_aware_treatment", "durable_history"]},
+  {"id": "known_quantity_bulk", "requires": ["same_equal_allocation_math"]},
+  {"id": "unknown_quantity_bulk", "requires": ["manual_basis_reserve", "incomplete_coverage"]},
+  {"id": "legacy_batch", "requires": ["estimate_only", "no_automatic_basis"]},
+  {"id": "receipt_group", "requires": ["informational_link_only", "no_automatic_cost_allocation"]}
+]

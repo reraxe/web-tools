@@ -209,26 +209,33 @@ Future rules can include:
 
 ### v2.1-test
 
+- Acquisition and Rip Batch Economics.
+- Connect acquisition cost to sealed units, rip sessions, resulting physical cards, sales, remaining value, cost recovery, and operational profit/loss.
+- Preserve estimate-only legacy economics until an operator explicitly finalizes a guided conversion.
+- Deliver the approved work in gated phases, ending with Operational Economics.
+
+### v2.2-test
+
 - What's New hub.
 - Roadmap and patch notes inside Dex.
 
-### v2.2-test
+### v2.3-test
 
 - Janna starts as manual Market Watch posts.
 - Market Watch notes stored in Dex.
 
-### v2.3-test
+### v2.4-test
 
 - Goose starts as inventory signals.
 - Show sell/hold/watch recommendations.
 - Show eBay/TCGplayer candidate status.
 
-### v2.4-test
+### v2.5-test
 
 - Add pricing recommendation fields.
 - Support one-click apply for reviewed price suggestions.
 
-### v2.5-test and Later
+### v2.6-test and Later
 
 - Add Portfolio Analytics for inventory value graphs and top movers.
 - Add marketplace connectors if API credentials and HTTPS are ready.

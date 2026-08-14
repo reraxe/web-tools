@@ -2,7 +2,9 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current release: **Dex v2.0-test**
+Current development release: **Dex v2.1-test**
+
+Documented implementation baseline: **Dex v2.0-test**. The v2.0-test SAM and inventory behavior remains the preserved baseline while v2.1-test Acquisition and Rip Batch Economics is developed in gated phases.
 
 ## Release policy
 
@@ -12,6 +14,7 @@ Current release: **Dex v2.0-test**
 - `v1.1b-test` added batch-first intake, bulk batch-card selection, bottom batch completion, unified set entry, and order-number search for sold cards.
 - `v1.2-stable` promotes the tested v1.1b workflow with the final searchable color picker for cleaner drawer labels.
 - `v2.0-test` starts SAM, the local source-database matcher for One Piece scan recognition.
+- `v2.1-test` adds Acquisition and Rip Batch Economics without overwriting the v2.0-test baseline or stable inventory data.
 - Test releases use a separate Docker tag, container, port, and storage volume so test data cannot affect stable inventory.
 - Stable releases are the versions intended for weeklong real inventory work before the next test lane begins.
 - Urgent fixes to a stable release use a patch version such as `v1.0.1-test` before promotion to `v1.0.1-stable`.
@@ -39,6 +42,8 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 5. Review and edit cards from the multi-card batch grid.
 6. Finish the batch and print all queued 2 x 1 labels.
 7. Scan sleeve QR codes into an eBay or TCGplayer outbound order.
+
+Existing batches also show a read-only **Estimated Economics** panel in v2.1-test Phase 2. The panel is explicitly estimate-only, reports valuation coverage and freshness, and never assigns permanent cost basis or converts legacy inventory.
 
 The database is the source of truth. A complete inventory CSV can be downloaded at any time for reporting or an additional portable backup.
 
@@ -131,4 +136,6 @@ Back up the entire `storage/` folder using the server's normal backup system. It
 python -m unittest discover -s tests -v
 ```
 
-The automated test covers batch creation, bulk SKU assignment, reopening, images, grouped inventory, settings, exports, pricing, TCGplayer capacity, undo, outbound sale completion, Recycle Bin behavior, and SAM source matching.
+The suite covers batch creation, bulk SKU assignment, reopening, images, grouped inventory, settings, exports, pricing, TCGplayer capacity, undo, outbound sale completion, Recycle Bin behavior, SAM source matching, transactional migrations, deterministic cent allocation, and read-only legacy economics.
+
+For the Git-ready Phase 2 checkpoint manifest, deployment warnings, rollback procedure, and post-upload validation steps, see [`RELEASE_CHECKPOINT_v2.1-test_PHASE2.md`](RELEASE_CHECKPOINT_v2.1-test_PHASE2.md). Migration behavior is documented in [`MIGRATION_NOTES_v2.1-test.md`](MIGRATION_NOTES_v2.1-test.md).

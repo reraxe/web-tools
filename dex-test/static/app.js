@@ -77,6 +77,10 @@ function formatMoney(value, fallback = "—") {
   return value === null || value === undefined || value === "" ? fallback : moneyFormat.format(Number(value));
 }
 
+function formatCents(value, fallback = "Unknown") {
+  return value === null || value === undefined ? fallback : moneyFormat.format(Number(value) / 100);
+}
+
 function formatDate(value) {
   if (!value) return "—";
   const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
@@ -438,16 +442,69 @@ function batchCardList(cards, batch) {
   </article>`).join("")}</div>${batch.status === "OPEN" ? `<div class="bottom-finish-bar"><div><strong>${cards.length} Cards In Batch</strong><small>${review} Need Review - ${cards.length} Labels Will Queue</small></div><button class="button primary" data-action="complete-batch" data-id="${batch.id}">${icon("printer")}Finish & Print Labels</button></div>` : ""}</section>`;
 }
 
+function valuationLine(label, valuation) {
+  const coverage = `${valuation.valued_count}/${valuation.total_count} cards valued`;
+  return `<div class="estimate-value-row"><span>${escapeHtml(label)}</span><strong>${formatCents(valuation.known_value_cents)}</strong><small>${escapeHtml(coverage)} &bull; ${escapeHtml(valuation.freshness_label)}</small></div>`;
+}
+
+function estimatedEconomicsPanel(estimate) {
+  const a = estimate.acquisition;
+  const r = estimate.realized;
+  const remaining = estimate.remaining;
+  const excluded = estimate.excluded_recycled;
+  const material = estimate.warnings.filter((warning) => warning.severity === "material");
+  const info = estimate.warnings.filter((warning) => warning.severity !== "material");
+  const warningBlock = estimate.warnings.length ? `<div class="estimate-warnings ${material.length ? "material" : ""}">
+    <strong>${material.length ? "Economics may be materially understated" : "Estimate notes"}</strong>
+    <ul>${[...material, ...info].map((warning) => `<li>${escapeHtml(warning.message)}</li>`).join("")}</ul>
+  </div>` : "";
+  const currentCoverage = `${remaining.market.valued_count}/${remaining.market.total_count} cards valued`;
+  const listedCoverage = `${remaining.listed.valued_count}/${remaining.listed.total_count} cards valued`;
+  return `<section class="estimated-economics" aria-labelledby="estimated-economics-title">
+    <div class="estimate-banner">${icon("triangle-alert")}<div><span>Estimated Economics</span><strong id="estimated-economics-title">${escapeHtml(estimate.notice)}</strong><small>Legacy preview only. Loading this panel does not write or repair inventory data.</small></div></div>
+    ${warningBlock}
+    <div class="estimate-sections">
+      <details open><summary>Summary</summary><div class="estimate-summary-grid">
+        <div><span>What did this cost?</span><strong>${a.cost_known ? formatCents(a.estimated_cost_cents) : "Cost Unknown / Incomplete"}</strong><small>${escapeHtml(a.label)}</small></div>
+        <div><span>How much recovered?</span><strong>${formatCents(r.net_proceeds_cents, "$0.00")}</strong><small>${r.cost_recovery_percent === null ? "Recovery Unknown" : `${r.cost_recovery_percent}% estimated recovery`}</small></div>
+        <div><span>What remains?</span><strong>${formatCents(remaining.market.known_value_cents, "$0.00")}</strong><small>${escapeHtml(currentCoverage)} &bull; known market value</small></div>
+        <div><span>Ahead or behind?</span><strong>${formatCents(remaining.current_position_cents)}</strong><small>${remaining.current_position_complete ? "Estimated current position" : `Incomplete &bull; ${escapeHtml(currentCoverage)}`}</small></div>
+      </div></details>
+      <details open><summary>Realized Economics</summary><div class="estimate-grid">
+        <div><span>Gross Merchandise Sales</span><strong>${formatCents(r.gross_merchandise_cents, "$0.00")}</strong></div>
+        <div><span>Realized Net Proceeds</span><strong>${formatCents(r.net_proceeds_cents, "$0.00")}</strong></div>
+        <div><span>Estimated Sold Basis</span><strong>${formatCents(r.estimated_sold_basis_cents)}</strong></div>
+        <div><span>Estimated Realized P/L</span><strong>${formatCents(r.estimated_profit_loss_cents)}</strong></div>
+      </div><p class="estimate-footnote">${escapeHtml(r.allocation_notice)}</p></details>
+      <details open><summary>Unrealized / Remaining Value</summary><div class="estimate-value-list">
+        ${valuationLine("Known Market Value", remaining.market)}
+        ${valuationLine("Known Listed Value", remaining.listed)}
+        <div class="estimate-value-row"><span>Current Economic Position</span><strong>${formatCents(remaining.current_position_cents)}</strong><small>${remaining.current_position_complete ? escapeHtml(currentCoverage) : `Incomplete &bull; ${escapeHtml(currentCoverage)}`}</small></div>
+        <div class="estimate-value-row"><span>Projected Listed Position</span><strong>${formatCents(remaining.projected_listed_position_cents)}</strong><small>${remaining.projected_listed_position_complete ? escapeHtml(listedCoverage) : `Incomplete &bull; ${escapeHtml(listedCoverage)}`}</small></div>
+      </div></details>
+      <details ${excluded.card_count ? "open" : ""}><summary>Excluded / Recycled (${excluded.card_count})</summary><div class="estimate-grid">
+        <div><span>Estimated Basis</span><strong>${formatCents(excluded.estimated_basis_cents)}</strong></div>
+        <div><span>Known Market Value</span><strong>${formatCents(excluded.market.known_value_cents, "$0.00")}</strong><small>${excluded.market.valued_count}/${excluded.market.total_count} cards valued</small></div>
+      </div><p class="estimate-footnote">Excluded values do not inflate active remaining inventory.</p></details>
+    </div><div class="estimate-version">Calculation version: ${escapeHtml(estimate.calculation_version)}</div>
+  </section>`;
+}
+
 async function renderBatch(id) {
   loading();
   try {
-    const data = await api(`/api/batches/${id}`);
+    const [data, economics] = await Promise.all([
+      api(`/api/batches/${id}`),
+      api(`/api/batches/${id}/economics/estimate`),
+    ]);
+    data.economics = economics;
     state.activeBatch = data;
     const b = data.batch;
     const validSkus = new Set(data.cards.map((card) => card.sku));
     state.selectedBatchCards = new Set([...state.selectedBatchCards].filter((sku) => validSkus.has(sku)));
     app.innerHTML = `<div class="view-stack">
       <div class="section-header"><div><button class="button secondary" data-action="back-batches">${icon("arrow-left")}All Batches</button></div>${b.status === "OPEN" ? `<button class="button primary" data-action="complete-batch" data-id="${b.id}">${icon("printer")}Finish & Print Labels</button>` : `<div class="batch-actions"><span class="badge green">Complete</span><button class="button primary" data-action="reopen-batch" data-id="${b.id}">${icon("plus")}Add More Cards</button></div>`}</div>
+      ${estimatedEconomicsPanel(economics)}
       <div class="batch-workspace">
         <aside class="batch-summary"><h3>${escapeHtml(b.batch_code)}</h3><div class="detail-list">
           <div><span>Game</span><strong>${escapeHtml(b.game)}</strong></div><div><span>Set</span><strong>${escapeHtml(b.set_code)}</strong></div>

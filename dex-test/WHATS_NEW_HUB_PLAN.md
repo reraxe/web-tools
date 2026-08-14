@@ -107,24 +107,28 @@ Best first implementation:
 
 ### v2.1-test
 
+- Keep What's New as documentation/backlog while Acquisition and Rip Batch Economics is implemented.
+
+### v2.2-test
+
 - Add the actual **What's New** sidebar page.
 - Display local patch notes and daily agenda.
 - Add static roadmap cards.
 
-### v2.2-test
+### v2.3-test
 
 - Add Market Watch posts.
 - Let the user paste or upload market-watch text.
 - Store posts in SQLite.
 - Add tags such as One Piece, Pokemon, eBay, TCGplayer, Watchlist.
 
-### v2.3-test
+### v2.4-test
 
 - Connect Market Watch to inventory.
 - Surface "You own this card" and "Potential listing candidate" notes.
 - Add price/watchlist tasks.
 
-### v2.4-test or Later
+### v2.5-test or Later
 
 - Add online source collection if credentials, APIs, and HTTPS are ready.
 - Add AI-assisted summary generation with source links.

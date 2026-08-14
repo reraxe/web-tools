@@ -28,6 +28,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from dex_migrations import apply_migrations
+from dex_legacy_economics import estimate_legacy_batch, open_readonly_database
+
 
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT / "static"
@@ -41,7 +44,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.0-test"
+APP_VERSION = "v2.1-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -280,6 +283,7 @@ def init_db() -> None:
             if name not in card_columns:
                 db.execute(f"ALTER TABLE cards ADD COLUMN {name} {declaration}")
         db.execute("CREATE INDEX IF NOT EXISTS idx_cards_source ON cards(source_card_id)")
+        apply_migrations(db)
 
 
 def as_dict(row: sqlite3.Row | None) -> dict | None:
@@ -1262,6 +1266,14 @@ class DexHandler(BaseHTTPRequestHandler):
                         """
                     ).fetchall()
                 self.send_json({"batches": [dict(row) for row in rows]})
+            elif re.fullmatch(r"/api/batches/\d+/economics/estimate", path):
+                batch_id = int(path.split("/")[3])
+                with open_readonly_database(DB_PATH) as db:
+                    estimate = estimate_legacy_batch(db, batch_id)
+                if estimate is None:
+                    self.send_error_json("Batch not found", 404)
+                else:
+                    self.send_json(estimate)
             elif re.fullmatch(r"/api/batches/\d+", path):
                 batch_id = int(path.rsplit("/", 1)[-1])
                 with connect() as db:
