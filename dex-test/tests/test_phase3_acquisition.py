@@ -1,8 +1,11 @@
 import shutil
+import importlib.util
+import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from dex_acquisition import acquisition_payload, normalize_acquisition_input
 from dex_migrations import DEFAULT_MIGRATIONS, MigrationError, apply_migrations
@@ -71,19 +74,62 @@ class Phase3UiContractTest(unittest.TestCase):
         self.assertIn("Final USD actually paid", javascript)
         self.assertIn("Informational link only", javascript)
         self.assertIn("never allocate shared costs automatically", javascript)
-        self.assertIn("v2.1-test-phase3", html)
+        self.assertIn("Array.isArray(group?.batches) ? group.batches : []", javascript)
+        self.assertNotIn("group.batches.map", javascript)
+        self.assertIn("v2.1-test-phase4-checkpoint1", html)
 
     def test_runtime_image_packages_every_imported_phase3_module(self):
         root = Path(__file__).parents[1]
         dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn(
-            "COPY dex_migrations.py dex_economics.py dex_legacy_economics.py dex_acquisition.py ./",
+            "COPY dex_migrations.py dex_economics.py dex_legacy_economics.py dex_acquisition.py dex_rip.py dex_sealed.py ./",
             dockerfile,
         )
         self.assertIn(
-            "import dex_migrations, dex_economics, dex_legacy_economics, dex_acquisition",
+            "import dex_migrations, dex_economics, dex_legacy_economics, dex_acquisition, dex_rip, dex_sealed",
             dockerfile,
         )
+
+
+class SeededOperatorBatchOpenRegressionTest(unittest.TestCase):
+    def test_seeded_op16_batch_detail_arrays_and_frontend_fallback(self):
+        root = Path(__file__).parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            data = Path(temporary) / "data"
+            environment = {
+                "DEX_DATA_DIR": str(data),
+                "DEX_DB_PATH": str(data / "dex.db"),
+                "DEX_IMAGE_DIR": str(data / "images"),
+                "DEX_INBOUND_DIR": str(data / "inbound"),
+                "DEX_SOURCE_DB_DIR": str(data / "source-database"),
+                "DEX_WATCH_INBOUND": "0",
+                "DEX_SEED_DEMO": "1",
+            }
+            with patch.dict(os.environ, environment):
+                spec = importlib.util.spec_from_file_location(
+                    "dex_phase3_seeded_operator_regression", root / "app.py"
+                )
+                app = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(app)
+                app.init_db()
+                app.seed_demo()
+                with app.connect() as db:
+                    batch = db.execute(
+                        "SELECT * FROM batches WHERE batch_code LIKE 'OP-B%-01'"
+                    ).fetchone()
+                    cards = [dict(row) for row in db.execute(
+                        "SELECT * FROM cards WHERE batch_id=? ORDER BY id", (batch["id"],)
+                    )]
+                    acquisition = app.acquisition_payload(db, batch["id"])
+                with app.open_readonly_database(app.DB_PATH) as db:
+                    estimate = app.estimate_legacy_batch(db, batch["id"])
+        self.assertEqual(batch["product_name"], "OP16 Booster Box")
+        self.assertEqual(len(cards), 4)
+        self.assertIsInstance(estimate["warnings"], list)
+        self.assertIsInstance(acquisition["receipt_group"]["batches"], list)
+        javascript = (root / "static" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const groupBatches = Array.isArray(group?.batches) ? group.batches : [];", javascript)
+        self.assertIn("groupBatches.map", javascript)
 
 
 class Phase3LegacyMigrationTest(unittest.TestCase):
@@ -116,7 +162,7 @@ class Phase3LegacyMigrationTest(unittest.TestCase):
         try:
             self.assertEqual(
                 apply_migrations(db),
-                ("0001_phase3_acquisition_facts",),
+                tuple(migration.migration_id for migration in DEFAULT_MIGRATIONS),
             )
             self.assertEqual(apply_migrations(db), ())
             row = db.execute("SELECT * FROM batches WHERE id = 1").fetchone()
@@ -127,7 +173,10 @@ class Phase3LegacyMigrationTest(unittest.TestCase):
             marker = db.execute(
                 "SELECT migration_id FROM schema_migrations"
             ).fetchall()
-            self.assertEqual([tuple(row) for row in marker], [(DEFAULT_MIGRATIONS[0].migration_id,)])
+            self.assertEqual(
+                [tuple(row) for row in marker],
+                [(migration.migration_id,) for migration in DEFAULT_MIGRATIONS],
+            )
             index = db.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_batches_receipt_group'"
             ).fetchone()

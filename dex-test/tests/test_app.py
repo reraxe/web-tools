@@ -156,7 +156,7 @@ class DexApiTest(unittest.TestCase):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v2.1-test")
+        self.assertEqual(health["version"], "v2.2-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)
@@ -291,6 +291,137 @@ class DexApiTest(unittest.TestCase):
                 {"product_name": "Silently rewritten"},
             )
         self.assertEqual(finalized_error.exception.code, 400)
+
+    def test_phase5_sealed_sale_api_reconciles_and_undo_restores_exact_units(self):
+        _, batch = self.request(
+            "/api/batches",
+            "POST",
+            {
+                "game": "One Piece",
+                "set_code": "OP05",
+                "set_name": "Phase 5 Disposable",
+                "acquisition_type": "Booster Box",
+                "economics_mode": "SEALED_RIP",
+                "product_name": "Disposable Phase 5 Boxes",
+                "units_acquired": 3,
+                "purchase_subtotal": "10.00",
+                "final_usd_paid": "10.00",
+                "receipt_group_reference": "PHASE5-DISPOSABLE",
+            },
+        )
+        _, sealed = self.request(f"/api/batches/{batch['id']}/sealed-units")
+        self.assertEqual([unit["basis_cents"] for unit in sealed["units"]], [334, 333, 333])
+
+        facts = {
+            "batch_id": batch["id"],
+            "quantity": 2,
+            "platform": "eBay",
+            "order_number": "PHASE5-API-1",
+            "sold_at": "2026-08-14",
+            "merchandise_total": "15.00",
+            "shipping_collected": "2.00",
+            "marketplace_fees": "1.00",
+            "actual_postage": "3.00",
+            "marketplace_tax": "1.25",
+            "request_id": "PHASE5-API-REQUEST-1",
+        }
+        _, preview = self.request("/api/sealed-sales/preview", "POST", facts)
+        self.assertEqual(preview["net_proceeds_cents"], 1300)
+        self.assertEqual(preview["sold_basis_cents"], 667)
+        self.assertEqual(preview["realized_profit_loss_cents"], 633)
+        self.assertEqual([unit["unit_sequence"] for unit in preview["sealed_units"]], [1, 2])
+
+        status, order = self.request("/api/sealed-sales", "POST", facts)
+        self.assertEqual(status, 201)
+        self.assertEqual(order["order_type"], "SEALED")
+        self.assertEqual(order["marketplace_tax_cents"], 125)
+        self.assertTrue(order["undo_eligible"])
+        self.assertEqual([unit["unit_code"] for unit in order["sealed_units"]], [
+            f"{batch['batch_code']}-UNIT-0001",
+            f"{batch['batch_code']}-UNIT-0002",
+        ])
+        _, after = self.request(f"/api/batches/{batch['id']}/sealed-units")
+        self.assertEqual(after["counts"], {"remaining": 1, "opened": 0, "sold": 2, "corrected_adjusted": 0})
+        self.assertTrue(after["reconciliation"]["reconciled"])
+
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/api/sealed-sales", "POST", {**facts, "quantity": 2, "request_id": "PHASE5-OVERSELL"})
+        self.assertEqual(error.exception.code, 400)
+        _, undo = self.request(f"/api/sealed-sales/{order['id']}/undo", "POST", {})
+        self.assertEqual(undo["restored_unit_ids"], [unit["id"] for unit in order["sealed_units"]])
+        _, restored = self.request(f"/api/batches/{batch['id']}/sealed-units")
+        self.assertEqual(restored["counts"]["remaining"], 3)
+        _, retained = self.request(f"/api/sealed-sales/{order['id']}")
+        self.assertTrue(retained["canceled"])
+        self.assertFalse(retained["undo_eligible"])
+        self.assertEqual([unit["id"] for unit in retained["sealed_units"]], undo["restored_unit_ids"])
+        _, sales = self.request("/api/sales")
+        canceled = next(row for row in sales["sales"] if row["id"] == order["id"])
+        self.assertIsNotNone(canceled["canceled_at"])
+
+    def test_phase6_batch_report_group_rollup_and_exports_are_read_only(self):
+        _, batch = self.request(
+            "/api/batches",
+            "POST",
+            {
+                "game": "One Piece",
+                "set_code": "OP06",
+                "set_name": "Phase 6 Disposable",
+                "acquisition_type": "Booster Box",
+                "economics_mode": "SEALED_RIP",
+                "product_name": "Disposable Phase 6 Boxes",
+                "units_acquired": 2,
+                "purchase_subtotal": "20.00",
+                "final_usd_paid": "20.00",
+                "receipt_group_reference": "PHASE6-API-GROUP",
+            },
+        )
+        with self.dex.connect() as db:
+            before = {
+                "changes": db.execute("SELECT COUNT(*) FROM activity_log").fetchone()[0],
+                "batch": tuple(db.execute("SELECT * FROM batches WHERE id=?", (batch["id"],)).fetchone()),
+                "units": [tuple(row) for row in db.execute(
+                    "SELECT * FROM sealed_units WHERE batch_id=? ORDER BY id", (batch["id"],)
+                )],
+            }
+
+        status, report = self.request(f"/api/batches/{batch['id']}/economics/report")
+        self.assertEqual(status, 200)
+        self.assertEqual(report["calculation_version"], self.dex.CALCULATION_VERSION)
+        self.assertEqual(report["summary"]["authoritative_cost_cents"], 2000)
+        self.assertEqual(report["remaining"]["remaining_sealed_unit_count"], 2)
+        self.assertFalse(report["remaining"]["market"]["complete"])
+        self.assertEqual(report["remaining"]["market"]["freshness_label"], "Freshness Unknown")
+        self.assertIsNotNone(report["receipt_group_rollup"])
+
+        _, group = self.request("/api/acquisition-groups/PHASE6-API-GROUP/economics")
+        self.assertEqual(group["authoritative_assigned_cost_cents"], 2000)
+        self.assertEqual(group["realized"]["unique_order_count"], 0)
+        self.assertIn("Informational aggregation only", group["notice"])
+
+        with urllib.request.urlopen(
+            self.base + f"/api/export/batch-economics.csv?batch_id={batch['id']}", timeout=5
+        ) as response:
+            export = response.read().decode("utf-8-sig")
+        header, row = export.splitlines()[:2]
+        self.assertIn("calculation_version", header)
+        self.assertIn("current_economic_position_cents", header)
+        self.assertIn(batch["batch_code"], row)
+
+        with urllib.request.urlopen(self.base + "/api/export/sales.csv", timeout=5) as response:
+            sales_header = response.read().decode("utf-8-sig").splitlines()[0]
+        self.assertIn("economics_included,attribution_method,attributed_batch_ids", sales_header)
+        self.assertTrue(sales_header.endswith("effective_realized_profit_loss_cents,returned_item_count"))
+
+        with self.dex.connect() as db:
+            after = {
+                "changes": db.execute("SELECT COUNT(*) FROM activity_log").fetchone()[0],
+                "batch": tuple(db.execute("SELECT * FROM batches WHERE id=?", (batch["id"],)).fetchone()),
+                "units": [tuple(row) for row in db.execute(
+                    "SELECT * FROM sealed_units WHERE batch_id=? ORDER BY id", (batch["id"],)
+                )],
+            }
+        self.assertEqual(after, before)
 
     def test_scan_filename_pairing(self):
         with tempfile.TemporaryDirectory() as folder:

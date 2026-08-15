@@ -53,7 +53,7 @@ Potential promotion:
 
 See `DEX_OPERATING_MODEL.md` for the full Dex, SAM, Janna, and Project: Goose workflow.
 
-## Current Active Lane
+## Preserved Known-good Lane
 
 ### v2.1-test: Acquisition and Rip Batch Economics
 
@@ -64,12 +64,12 @@ Implementation gates:
 - Phase 1: complete — transactional migration foundation, deterministic exact-cent allocation, and approved-rule fixtures.
 - Phase 2: complete — read-only estimated legacy economics.
 - Phase 3: complete — acquisition cost facts and informational Receipt/Acquisition Groups.
-- Phase 4: explicit rip sessions, bulk reserves, and immutable card basis.
-- Phase 5: sealed-unit inventory and separate sealed-product sales.
-- Phase 6: batch economics UI and versioned exports.
-- Phase 7A: corrections and dispositions.
-- Phase 7B: refunds, returns, chargebacks, and post-sale corrections.
-- Phase 7C: portfolio Operational Economics.
+- Phase 4: complete — explicit rip sessions, bulk reserves, immutable basis, and audited corrections.
+- Phase 5: complete — sealed-unit inventory, exact rip/sale consumption, separate sealed-product sales, adjustments, and atomic Undo.
+- Phase 6: complete — backend-calculated batch economics UI, reconciliation/history drill-downs, group rollups, coverage/freshness, and versioned exports.
+- Phase 7A: complete — append-only corrections, reason-aware dispositions, durable tombstones, operational-loss treatment, and linked inverse reversals.
+- Phase 7B: complete — immutable refunds, returns, chargebacks, fee/postage credits, sale corrections, and exact confirmed return restoration.
+- Phase 7C: complete — read-only portfolio Operational Economics, Finalized Economics scope, effective Phase 7B proceeds, exact stable attribution, coverage/freshness, reconciliation, and versioned CSV.
 
 Rules:
 
@@ -80,9 +80,34 @@ Rules:
 
 See `PATCH_PLAN_ACQUISITION_RIP_BATCH.md` for the approved design and safeguards.
 
+## Current Active Lane
+
+### v2.2-test: Inbound 2.0
+
+Goal: separate purchase/acquisition creation from later inventory processing while preserving the Phase 3–7C economics model.
+
+Implementation gates:
+
+- Phase 1: complete — additive Draft Acquisition, product-line, lifecycle-event, state-machine, API, migration, and compatibility foundation. No operator-facing replacement yet.
+- Phase 2: complete — focused three-screen New Acquisition wizard, resumable drafts, Accounting-by-Default one-line allocation, backend per-unit cents and audit evidence, exception-only multi-line/manual resolution, lightweight Needs Attention metadata, and legacy New Batch compatibility. No downstream projection.
+- Phase 3: complete — local commercial-product catalog, validated UPC/EAN/GTIN/internal identifiers, keyboard-scanner intake, quantity aggregation, unknown/manual/remember flows, and audited mapping correction. No downstream projection.
+- Phase 4 and later: not authorized.
+
+Rules:
+
+- Preserve the immutable v2.1-test Phase 7C checkpoint.
+- Preserve the accepted v2.2-test Phase 2 Happy-Path Polish checkpoint as the prior known-good restore point; Product Catalog + UPC Intake is the current checkpoint.
+- Project confirmed acquisition lines into existing homogeneous batches in a later approved phase; do not replace established economics services.
+- Keep documents/extraction, SAM integration, and downstream batch projection outside Phase 3.
+- Apply the approved Accounting-by-Default rule to future phases: backend deterministic automation, visible results without repetitive tasks, and Needs Attention only for ambiguous or exceptional reality.
+- Keep the future Attention Center at design-contract status until separately authorized.
+- Test all migrations on disposable Phase 7C copies before any operator-authorized deployment.
+
+See `PATCH_PLAN_INBOUND_2.md` for the approved architecture and phase gates, and `DEX_ACCOUNTING_BY_DEFAULT.md` for the standing automation/attention design contract.
+
 ## Next Planned Versions
 
-### v2.2-test: What's New Hub
+### v2.3-test: What's New Hub
 
 Goal: put Dex updates, daily agenda, roadmap, and known issues inside the app.
 
@@ -100,7 +125,7 @@ Why next:
 - It helps us test weekly without losing track of what changed.
 - It makes Dex feel more like an operating system for the business.
 
-### v2.3-test: One Piece API Cache + Manual Market Watch
+### v2.4-test: One Piece API Cache + Manual Market Watch
 
 Goal: start Janna, the Market Watch layer, and turn Dex into a card knowledge and market awareness tool.
 
@@ -112,7 +137,7 @@ Scope:
 - Tag posts by game, set, marketplace, and watchlist.
 - Summarize market notes into hold, watch, list, and research signals.
 
-### v2.4-test: Inventory Signals
+### v2.5-test: Inventory Signals
 
 Goal: start Project: Goose as recommendation-only inventory and sales support.
 

@@ -29,8 +29,88 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from dex_acquisition import EDITABLE_FIELDS, acquisition_payload, normalize_acquisition_input
+from dex_batch_economics import (
+    acquisition_group_economics_payload,
+    batch_economics_export_rows,
+    batch_economics_payload,
+)
+from dex_catalog import (
+    add_identifier_mapping,
+    apply_catalog_product_to_line,
+    catalog_contract,
+    catalog_product_payload,
+    correct_identifier_mapping,
+    create_catalog_product,
+    identifier_history,
+    identify_unknown_product,
+    lookup_identifier,
+    scan_apply_product,
+    search_catalog_products,
+)
+from dex_economics import CALCULATION_VERSION
+from dex_corrections import (
+    batch_corrections_payload,
+    card_has_economic_history,
+    correct_acquisition_cost,
+    dispose_card,
+    dispose_sealed_unit,
+    event_payload as economic_event_payload,
+    reverse_event,
+    transfer_basis,
+)
 from dex_migrations import apply_migrations
+from dex_post_sale import (
+    create_chargeback,
+    create_fee_credit,
+    create_postage_refund,
+    create_refund,
+    create_return,
+    create_sale_correction,
+    order_payload as post_sale_order_payload,
+    reverse_event as reverse_post_sale_event,
+)
+from dex_portfolio_economics import (
+    portfolio_economics_export_rows,
+    portfolio_economics_payload,
+)
 from dex_legacy_economics import estimate_legacy_batch, open_readonly_database
+from dex_inbound import (
+    acquisition_payload as inbound_acquisition_payload,
+    add_acquisition_line,
+    autosave_acquisition,
+    autosave_acquisition_line,
+    cancel_acquisition_line,
+    cancel_acquisition,
+    confirm_acquisition,
+    confirm_line_allocation,
+    create_acquisition,
+    foundation_contract as inbound_foundation_contract,
+    list_acquisitions,
+    mark_reconciliation_required,
+)
+from dex_rip import (
+    activate_rip,
+    active_rip_for_batch,
+    allocation_preview,
+    batch_rips_payload,
+    correct_rip,
+    create_rip_session,
+    deactivate_rip,
+    finalize_rip,
+    rip_session_payload,
+)
+from dex_sealed import (
+    acquisition_has_used_units,
+    adjust_sealed_unit,
+    batch_sealed_payload,
+    create_sealed_sale,
+    sealed_inventory_payload,
+    sealed_order_payload,
+    sealed_sale_preview,
+    synchronize_sealed_units,
+    undo_sealed_sale,
+    undo_specific_sealed_sale,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -45,7 +125,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.1-test"
+APP_VERSION = "v2.2-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -671,6 +751,27 @@ def pair_scan_files(files: list[Path], scan_order: str = "FRONT_FIRST") -> list[
     return pairs
 
 
+def unprocessed_scanner_file_count(db: sqlite3.Connection, batch: sqlite3.Row) -> int:
+    folder = INBOUND_DIR / batch["batch_code"]
+    if not folder.exists():
+        return 0
+    candidates = [
+        path for path in folder.iterdir()
+        if path.is_file() and path.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")
+    ]
+    groups = (
+        [(path,) for path in sorted(candidates, key=lambda item: item.name.lower())]
+        if batch["scan_mode"] == "FRONT_ONLY"
+        else [tuple(pair) for pair in pair_scan_files(candidates, batch["scan_order"])]
+    )
+    processed = 0
+    for paths in groups:
+        fingerprint = scan_fingerprint(list(paths))
+        if db.execute("SELECT 1 FROM processed_scans WHERE fingerprint=?", (fingerprint,)).fetchone():
+            processed += len(paths)
+    return max(0, len(candidates) - processed)
+
+
 def ingest_file_pair(batch_id: int, front_source: Path, back_source: Path) -> dict | None:
     fingerprint = scan_fingerprint([front_source, back_source])
     with DB_LOCK, connect() as db:
@@ -679,6 +780,7 @@ def ingest_file_pair(batch_id: int, front_source: Path, back_source: Path) -> di
         batch = db.execute("SELECT * FROM batches WHERE id = ? AND status = 'OPEN'", (batch_id,)).fetchone()
         if not batch:
             return None
+        rip_session_id = active_rip_for_batch(db, batch_id)
         sku = next_sku(db, batch["game"])
         front = copy_scan_image(sku, "front", front_source)
         back = copy_scan_image(sku, "back", back_source)
@@ -687,17 +789,19 @@ def ingest_file_pair(batch_id: int, front_source: Path, back_source: Path) -> di
             """
             INSERT INTO cards (
                 sku, batch_id, created_at, updated_at, name, set_name, color,
-                variant, condition, status, location, front_image, back_image, source_hash
-            ) VALUES (?, ?, ?, ?, 'Needs identification', ?, ?, 'Standard', ?, 'REVIEW', ?, ?, ?, ?)
+                variant, condition, status, location, front_image, back_image, source_hash,
+                rip_session_id
+            ) VALUES (?, ?, ?, ?, 'Needs identification', ?, ?, 'Standard', ?, 'REVIEW', ?, ?, ?, ?, ?)
             """,
             (
                 sku, batch_id, now, now, batch["set_name"], batch["color"],
                 batch["default_condition"], batch["location"], front, back, fingerprint,
+                rip_session_id,
             ),
         )
         db.execute(
-            "INSERT INTO processed_scans (fingerprint, batch_id, processed_at) VALUES (?, ?, ?)",
-            (fingerprint, batch_id, now),
+            "INSERT INTO processed_scans (fingerprint, batch_id, processed_at, rip_session_id) VALUES (?, ?, ?, ?)",
+            (fingerprint, batch_id, now, rip_session_id),
         )
         return dict(db.execute("SELECT * FROM cards WHERE id = ?", (cursor.lastrowid,)).fetchone())
 
@@ -710,6 +814,7 @@ def ingest_front_file(batch_id: int, front_source: Path) -> dict | None:
         batch = db.execute("SELECT * FROM batches WHERE id = ? AND status = 'OPEN'", (batch_id,)).fetchone()
         if not batch:
             return None
+        rip_session_id = active_rip_for_batch(db, batch_id)
         sku = next_sku(db, batch["game"])
         front = copy_scan_image(sku, "front", front_source)
         now = utcnow()
@@ -717,17 +822,17 @@ def ingest_front_file(batch_id: int, front_source: Path) -> dict | None:
             """
             INSERT INTO cards (
                 sku, batch_id, created_at, updated_at, name, set_name, color,
-                variant, condition, status, location, front_image, source_hash
-            ) VALUES (?, ?, ?, ?, 'Needs identification', ?, ?, 'Standard', ?, 'REVIEW', ?, ?, ?)
+                variant, condition, status, location, front_image, source_hash, rip_session_id
+            ) VALUES (?, ?, ?, ?, 'Needs identification', ?, ?, 'Standard', ?, 'REVIEW', ?, ?, ?, ?)
             """,
             (
                 sku, batch_id, now, now, batch["set_name"], batch["color"],
-                batch["default_condition"], batch["location"], front, fingerprint,
+                batch["default_condition"], batch["location"], front, fingerprint, rip_session_id,
             ),
         )
         db.execute(
-            "INSERT INTO processed_scans (fingerprint, batch_id, processed_at) VALUES (?, ?, ?)",
-            (fingerprint, batch_id, now),
+            "INSERT INTO processed_scans (fingerprint, batch_id, processed_at, rip_session_id) VALUES (?, ?, ?, ?)",
+            (fingerprint, batch_id, now, rip_session_id),
         )
         return dict(db.execute("SELECT * FROM cards WHERE id = ?", (cursor.lastrowid,)).fetchone())
 
@@ -768,7 +873,10 @@ def recycle_maintenance() -> None:
                     rows = db.execute(
                         """SELECT c.id, c.sku FROM cards c
                            LEFT JOIN sale_items si ON si.card_id = c.id
-                           WHERE c.recycled_at IS NOT NULL AND c.purge_after <= ? AND si.id IS NULL""",
+                           WHERE c.recycled_at IS NOT NULL AND c.purge_after <= ? AND si.id IS NULL
+                             AND NOT EXISTS (SELECT 1 FROM rip_basis_events rbe WHERE rbe.card_id=c.id)
+                             AND NOT EXISTS (SELECT 1 FROM economic_tombstones et WHERE et.entity_type='CARD' AND et.entity_id=c.id)
+                             AND NOT EXISTS (SELECT 1 FROM economic_event_entries eee WHERE eee.target_type='CARD' AND eee.target_id=c.id)""",
                         (utcnow(),),
                     ).fetchall()
                     for row in rows:
@@ -791,6 +899,7 @@ def create_card(db: sqlite3.Connection, batch: sqlite3.Row, payload: dict) -> di
     card_number = clean_text(payload.get("card_number"), 40).upper()
     name = clean_text(payload.get("name")) or "Needs identification"
     status = "IN_STOCK" if card_number and name != "Needs identification" else "REVIEW"
+    rip_session_id = active_rip_for_batch(db, batch["id"])
     values = (
         sku,
         batch["id"],
@@ -807,13 +916,15 @@ def create_card(db: sqlite3.Connection, batch: sqlite3.Row, payload: dict) -> di
         clean_text(payload.get("location"), 80) or batch["location"],
         front,
         back,
+        rip_session_id,
     )
     cursor = db.execute(
         """
         INSERT INTO cards (
             sku, batch_id, created_at, updated_at, card_number, name, set_name,
-            rarity, color, variant, condition, status, location, front_image, back_image
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            rarity, color, variant, condition, status, location, front_image, back_image,
+            rip_session_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         values,
     )
@@ -852,7 +963,7 @@ def inventory_groups(filters: dict[str, list[str]]) -> list[dict]:
                    b.total_cost AS batch_total_cost,
                    (SELECT COUNT(*) FROM cards bc WHERE bc.batch_id = b.id) AS batch_card_count
             FROM cards c JOIN batches b ON b.id = c.batch_id
-            LEFT JOIN sale_items si ON si.card_id = c.id
+            LEFT JOIN sale_items si ON si.id = (SELECT MAX(last_si.id) FROM sale_items last_si WHERE last_si.card_id=c.id)
             LEFT JOIN sale_orders o ON o.id = si.order_id
             {where}
             """,
@@ -973,13 +1084,25 @@ def undo_last_action(db: sqlite3.Connection) -> dict:
     action_type = action["action_type"]
     if action_type == "SALE":
         order_id = int(payload["order_id"])
+        if db.execute("SELECT 1 FROM post_sale_events WHERE order_id=? LIMIT 1", (order_id,)).fetchone():
+            raise ValueError("This sale has post-sale history and must be corrected with linked events")
         for card in payload.get("cards", []):
-            db.execute(
-                "UPDATE cards SET status = ?, updated_at = ? WHERE id = ?",
+            latest = db.execute("SELECT MAX(id) FROM sale_items WHERE card_id=?", (int(card["id"]),)).fetchone()[0]
+            sale_item = db.execute("SELECT id FROM sale_items WHERE order_id=? AND card_id=?", (order_id, int(card["id"]))).fetchone()
+            if not sale_item or int(latest or 0) != int(sale_item["id"]):
+                raise ValueError("One or more exact cards are no longer eligible for Undo")
+            changed = db.execute(
+                "UPDATE cards SET status = ?, updated_at = ? WHERE id = ? AND status='SOLD'",
                 (card.get("status", "IN_STOCK"), utcnow(), int(card["id"])),
             )
-        db.execute("DELETE FROM sale_items WHERE order_id = ?", (order_id,))
-        db.execute("DELETE FROM sale_orders WHERE id = ?", (order_id,))
+            if changed.rowcount != 1:
+                raise ValueError("One or more exact cards are no longer eligible for Undo")
+        db.execute(
+            "UPDATE sale_orders SET canceled_at=?, cancellation_reason='OPERATOR_UNDO' WHERE id=? AND canceled_at IS NULL",
+            (utcnow(), order_id),
+        )
+    elif action_type == "SEALED_SALE":
+        undo_sealed_sale(db, int(payload["order_id"]), int(action["id"]))
     elif action_type == "BATCH_STATUS":
         db.execute(
             "UPDATE batches SET status = ?, completed_at = ? WHERE id = ?",
@@ -1082,6 +1205,11 @@ def seed_demo() -> None:
             """,
             (second_code, now, now),
         )
+        synchronize_sealed_units(db, batch_id)
+        second_batch_id = db.execute(
+            "SELECT id FROM batches WHERE batch_code=?", (second_code,)
+        ).fetchone()[0]
+        synchronize_sealed_units(db, second_batch_id)
         demo = [
             ("OP16-112", "Boa Hancock", "Super Rare", 6.25, 8.41, 11.80, "TCGplayer"),
             ("OP16-042", "Kikunojo", "Rare", 1.19, 1.88, 2.75, "TCGplayer"),
@@ -1188,14 +1316,38 @@ class DexHandler(BaseHTTPRequestHandler):
                         b.inbound_shipping_cents, b.acquisition_fees_cents,
                         b.acquisition_discount_cents,
                         b.cost_reconciliation_acknowledged,
-                        b.acquisition_updated_at
+                        b.acquisition_updated_at,
+                        ? AS economics_calculation_version,
+                        CASE WHEN r.status='FINALIZED' AND
+                                  (EXISTS (SELECT 1 FROM rip_basis_events rbe
+                                           WHERE rbe.card_id=c.id AND rbe.target_type='CARD')
+                                   OR EXISTS (SELECT 1 FROM economic_event_entries eee
+                                               WHERE eee.entry_type='BASIS' AND eee.target_type='CARD' AND eee.target_id=c.id))
+                             THEN COALESCE((SELECT SUM(rbe.amount_delta_cents) FROM rip_basis_events rbe
+                                    WHERE rbe.card_id=c.id AND rbe.target_type='CARD'),0)
+                                  + COALESCE((SELECT SUM(eee.amount_delta_cents) FROM economic_event_entries eee
+                                    WHERE eee.entry_type='BASIS' AND eee.target_type='CARD' AND eee.target_id=c.id),0)
+                        END AS authoritative_card_basis_cents,
+                        CASE WHEN r.status='FINALIZED' AND
+                                  EXISTS (SELECT 1 FROM rip_basis_events rbe
+                                           WHERE rbe.card_id=c.id AND rbe.target_type='CARD')
+                             THEN 'FINALIZED' ELSE 'UNKNOWN' END AS card_basis_status,
+                        r.rip_code, r.finalized_at AS rip_finalized_at,
+                        b.final_usd_paid_cents AS preserved_source_acquisition_cost_cents,
+                        CASE WHEN b.final_usd_paid_cents IS NULL THEN NULL ELSE
+                          b.final_usd_paid_cents + COALESCE((SELECT SUM(eee.amount_delta_cents)
+                            FROM economic_event_entries eee
+                            WHERE eee.entry_type='ACQUISITION_COST' AND eee.target_type='BATCH' AND eee.target_id=b.id),0)
+                        END AS current_authoritative_acquisition_cost_cents
                 FROM cards c
                 JOIN batches b ON b.id = c.batch_id
-                LEFT JOIN sale_items si ON si.card_id = c.id
+                LEFT JOIN sale_items si ON si.id = (SELECT MAX(last_si.id) FROM sale_items last_si WHERE last_si.card_id=c.id)
                 LEFT JOIN sale_orders o ON o.id = si.order_id
+                LEFT JOIN rip_sessions r ON r.id = c.rip_session_id
                 WHERE c.recycled_at IS NULL
                 ORDER BY c.id
-                """
+                """,
+                (CALCULATION_VERSION,),
             ).fetchall()
         output = io.StringIO(newline="")
         writer = csv.writer(output)
@@ -1214,6 +1366,9 @@ class DexHandler(BaseHTTPRequestHandler):
             "acquisition_tax_cents", "inbound_shipping_cents",
             "acquisition_fees_cents", "acquisition_discount_cents",
             "cost_reconciliation_acknowledged", "acquisition_updated_at",
+            "economics_calculation_version", "authoritative_card_basis_cents",
+            "card_basis_status", "rip_code", "rip_finalized_at",
+            "preserved_source_acquisition_cost_cents", "current_authoritative_acquisition_cost_cents",
         ]
         writer.writerow(headers)
         writer.writerows(tuple(row) for row in rows)
@@ -1229,33 +1384,176 @@ class DexHandler(BaseHTTPRequestHandler):
 
     def serve_sales_csv(self) -> None:
         with connect() as db:
-            rows = db.execute(
+            source_rows = db.execute(
                 """
                 SELECT o.sold_at, o.platform, o.order_number,
-                       GROUP_CONCAT(c.sku, ' | ') AS skus,
-                       COUNT(si.id) AS card_count,
+                       (SELECT GROUP_CONCAT(c.sku, ' | ')
+                          FROM sale_items si JOIN cards c ON c.id=si.card_id
+                         WHERE si.order_id=o.id) AS skus,
+                       (SELECT COUNT(*) FROM sale_items si WHERE si.order_id=o.id) AS card_count,
                        o.subtotal, o.shipping_collected, o.platform_fees,
                        o.postage_cost,
-                       o.subtotal + o.shipping_collected - o.platform_fees - o.postage_cost AS net_proceeds
+                       o.subtotal + o.shipping_collected - o.platform_fees - o.postage_cost AS net_proceeds,
+                       o.order_type,
+                       (SELECT GROUP_CONCAT(su.unit_code, ' | ')
+                          FROM sealed_sale_items ssi JOIN sealed_units su ON su.id=ssi.sealed_unit_id
+                         WHERE ssi.order_id=o.id) AS sealed_unit_codes,
+                       (SELECT COUNT(*) FROM sealed_sale_items ssi WHERE ssi.order_id=o.id) AS sealed_unit_count,
+                       o.merchandise_total_cents, o.shipping_collected_cents,
+                       o.marketplace_fees_cents, o.actual_postage_cents,
+                       o.marketplace_tax_cents,
+                       CASE WHEN o.order_type='SEALED' THEN
+                           o.merchandise_total_cents + o.shipping_collected_cents
+                           - o.marketplace_fees_cents - o.actual_postage_cents
+                       END AS sealed_net_proceeds_cents,
+                       CASE WHEN o.order_type='SEALED' THEN
+                           (SELECT COALESCE(SUM(ssi.basis_cents),0)
+                              FROM sealed_sale_items ssi WHERE ssi.order_id=o.id)
+                       END AS sealed_sold_basis_cents,
+                       o.canceled_at, o.cancellation_reason,
+                       ? AS calculation_version,
+                       CASE WHEN o.canceled_at IS NULL THEN 1 ELSE 0 END AS economics_included,
+                       CASE WHEN o.order_type='SEALED' THEN 'EXACT_SEALED_ITEM_STABLE_ID'
+                            ELSE 'WEIGHTED_SALE_ITEM_STABLE_ID' END AS attribution_method,
+                       CASE WHEN o.order_type='SEALED' THEN
+                           (SELECT GROUP_CONCAT(DISTINCT ssi.batch_id) FROM sealed_sale_items ssi WHERE ssi.order_id=o.id)
+                           ELSE (SELECT GROUP_CONCAT(DISTINCT c.batch_id)
+                                   FROM sale_items si JOIN cards c ON c.id=si.card_id WHERE si.order_id=o.id)
+                       END AS attributed_batch_ids,
+                       o.id AS dex_order_id
                 FROM sale_orders o
-                LEFT JOIN sale_items si ON si.order_id = o.id
-                LEFT JOIN cards c ON c.id = si.card_id
-                GROUP BY o.id ORDER BY o.sold_at, o.id
-                """
+                ORDER BY o.sold_at, o.id
+                """,
+                (CALCULATION_VERSION,),
             ).fetchall()
+            rows = []
+            for source in source_rows:
+                row = dict(source)
+                detail = post_sale_order_payload(db, int(source["dex_order_id"]))
+                effective = detail["financials"]["effective"]
+                row.update({
+                    "post_sale_event_count": detail["post_sale_event_count"],
+                    "post_sale_event_ids": " | ".join(event["event_id"] for event in detail["events"]),
+                    "effective_merchandise_cents": effective["merchandise_cents"],
+                    "effective_shipping_collected_cents": effective["shipping_cents"],
+                    "effective_marketplace_fees_cents": effective["marketplace_fees_cents"],
+                    "effective_actual_postage_cents": effective["postage_cents"],
+                    "effective_other_net_cents": effective["other_net_cents"],
+                    "effective_net_proceeds_cents": effective["net_proceeds_cents"],
+                    "effective_sold_basis_cents": detail["sold_basis_cents"],
+                    "effective_realized_profit_loss_cents": detail["realized_profit_loss_cents"],
+                    "returned_item_count": sum(1 for item in detail["items"] if item["returned"]),
+                })
+                rows.append(row)
             stamp = business_today(db).isoformat()
         output = io.StringIO(newline="")
         writer = csv.writer(output)
         headers = list(rows[0].keys()) if rows else [
             "sold_at", "platform", "order_number", "skus", "card_count",
             "subtotal", "shipping_collected", "platform_fees", "postage_cost", "net_proceeds",
+            "order_type", "sealed_unit_codes", "sealed_unit_count",
+            "merchandise_total_cents", "shipping_collected_cents",
+            "marketplace_fees_cents", "actual_postage_cents", "marketplace_tax_cents",
+            "sealed_net_proceeds_cents", "sealed_sold_basis_cents",
+            "canceled_at", "cancellation_reason", "calculation_version",
+            "economics_included", "attribution_method", "attributed_batch_ids", "dex_order_id",
+            "post_sale_event_count", "post_sale_event_ids",
+            "effective_merchandise_cents", "effective_shipping_collected_cents",
+            "effective_marketplace_fees_cents", "effective_actual_postage_cents",
+            "effective_other_net_cents", "effective_net_proceeds_cents",
+            "effective_sold_basis_cents", "effective_realized_profit_loss_cents",
+            "returned_item_count",
         ]
         writer.writerow(headers)
-        writer.writerows(tuple(row) for row in rows)
+        writer.writerows(tuple(row.values()) if isinstance(row, dict) else tuple(row) for row in rows)
         body = output.getvalue().encode("utf-8-sig")
         self.send_response(200)
         self.send_header("Content-Type", "text/csv; charset=utf-8")
         self.send_header("Content-Disposition", f'attachment; filename="dex-sales-{stamp}.csv"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_batch_economics_csv(self, query: dict[str, list[str]]) -> None:
+        batch_id: int | None = None
+        if query.get("batch_id"):
+            try:
+                batch_id = int(query["batch_id"][0])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("batch_id must be a whole number") from exc
+        with open_readonly_database(DB_PATH) as db:
+            rows = batch_economics_export_rows(db, batch_id)
+            stamp = business_today(db).isoformat()
+        preferred = [
+            "calculation_version", "economics_state", "batch_id", "batch_code",
+            "economics_mode", "economics_status", "product_name",
+            "receipt_group_reference", "authoritative_cost_cents",
+            "realized_gross_merchandise_cents", "realized_shipping_collected_cents",
+            "realized_marketplace_fees_cents", "realized_actual_postage_cents",
+            "realized_net_proceeds_cents", "sold_basis_cents",
+            "sold_basis_known_count", "sold_basis_total_count",
+            "realized_profit_loss_cents", "cost_recovery_percent",
+            "remaining_known_basis_cents", "remaining_basis_complete",
+            "remaining_market_value_cents", "remaining_market_valued_count",
+            "remaining_market_total_count", "remaining_market_freshness",
+            "remaining_market_complete", "remaining_listed_value_cents",
+            "remaining_listed_valued_count", "remaining_listed_total_count",
+            "remaining_listed_freshness", "remaining_listed_complete",
+            "current_economic_position_cents", "current_position_complete",
+            "projected_listed_position_cents", "projected_listed_position_complete",
+            "excluded_known_basis_cents", "materially_incomplete", "warning_codes",
+            "preserved_source_cost_cents", "acquisition_correction_delta_cents",
+            "operational_loss_cents", "realized_other_net_cents",
+        ]
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=preferred, extrasaction="ignore", restval="")
+        writer.writeheader()
+        writer.writerows(rows)
+        body = output.getvalue().encode("utf-8-sig")
+        suffix = f"-batch-{batch_id}" if batch_id is not None else ""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="dex-batch-economics{suffix}-{stamp}.csv"')
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def serve_portfolio_economics_csv(self) -> None:
+        with open_readonly_database(DB_PATH) as db:
+            rows = portfolio_economics_export_rows(db)
+            stamp = business_today(db).isoformat()
+        preferred = [
+            "calculation_version", "generated_at", "economics_state",
+            "finalized_batch_count", "authoritative_unfinalized_batch_count",
+            "legacy_estimate_batch_count", "authoritative_acquisition_cost_cents",
+            "effective_realized_merchandise_cents", "effective_shipping_collected_cents",
+            "effective_marketplace_fees_cents", "effective_actual_postage_cents",
+            "effective_other_net_cents", "effective_realized_net_proceeds_cents",
+            "active_sold_basis_cents", "sold_basis_known_count",
+            "sold_basis_total_count", "sold_basis_complete",
+            "realized_profit_loss_cents", "cost_recovery_percent",
+            "operational_loss_cents", "remaining_known_basis_cents",
+            "remaining_card_count", "remaining_sealed_unit_count",
+            "remaining_known_bulk_quantity", "bulk_quantity_unknown",
+            "remaining_market_value_cents", "remaining_market_valued_count",
+            "remaining_market_total_count", "remaining_market_complete",
+            "remaining_market_freshness", "remaining_listed_value_cents",
+            "remaining_listed_valued_count", "remaining_listed_total_count",
+            "remaining_listed_complete", "remaining_listed_freshness",
+            "current_economic_position_cents", "current_position_complete",
+            "projected_listed_position_cents", "projected_listed_position_complete",
+            "unique_order_count", "attributed_item_count",
+            "duplicate_attribution_count", "realized_reconciliation_difference_cents",
+            "materially_incomplete", "warning_codes", "receipt_group_notice",
+        ]
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=preferred, extrasaction="ignore", restval="")
+        writer.writeheader()
+        writer.writerows(rows)
+        body = output.getvalue().encode("utf-8-sig")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="dex-operational-economics-{stamp}.csv"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1275,6 +1573,54 @@ class DexHandler(BaseHTTPRequestHandler):
                 self.serve_inventory_csv()
             elif path == "/api/export/sales.csv":
                 self.serve_sales_csv()
+            elif path == "/api/export/batch-economics.csv":
+                self.serve_batch_economics_csv(query)
+            elif path == "/api/export/portfolio-economics.csv":
+                self.serve_portfolio_economics_csv()
+            elif path == "/api/portfolio/economics":
+                with open_readonly_database(DB_PATH) as db:
+                    result = portfolio_economics_payload(db)
+                self.send_json(result)
+            elif path == "/api/inbound/foundation":
+                self.send_json(inbound_foundation_contract())
+            elif path == "/api/catalog/contract":
+                self.send_json(catalog_contract())
+            elif path == "/api/catalog/products":
+                with connect() as db:
+                    products = search_catalog_products(
+                        db,
+                        query.get("q", [""])[0],
+                        query.get("product_class", [""])[0],
+                        include_inactive=query.get("include_inactive", ["0"])[0] == "1",
+                    )
+                self.send_json({"products": products})
+            elif re.fullmatch(r"/api/catalog/products/\d+", path):
+                product_id = int(path.rsplit("/", 1)[-1])
+                with connect() as db:
+                    result = catalog_product_payload(db, product_id)
+                self.send_json(result)
+            elif path == "/api/catalog/identifiers/lookup":
+                with connect() as db:
+                    result = lookup_identifier(
+                        db,
+                        query.get("identifier", [""])[0],
+                        query.get("identifier_type", [""])[0],
+                    )
+                self.send_json(result)
+            elif re.fullmatch(r"/api/catalog/identifiers/\d+/history", path):
+                identifier_id = int(path.split("/")[4])
+                with connect() as db:
+                    result = identifier_history(db, identifier_id)
+                self.send_json(result)
+            elif path == "/api/acquisitions":
+                with connect() as db:
+                    result = list_acquisitions(db)
+                self.send_json({"acquisitions": result})
+            elif re.fullmatch(r"/api/acquisitions/\d+", path):
+                acquisition_id = int(path.rsplit("/", 1)[-1])
+                with connect() as db:
+                    result = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
             elif path == "/api/settings":
                 with connect() as db:
                     values = {row["key"]: row["value"] for row in db.execute("SELECT key, value FROM settings")}
@@ -1322,6 +1668,26 @@ class DexHandler(BaseHTTPRequestHandler):
                     self.send_error_json("Batch not found", 404)
                 else:
                     self.send_json(estimate)
+            elif re.fullmatch(r"/api/batches/\d+/economics/report", path):
+                batch_id = int(path.split("/")[3])
+                with open_readonly_database(DB_PATH) as db:
+                    result = batch_economics_payload(db, batch_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/batches/\d+/corrections", path):
+                batch_id = int(path.split("/")[3])
+                with open_readonly_database(DB_PATH) as db:
+                    result = batch_corrections_payload(db, batch_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/economic-events/[^/]+", path):
+                event_id = unquote(path.split("/")[3])
+                with open_readonly_database(DB_PATH) as db:
+                    result = economic_event_payload(db, event_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-groups/[^/]+/economics", path):
+                reference = unquote(path.split("/")[3])
+                with open_readonly_database(DB_PATH) as db:
+                    result = acquisition_group_economics_payload(db, reference)
+                self.send_json(result)
             elif re.fullmatch(r"/api/batches/\d+/economics", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
@@ -1330,6 +1696,42 @@ class DexHandler(BaseHTTPRequestHandler):
                     self.send_error_json("Batch not found", 404)
                 else:
                     self.send_json(facts)
+            elif re.fullmatch(r"/api/batches/\d+/rips", path):
+                batch_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = batch_rips_payload(db, batch_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/rip-sessions/\d+", path):
+                rip_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = rip_session_payload(db, rip_id)
+                self.send_json(result)
+            elif path == "/api/sealed-inventory":
+                with connect() as db:
+                    result = sealed_inventory_payload(db)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/batches/\d+/sealed-units", path):
+                batch_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = batch_sealed_payload(db, batch_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sealed-sales/\d+", path):
+                order_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = sealed_order_payload(db, order_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sales/\d+", path):
+                order_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = post_sale_order_payload(db, order_id)
+                    if result["order_type"] == "SEALED":
+                        sealed_detail = sealed_order_payload(db, order_id)
+                        result["undo_eligible"] = sealed_detail["undo_eligible"]
+                        result["undo_eligibility_reason"] = sealed_detail["undo_eligibility_reason"]
+                    else:
+                        result["undo_eligible"] = False
+                        result["undo_eligibility_reason"] = "Card sale Undo remains available only through the existing latest-action control."
+                self.send_json(result)
             elif re.fullmatch(r"/api/batches/\d+", path):
                 batch_id = int(path.rsplit("/", 1)[-1])
                 with connect() as db:
@@ -1398,10 +1800,31 @@ class DexHandler(BaseHTTPRequestHandler):
                     rows = db.execute(
                         f"""
                         SELECT c.*, b.game, b.set_code, b.batch_code,
-                               CASE WHEN si.id IS NULL THEN 0 ELSE 1 END AS protected_sale,
+                               CASE WHEN EXISTS (SELECT 1 FROM sale_items history_si WHERE history_si.card_id=c.id)
+                                    THEN 1 ELSE 0 END AS protected_sale,
+                               CASE WHEN EXISTS (SELECT 1 FROM rip_basis_events rbe WHERE rbe.card_id=c.id)
+                                      OR EXISTS (SELECT 1 FROM economic_tombstones et WHERE et.entity_type='CARD' AND et.entity_id=c.id)
+                                      OR EXISTS (SELECT 1 FROM economic_event_entries eee WHERE eee.target_type='CARD' AND eee.target_id=c.id)
+                                    THEN 1 ELSE 0 END AS protected_economics,
+                               (SELECT e.event_id FROM economic_tombstones et
+                                  JOIN economic_events e ON e.event_id=et.event_id
+                                  LEFT JOIN economic_events er ON er.reverses_event_id=e.event_id
+                                 WHERE et.entity_type='CARD' AND et.entity_id=c.id AND er.event_id IS NULL
+                                 ORDER BY et.id DESC LIMIT 1) AS active_disposition_event_id,
+                               (SELECT pse.event_id FROM post_sale_return_items psri
+                                  JOIN post_sale_events pse ON pse.event_id=psri.event_id
+                                  LEFT JOIN post_sale_events psr ON psr.reverses_event_id=pse.event_id
+                                 WHERE psri.item_type='CARD' AND psri.entity_id=c.id
+                                   AND psri.outcome='DAMAGED_EXCLUDED' AND psr.event_id IS NULL
+                                 ORDER BY psri.id DESC LIMIT 1) AS active_return_event_id,
+                               (SELECT pse.order_id FROM post_sale_return_items psri
+                                  JOIN post_sale_events pse ON pse.event_id=psri.event_id
+                                  LEFT JOIN post_sale_events psr ON psr.reverses_event_id=pse.event_id
+                                 WHERE psri.item_type='CARD' AND psri.entity_id=c.id
+                                   AND psri.outcome='DAMAGED_EXCLUDED' AND psr.event_id IS NULL
+                                 ORDER BY psri.id DESC LIMIT 1) AS active_return_order_id,
                                MAX(0, CAST(julianday(c.purge_after) - julianday('now') AS INTEGER)) AS days_remaining
                         FROM cards c JOIN batches b ON b.id = c.batch_id
-                        LEFT JOIN sale_items si ON si.card_id = c.id
                         WHERE c.recycled_at IS NOT NULL {search_sql}
                         ORDER BY c.recycled_at DESC
                         """,
@@ -1410,15 +1833,25 @@ class DexHandler(BaseHTTPRequestHandler):
                 self.send_json({"cards": [dict(row) for row in rows]})
             elif path == "/api/sales":
                 with connect() as db:
-                    rows = db.execute(
-                        """
-                        SELECT o.*, COUNT(i.id) AS item_count,
-                               o.subtotal + o.shipping_collected - o.platform_fees - o.postage_cost AS net_proceeds
-                        FROM sale_orders o LEFT JOIN sale_items i ON i.order_id = o.id
-                        GROUP BY o.id ORDER BY o.sold_at DESC, o.id DESC LIMIT 100
-                        """
-                    ).fetchall()
-                self.send_json({"sales": [dict(row) for row in rows]})
+                    ids = [row[0] for row in db.execute("SELECT id FROM sale_orders ORDER BY sold_at DESC, id DESC LIMIT 100").fetchall()]
+                    sales = []
+                    for order_id in ids:
+                        detail = post_sale_order_payload(db, int(order_id))
+                        effective = detail["financials"]["effective"]
+                        detail.update({
+                            "merchandise_effective_cents": effective["merchandise_cents"],
+                            "shipping_effective_cents": effective["shipping_cents"],
+                            "fees_effective_cents": effective["marketplace_fees_cents"],
+                            "postage_effective_cents": effective["postage_cents"],
+                            "effective_fees_plus_postage_cents": effective["marketplace_fees_cents"] + effective["postage_cents"],
+                            "net_proceeds_cents": effective["net_proceeds_cents"],
+                            "subtotal": effective["merchandise_cents"] / 100,
+                            "shipping_collected": effective["shipping_cents"] / 100,
+                            "fees_plus_postage": (effective["marketplace_fees_cents"] + effective["postage_cents"]) / 100,
+                            "net_proceeds": effective["net_proceeds_cents"] / 100,
+                        })
+                        sales.append(detail)
+                self.send_json({"calculation_version": CALCULATION_VERSION, "sales": sales})
             elif path == "/api/qr":
                 self.serve_qr(clean_text(query.get("value", [""])[0], 160))
             elif path.startswith("/media/"):
@@ -1482,6 +1915,82 @@ class DexHandler(BaseHTTPRequestHandler):
                     result = scan_source_database(db)
                     result["summary"] = source_summary(db)
                 self.send_json(result)
+            elif path == "/api/catalog/products":
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = create_catalog_product(db, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/catalog/products/\d+/identifiers", path):
+                product_id = int(path.split("/")[4])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = add_identifier_mapping(db, product_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/catalog/identifiers/\d+/correct", path):
+                identifier_id = int(path.split("/")[4])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = correct_identifier_mapping(db, identifier_id, payload)
+                self.send_json(result)
+            elif path == "/api/acquisitions":
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = create_acquisition(db, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisitions/\d+/product-scan", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = scan_apply_product(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/identify-product", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = identify_unknown_product(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/lines", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = add_acquisition_line(db, acquisition_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisitions/\d+/reconciliation", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = mark_reconciliation_required(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-lines/\d+/catalog-product", path):
+                line_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = apply_catalog_product_to_line(db, line_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/confirm", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = confirm_acquisition(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/cancel", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = cancel_acquisition(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-lines/\d+/confirm-allocation", path):
+                line_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = confirm_line_allocation(db, line_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-lines/\d+/cancel", path):
+                line_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = cancel_acquisition_line(db, line_id, payload)
+                self.send_json(result)
             elif path == "/api/batches":
                 game = clean_text(payload.get("game"), 40)
                 set_code = clean_text(payload.get("set_code"), 40).upper()
@@ -1531,6 +2040,8 @@ class DexHandler(BaseHTTPRequestHandler):
                         tuple(base_fields.values()),
                     )
                     if economics is not None:
+                        synchronize_sealed_units(db, int(cursor.lastrowid))
+                    if economics is not None:
                         log_action(
                             db,
                             "ACQUISITION_CREATE",
@@ -1540,6 +2051,130 @@ class DexHandler(BaseHTTPRequestHandler):
                     batch = dict(db.execute("SELECT * FROM batches WHERE id = ?", (cursor.lastrowid,)).fetchone())
                 (INBOUND_DIR / code).mkdir(parents=True, exist_ok=True)
                 self.send_json(batch, 201)
+            elif re.fullmatch(r"/api/batches/\d+/rips", path):
+                batch_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = create_rip_session(db, batch_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/batches/\d+/corrections/acquisition", path):
+                batch_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = correct_acquisition_cost(db, batch_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/batches/\d+/corrections/basis-transfer", path):
+                batch_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = transfer_basis(db, batch_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/disposition", path):
+                sku = unquote(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = dispose_card(db, sku, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/sealed-units/\d+/disposition", path):
+                unit_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = dispose_sealed_unit(db, unit_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/economic-events/[^/]+/reverse", path):
+                event_id = unquote(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = reverse_event(db, event_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/sales/\d+/(refunds|full-refund|returns|chargebacks|fee-credits|postage-refunds|corrections)", path):
+                parts = path.split("/")
+                order_id = int(parts[3])
+                action = parts[4]
+                handlers = {
+                    "refunds": lambda db: create_refund(db, order_id, payload),
+                    "full-refund": lambda db: create_refund(db, order_id, payload, full=True),
+                    "returns": lambda db: create_return(db, order_id, payload),
+                    "chargebacks": lambda db: create_chargeback(db, order_id, payload),
+                    "fee-credits": lambda db: create_fee_credit(db, order_id, payload),
+                    "postage-refunds": lambda db: create_postage_refund(db, order_id, payload),
+                    "corrections": lambda db: create_sale_correction(db, order_id, payload),
+                }
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = handlers[action](db)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/post-sale-events/[^/]+/reverse", path):
+                event_id = unquote(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = reverse_post_sale_event(db, event_id, payload)
+                self.send_json(result, 201)
+            elif path == "/api/sealed-sales/preview":
+                with connect() as db:
+                    result = sealed_sale_preview(db, payload)
+                self.send_json(result)
+            elif path == "/api/sealed-sales":
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = create_sealed_sale(db, payload, business_today(db).isoformat())
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/sealed-sales/\d+/undo", path):
+                order_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = undo_specific_sealed_sale(db, order_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sealed-units/\d+/adjust", path):
+                unit_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = adjust_sealed_unit(db, unit_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/rip-sessions/\d+/activate", path):
+                rip_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    current = db.execute(
+                        """SELECT r.*, b.batch_code, b.scan_order, b.scan_mode
+                           FROM settings s JOIN rip_sessions r ON r.id=CAST(s.value AS INTEGER)
+                           JOIN batches b ON b.id=r.batch_id
+                           WHERE s.key='active_rip_session_id' AND s.value<>'' AND r.status='ACTIVE'"""
+                    ).fetchone()
+                    if current and current["id"] != rip_id:
+                        pending = unprocessed_scanner_file_count(db, current)
+                        if pending and not payload.get("confirm_switch"):
+                            self.send_json(
+                                {
+                                    "error": f"{pending} unprocessed scanner file(s) remain for {current['rip_code']}",
+                                    "requires_confirmation": True,
+                                    "unprocessed_files": pending,
+                                    "active_rip_session_id": current["id"],
+                                },
+                                409,
+                            )
+                            return
+                    result = activate_rip(db, rip_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/rip-sessions/\d+/deactivate", path):
+                rip_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    result = deactivate_rip(db, rip_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/rip-sessions/\d+/preview", path):
+                rip_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = allocation_preview(db, rip_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/rip-sessions/\d+/finalize", path):
+                rip_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    result = finalize_rip(db, rip_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/rip-sessions/\d+/corrections", path):
+                rip_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    result = correct_rip(db, rip_id, payload)
+                self.send_json(result, 201)
             elif re.fullmatch(r"/api/batches/\d+/cards", path):
                 batch_id = int(path.split("/")[3])
                 with connect() as db:
@@ -1590,11 +2225,22 @@ class DexHandler(BaseHTTPRequestHandler):
                 self.send_json({"batch_id": batch_id, "matched": matched, "checked": len(results), "results": results})
             elif re.fullmatch(r"/api/batches/\d+/complete", path):
                 batch_id = int(path.split("/")[3])
-                with connect() as db:
+                with DB_LOCK, connect() as db:
                     previous = db.execute("SELECT * FROM batches WHERE id = ? AND recycled_at IS NULL", (batch_id,)).fetchone()
                     if not previous:
                         self.send_error_json("Batch not found", 404)
                         return
+                    active_rip = db.execute(
+                        """SELECT r.id
+                           FROM rip_sessions r
+                           JOIN settings s
+                             ON s.key = 'active_rip_session_id'
+                            AND s.value = CAST(r.id AS TEXT)
+                           WHERE r.batch_id = ? AND r.status = 'ACTIVE'""",
+                        (batch_id,),
+                    ).fetchone()
+                    if active_rip:
+                        deactivate_rip(db, active_rip["id"])
                     db.execute(
                         "UPDATE batches SET status = 'COMPLETE', completed_at = ? WHERE id = ?",
                         (utcnow(), batch_id),
@@ -1716,6 +2362,27 @@ class DexHandler(BaseHTTPRequestHandler):
                         return
                     if not card["recycled_at"]:
                         raise ValueError("Card is not in the Recycle Bin")
+                    active_disposition = db.execute(
+                        """SELECT e.event_id FROM economic_tombstones et
+                             JOIN economic_events e ON e.event_id=et.event_id
+                             LEFT JOIN economic_events er ON er.reverses_event_id=e.event_id
+                            WHERE et.entity_type='CARD' AND et.entity_id=? AND er.event_id IS NULL
+                            ORDER BY et.id DESC LIMIT 1""",
+                        (card["id"],),
+                    ).fetchone()
+                    if active_disposition:
+                        raise ValueError(f"Restore this card by reversing economic event {active_disposition['event_id']}")
+                    active_return = db.execute(
+                        """SELECT pse.event_id FROM post_sale_return_items psri
+                             JOIN post_sale_events pse ON pse.event_id=psri.event_id
+                             LEFT JOIN post_sale_events reversal ON reversal.reverses_event_id=pse.event_id
+                            WHERE psri.item_type='CARD' AND psri.entity_id=?
+                              AND psri.outcome='DAMAGED_EXCLUDED' AND reversal.event_id IS NULL
+                            LIMIT 1""",
+                        (card["id"],),
+                    ).fetchone()
+                    if active_return:
+                        raise ValueError(f"Restore this card by reversing post-sale event {active_return['event_id']} from Sales")
                     log_action(db, "RESTORE", f"Restored {sku}", {
                         "sku": sku, "recycled_at": card["recycled_at"],
                         "reason": card["recycle_reason"], "purge_after": card["purge_after"],
@@ -1743,6 +2410,8 @@ class DexHandler(BaseHTTPRequestHandler):
                         raise ValueError("Move the card to the Recycle Bin before permanently deleting it")
                     if db.execute("SELECT 1 FROM sale_items WHERE card_id = ?", (card["id"],)).fetchone():
                         raise ValueError("Sold cards are protected for financial and audit history")
+                    if card_has_economic_history(db, int(card["id"])):
+                        raise ValueError("Cards with economic history are protected by a durable tombstone and cannot be hard-deleted")
                     db.execute("DELETE FROM cards WHERE id = ?", (card["id"],))
                     now = utcnow()
                     db.execute(
@@ -1793,16 +2462,20 @@ class DexHandler(BaseHTTPRequestHandler):
                     db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('recycle_auto_purge', ?)", (auto_purge,))
                 self.send_json({"timezone": timezone_name, "tcg_capacity": capacity, "recycle_retention_days": retention, "recycle_auto_purge": auto_purge})
             elif path == "/api/undo":
-                with connect() as db:
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
                     result = undo_last_action(db)
                 self.send_json(result)
             elif path == "/api/sales":
                 skus = payload.get("skus", [])
+                if payload.get("sealed_unit_ids"):
+                    raise ValueError("Card and sealed-product items cannot be combined in one order")
                 platform = clean_text(payload.get("platform"), 30)
                 if platform not in ("eBay", "TCGplayer") or not isinstance(skus, list) or not skus:
                     raise ValueError("Platform and at least one SKU are required")
                 unique_skus = list(dict.fromkeys(clean_text(sku, 40) for sku in skus))
-                with connect() as db:
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
                     placeholders = ",".join("?" for _ in unique_skus)
                     cards = db.execute(
                         f"SELECT * FROM cards WHERE sku IN ({placeholders})", unique_skus
@@ -1818,8 +2491,10 @@ class DexHandler(BaseHTTPRequestHandler):
                         """
                         INSERT INTO sale_orders (
                             platform, order_number, sold_at, subtotal, shipping_collected,
-                            platform_fees, postage_cost, notes
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            platform_fees, postage_cost, notes, order_type,
+                            merchandise_total_cents, shipping_collected_cents,
+                            marketplace_fees_cents, actual_postage_cents
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CARD', ?, ?, ?, ?)
                         """,
                         (
                             platform, clean_text(payload.get("order_number"), 80),
@@ -1827,6 +2502,10 @@ class DexHandler(BaseHTTPRequestHandler):
                             subtotal, money(payload.get("shipping_collected")),
                             money(payload.get("platform_fees")), money(payload.get("postage_cost")),
                             clean_text(payload.get("notes"), 500),
+                            int(round(subtotal * 100)),
+                            int(round(money(payload.get("shipping_collected")) * 100)),
+                            int(round(money(payload.get("platform_fees")) * 100)),
+                            int(round(money(payload.get("postage_cost")) * 100)),
                         ),
                     )
                     order_id = cursor.lastrowid
@@ -1836,10 +2515,13 @@ class DexHandler(BaseHTTPRequestHandler):
                             "INSERT INTO sale_items (order_id, card_id, sale_price) VALUES (?, ?, ?)",
                             (order_id, card["id"], per_item),
                         )
-                        db.execute(
-                            "UPDATE cards SET status = 'SOLD', updated_at = ? WHERE id = ?",
+                        changed = db.execute(
+                            """UPDATE cards SET status = 'SOLD', updated_at = ?
+                               WHERE id = ? AND status <> 'SOLD' AND recycled_at IS NULL""",
                             (utcnow(), card["id"]),
                         )
+                        if changed.rowcount != 1:
+                            raise sqlite3.IntegrityError("A card was sold by another operation")
                     log_action(db, "SALE", f"Completed {platform} order with {len(cards)} card(s)", {
                         "order_id": order_id,
                         "cards": [{"id": card["id"], "status": card["status"]} for card in cards],
@@ -1859,6 +2541,22 @@ class DexHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path.rstrip("/")
         try:
             payload = self.read_json()
+            acquisition_match = re.fullmatch(r"/api/acquisitions/(\d+)", path)
+            if acquisition_match:
+                acquisition_id = int(acquisition_match.group(1))
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = autosave_acquisition(db, acquisition_id, payload)
+                self.send_json(result)
+                return
+            line_match = re.fullmatch(r"/api/acquisition-lines/(\d+)", path)
+            if line_match:
+                line_id = int(line_match.group(1))
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = autosave_acquisition_line(db, line_id, payload)
+                self.send_json(result)
+                return
             economics_match = re.fullmatch(r"/api/batches/(\d+)/economics", path)
             if economics_match:
                 batch_id = int(economics_match.group(1))
@@ -1872,6 +2570,12 @@ class DexHandler(BaseHTTPRequestHandler):
                     if previous["economics_status"] == "FINALIZED":
                         raise ValueError("Finalized economics require the audited correction workflow")
                     economics = normalize_acquisition_input(payload, dict(previous))
+                    if acquisition_has_used_units(db, batch_id) and any(
+                        previous[field] != economics[field] for field in EDITABLE_FIELDS
+                    ):
+                        raise ValueError(
+                            "Acquisition facts are locked after a sealed unit is opened, sold, or adjusted"
+                        )
                     updates = {field: economics[field] for field in EDITABLE_FIELDS}
                     updates["reporting_currency"] = "USD"
                     updates["economics_status"] = (
@@ -1891,6 +2595,7 @@ class DexHandler(BaseHTTPRequestHandler):
                             f"UPDATE batches SET {assignments} WHERE id = ?",
                             [*updates.values(), batch_id],
                         )
+                        synchronize_sealed_units(db, batch_id)
                         log_action(
                             db,
                             "ACQUISITION_UPDATE",

@@ -35,6 +35,7 @@ New files:
 
 - `dex_acquisition.py`
 - `tests/test_phase3_acquisition.py`
+- `tests/test_phase3_batch_detail_render.cjs`
 - `RELEASE_CHECKPOINT_v2.1-test_PHASE3.md`
 
 `VERSION` remains the approved `v2.1-test` value and is included in the package.
@@ -49,13 +50,17 @@ See `MIGRATION_NOTES_v2.1-test.md` for the exact columns, transaction behavior, 
 
 ## Tests and Results
 
-- Full development suite: 35 tests passed (`python -m unittest discover -s tests -q`) in 1.411 seconds.
-- Isolated checkpoint package: 35 tests passed; no forbidden runtime/private artifacts were present.
+- Full Phase 3 hotfix suite: 36 tests passed (`python -m unittest discover -s tests -q`) in 1.532 seconds.
+- Direct JavaScript batch-detail render regression passed against the live disposable API (`node tests/test_phase3_batch_detail_render.cjs`).
+- Isolated checkpoint package remains free of forbidden runtime/private artifacts.
 - Earlier Phase 1/2 tests all pass, including the 2,500-card legacy-preview performance guard.
 - New coverage verifies validation, exact reconciliation, optional foreign references, unknown cost, mismatch acknowledgement, receipt grouping without allocation, audit history, CSV compatibility, finalized-edit protection, runtime image module packaging, one-time legacy migration, source-copy isolation, and rollback on forced migration failure.
 - Disposable seeded API smoke: health `200`, runtime `v2.1-test`; 6 OP16 boxes cost $660.00 and 2 ST27 decks cost $86.40 under `DEMO-RECEIPT-001`; group assigned-cost total is $746.40 with 2/2 batch coverage.
 - Frontend syntax: `node --check static/app.js` passed with the bundled Node runtime.
-- Automated browser control could not launch because its sandboxed runtime could not access its own machine-local runtime path. Visual verification remains an operator acceptance step; this did not affect the app or disposable database.
+- Seeded OP16 batch detail rendered successfully against the disposable local API after the operator-smoke hotfix.
+- Real Chrome diagnostics identified the original exception at `ripSessionsPanel`: a paused Phase 4 frontend called `rips.sessions.map(...)` after a Phase 3 backend returned the HTML fallback for the unavailable rip endpoint. The browser converted that failed JSON read to `{}`, leaving `rips.sessions` undefined.
+- The final `phase3-hotfix2` cache key serves the isolated Phase 3 frontend and cannot reuse the contaminated Phase 4 cache entry. A single-process Chrome click test verified Inventory, Inbound, OP-B20260814-01, Acquisition Cost Facts, receipt-group linkage, Estimated Economics, and the linked ST27 batch.
+- Final operator acceptance remains required even though the automated real-Chrome click path passed against disposable data.
 
 ## Deployment Assumptions and Warnings
 
@@ -95,6 +100,7 @@ Upload these paths from the Phase 3 checkpoint package:
 - `tests/test_phase1_migrations.py`
 - `tests/test_phase2_legacy_economics.py`
 - `tests/test_phase3_acquisition.py`
+- `tests/test_phase3_batch_detail_render.cjs`
 - `DEX_CURRENT_STATE.md`
 - `DEX_OPERATING_MODEL.md`
 - `MIGRATION_NOTES_v2.1-test.md`

@@ -1,10 +1,18 @@
 # Dex Operating Model
 
-Last updated: 2026-06-23
+Last updated: 2026-08-15
 
 ## Big Picture
 
 Dex is becoming the home base for a small TCG business. The goal is to make physical inventory, market awareness, pricing, and listing decisions work together without losing track of individual cards.
+
+## Accounting-by-Default Rule
+
+The operator provides business facts. DEX performs deterministic accounting. DEX asks for human attention only when reality is ambiguous, conflicting, incomplete, or materially exceptional.
+
+DEX uses three decision levels: **Automatic**, **Automatic + Visible**, and **Needs Attention**. Backend services remain the sole calculation authority; frontend surfaces format and explain backend results without duplicating formulas. Automation must never fabricate source facts, and every automatic accounting decision must create its own versioned, reproducible audit trail.
+
+The complete standing design contract, future receipt-input model, and future Attention Center boundary are documented in [`DEX_ACCOUNTING_BY_DEFAULT.md`](DEX_ACCOUNTING_BY_DEFAULT.md).
 
 ## System Roles
 
@@ -213,30 +221,47 @@ Future rules can include:
 - Connect acquisition cost to sealed units, rip sessions, resulting physical cards, sales, remaining value, cost recovery, and operational profit/loss.
 - Preserve estimate-only legacy economics until an operator explicitly finalizes a guided conversion.
 - Deliver the approved work in gated phases, ending with Operational Economics.
-- Phase 3 currently records authoritative USD acquisition facts and informational Receipt/Acquisition Groups; rip allocation and permanent basis remain deferred to Phase 4.
+- Phase 4 provides explicit rip intake, bulk reserves, exact allocation finalization, and append-only card-basis corrections.
+- Phase 5 provides stable sealed-unit identity, deterministic landed basis, exact rip/sale consumption, separate sealed-only orders, reason-aware quantity adjustment, reconciliation, and eligible atomic sale Undo.
+- Phase 6 provides backend-calculated batch economics and versioned exports, with realized/unrealized separation, coverage/freshness, stable cross-batch order attribution, informational receipt-group rollups, and no stored dashboard totals.
+- Phase 7A provides append-only acquisition/basis corrections, reason-aware card and sealed dispositions, operational-loss treatment, durable tombstones, and linked inverse reversals.
+- Phase 7B provides distinct immutable refunds, returns, chargebacks, marketplace fee credits, postage refunds, sale corrections, exact confirmed inventory restoration, duplicate protection, and backend-derived effective realized economics.
+- Phase 7C provides read-only **Operational Economics** for Finalized Economics batches: authoritative acquisition cost, effective recovery, active sold basis, realized P/L, operational loss, separate remaining market/listed value, uncapped recovery, coverage/freshness, and exact order attribution. Legacy estimates and unfinished authoritative batches remain separate. No portfolio total is stored.
 
 ### v2.2-test
+
+- Inbound 2.0: acquisition-first receiving, multi-line purchase facts, UPC-ready product identity, receipt intelligence, exact reconciliation, and later SAM routing.
+- Phase 1 provides the additive Draft Acquisition/state/event foundation.
+- Phase 2 makes a full-page, resumable **New Acquisition** wizard the primary inbound entry. Its focused three-screen flow captures product type, combined product/purchase details, and review. Accounting-by-Default removes routine allocation work from clean acquisitions; Legacy New Batch remains under Advanced / Legacy compatibility.
+- A single product line receives 100% of authoritative landed cost only during explicit acquisition confirmation, with backend-calculated per-unit cost and a disclosed versioned audit event. Multiple product lines reconcile exactly; manual allocation appears only as a Needs Attention exception when DEX lacks safe evidence. Payment method is a required human purchase fact; receipt capture remains a disabled placeholder until a later approved phase.
+- Phase 2 publishes `AUTOMATIC`, `AUTOMATIC_VISIBLE`, and `NEEDS_ATTENTION` presentation metadata without implementing a notification center. Missing cost, explicit zero, unresolved line allocation, and purchase discrepancies remain protected exception paths.
+- Phase 2 confirmation stops at `READY_FOR_INTAKE`. It does not create downstream batches, sealed units, card basis, UPC/catalog facts, documents, extraction results, or SAM matches.
+- Phase 3 adds a reusable local commercial-product catalog and validated text identifiers for UPC-A, EAN-13, GTIN-14, and internal codes. Known Pack/Sealed scans are Automatic + Visible; repeat scans increment one acquisition line and different products remain independent lines.
+- Unknown identifiers are never guessed. Operators can use an acquisition-local identification or explicitly remember an operator-confirmed mapping. Mapping collisions are blocked and corrections append reasoned history rather than rewriting prior facts.
+- UPC remains commercial-product identity only. Phase 3 creates no physical sealed-unit identity, processing batch, basis, receipt fact, SAM match, or portfolio result; receipt/document work remains a later approval gate.
+
+### v2.3-test
 
 - What's New hub.
 - Roadmap and patch notes inside Dex.
 
-### v2.3-test
+### v2.4-test
 
 - Janna starts as manual Market Watch posts.
 - Market Watch notes stored in Dex.
 
-### v2.4-test
+### v2.5-test
 
 - Goose starts as inventory signals.
 - Show sell/hold/watch recommendations.
 - Show eBay/TCGplayer candidate status.
 
-### v2.5-test
+### v2.6-test
 
 - Add pricing recommendation fields.
 - Support one-click apply for reviewed price suggestions.
 
-### v2.6-test and Later
+### v2.7-test and Later
 
 - Add Portfolio Analytics for inventory value graphs and top movers.
 - Add marketplace connectors if API credentials and HTTPS are ready.

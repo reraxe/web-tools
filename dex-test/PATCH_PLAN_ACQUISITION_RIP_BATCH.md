@@ -1,6 +1,6 @@
 # Patch Plan: Acquisition and Rip Batch Economics
 
-Status: design decisions approved; phase implementation pending  
+Status: design decisions approved; Phases 1–4 implemented and gated  
 Baseline: Dex `v2.0-test` and `DEX_CURRENT_STATE.md`
 
 ## Objective
@@ -400,7 +400,7 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 
 ### Phase 4: Rip sessions, bulk reserves, and immutable card basis
 
-- **Approval status:** approved with all previously approved allocation rules and the constraints below.
+- **Approval status:** approved and implemented; all Phase 4 tests pass.
 - Add rip sessions, intake association, unscanned/unidentified bulk reserves, allocation preview/finalization, and audited correction rules.
 - Implement the approved acquisition-type allocation rules and require complete reconciliation plus explicit confirmation.
 - Never activate a rip for scanner intake implicitly. The operator must explicitly start/select it. While active, show an unmistakable banner such as **“Scanner intake is currently assigned to RIP-#### / Product Name.”**
@@ -417,7 +417,7 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 
 ### Phase 5: Sealed inventory and separate sealed sales
 
-- **Approval status:** approved with all previously discussed safeguards and the constraints below.
+- **Approval status:** approved and implemented; all Phase 5 tests pass.
 - Track sealed quantity states and values.
 - Add sealed-only outbound orders and reject mixed card/sealed orders in the first release.
 - Replace equal card sale splitting with explicit gross lines and deterministic net allocation.
@@ -434,7 +434,7 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 
 ### Phase 6: Batch economics UI and exports
 
-- **Approval status:** approved with all previously approved reporting safeguards and the constraints below.
+- **Approval status:** approved and implemented; the complete Phase 6 regression and disposable browser gates pass.
 - Deliver batch cards, drill-down calculations, rip history, coverage warnings, and batch-economics CSV.
 - Verify mobile and desktop layouts and printing/intake regressions.
 - Keep **Realized Economics** visually separate from **Unrealized/Remaining Value**. Market and listed value must never appear to be realized profit.
@@ -464,6 +464,8 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 
 #### Phase 7A: Corrections and dispositions
 
+- **Approval status:** approved and implemented; the complete Phase 7A service, migration, API/UI, regression, performance, and disposable browser gates pass.
+
 - Add acquisition-cost, card-basis, bulk-reserve, sealed-quantity, duplicate/error, physical damage, loss, disposal, and post-finalization correction workflows.
 - Keep Duplicate/Entry Error corrections separate from real physical loss/disposition.
 - Preserve original finalized allocations and append every correction or inverse event.
@@ -471,6 +473,8 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 - Complete migration, reconciliation, duplicate-submission, reversal, disposition, audit, and regression tests before Phase 7B begins.
 
 #### Phase 7B: Refunds, returns, chargebacks, and post-sale corrections
+
+- **Approval status:** approved and implemented; service, migration, API/UI, financial reconciliation, exact-return state transitions, idempotency, concurrency, cross-batch attribution, export, and disposable operator gates pass.
 
 - Model refunds, returns, and chargebacks as distinct event types.
 - Support partial refunds.
@@ -483,6 +487,8 @@ Calculation responses should include integer-cent facts, display amounts, valuat
 - Complete financial reconciliation, state-transition, idempotency, cross-batch attribution, audit, and regression tests before Phase 7C begins.
 
 #### Phase 7C: Portfolio Operational Economics
+
+- **Approval status:** approved and implemented; backend service, read-only API/UI/export, Finalized Economics scope separation, effective post-sale reconciliation, cross-batch de-duplication, coverage/freshness, performance, and disposable operator gates pass.
 
 - Roll trusted source facts into the **Operational Economics** dashboard and exports.
 - Default portfolio totals to Finalized Economics only. Keep estimated legacy economics clearly separate and opt-in for comparison.

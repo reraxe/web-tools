@@ -13,7 +13,8 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Iterator
 
-from dex_economics import CALCULATION_VERSION, allocate_cents, allocate_weighted_cents
+from dex_economics import CALCULATION_VERSION, allocate_cents
+from dex_batch_economics import card_sale_item_allocations
 
 
 ESTIMATE_NOTICE = "Estimate only. Cost basis not finalized."
@@ -77,51 +78,16 @@ def _valuation(cards: list[sqlite3.Row], field: str, timestamp_field: str | None
 
 
 def _order_allocations(connection: sqlite3.Connection, order_ids: set[int]) -> dict[int, dict]:
-    if not order_ids:
-        return {}
-    placeholders = ",".join("?" for _ in order_ids)
-    rows = connection.execute(
-        f"""
-        SELECT si.id AS sale_item_id, si.card_id, si.order_id, si.sale_price,
-               c.batch_id, o.subtotal, o.shipping_collected, o.platform_fees,
-               o.postage_cost
-        FROM sale_items si
-        JOIN cards c ON c.id = si.card_id
-        JOIN sale_orders o ON o.id = si.order_id
-        WHERE si.order_id IN ({placeholders})
-        ORDER BY si.order_id, si.id
-        """,
-        tuple(sorted(order_ids)),
-    ).fetchall()
-    by_order: dict[int, list[sqlite3.Row]] = {}
-    for row in rows:
-        by_order.setdefault(row["order_id"], []).append(row)
-
-    allocations: dict[int, dict] = {}
-    for order_id, items in by_order.items():
-        weights = [
-            (row["sale_item_id"], max(0, dollars_to_cents(row["sale_price"]) or 0))
-            for row in items
-        ]
-        order = items[0]
-        gross_total = dollars_to_cents(order["subtotal"]) or 0
-        net_total = (
-            gross_total
-            + (dollars_to_cents(order["shipping_collected"]) or 0)
-            - (dollars_to_cents(order["platform_fees"]) or 0)
-            - (dollars_to_cents(order["postage_cost"]) or 0)
-        )
-        gross = {item.stable_id: item.cents for item in allocate_weighted_cents(gross_total, weights)}
-        net = {item.stable_id: item.cents for item in allocate_weighted_cents(net_total, weights)}
-        for row in items:
-            allocations[row["sale_item_id"]] = {
-                "order_id": order_id,
-                "batch_id": row["batch_id"],
-                "card_id": row["card_id"],
-                "gross_cents": gross[row["sale_item_id"]],
-                "net_cents": net[row["sale_item_id"]],
-            }
-    return allocations
+    return {
+        item_id: {
+            "order_id": item["order_id"],
+            "batch_id": item["batch_id"],
+            "card_id": item["card_id"],
+            "gross_cents": item["gross_cents"],
+            "net_cents": item["net_cents"],
+        }
+        for item_id, item in card_sale_item_allocations(connection, order_ids).items()
+    }
 
 
 def estimate_legacy_batch(connection: sqlite3.Connection, batch_id: int) -> dict | None:
@@ -134,7 +100,9 @@ def estimate_legacy_batch(connection: sqlite3.Connection, batch_id: int) -> dict
         """
         SELECT c.*, si.id AS sale_item_id, si.order_id, si.sale_price
         FROM cards c
-        LEFT JOIN sale_items si ON si.card_id = c.id
+        LEFT JOIN sale_items si ON si.id = (
+            SELECT MAX(last_si.id) FROM sale_items last_si WHERE last_si.card_id=c.id
+        )
         WHERE c.batch_id = ?
         ORDER BY c.id
         """,

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Iterable, TypeAlias
 
 
-CALCULATION_VERSION = "acquisition-rip-v1"
+CALCULATION_VERSION = "acquisition-rip-v3"
 
 ACQUISITION_MODES = (
     "SEALED_RIP",
