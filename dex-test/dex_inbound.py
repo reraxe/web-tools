@@ -521,6 +521,38 @@ def _attention_payload(
     }
 
 
+def _receipt_warnings_for_confirmation(
+    receipt_intelligence: Mapping[str, object],
+    reconciliation: Mapping[str, object],
+    active_lines: list[Mapping[str, object]],
+) -> list[dict]:
+    """Return receipt warnings that still block acquisition confirmation.
+
+    Failed extraction remains failed. Its allocation warning becomes informational
+    only after an explicit audited manual-facts choice. Successful receipt review
+    retains the existing rule that exact operator-confirmed line allocation can
+    resolve an otherwise unavailable automatic proposal.
+    """
+
+    warnings = list(receipt_intelligence.get("warnings", []))
+    manual_available = bool(receipt_intelligence.get("manual_fallback_available"))
+    manual_selected = bool(receipt_intelligence.get("manual_fallback_selected"))
+    manual_allocation_complete = bool(
+        reconciliation.get("partition_reconciled")
+        and all(line.get("allocation_status") == "CONFIRMED" for line in active_lines)
+    )
+    allocation_warning_is_informational = manual_selected or (
+        manual_allocation_complete and not manual_available
+    )
+    if allocation_warning_is_informational:
+        warnings = [
+            warning
+            for warning in warnings
+            if warning.get("code") != "RECEIPT_ALLOCATION_UNRESOLVED"
+        ]
+    return warnings
+
+
 def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
     from dex_documents import document_summary
     from dex_receipts import receipt_intelligence_payload
@@ -654,14 +686,9 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         warnings.append({"code": "DISCREPANCY_NOTE_REQUIRED", "message": "Explain every nonzero component-to-final adjustment."})
     if row.get("final_usd_paid_cents") == 0 and row.get("discrepancy_reason_code") != "EXPLICIT_ZERO_COST":
         warnings.append({"code": "ZERO_COST_REASON_REQUIRED", "message": "An intentional $0.00 acquisition requires the Explicit zero-cost reason."})
-    receipt_warnings = list(receipt_intelligence.get("warnings", []))
-    if reconciliation["partition_reconciled"] and all(
-        line.get("allocation_status") == "CONFIRMED" for line in active_lines
-    ):
-        receipt_warnings = [
-            warning for warning in receipt_warnings
-            if warning.get("code") != "RECEIPT_ALLOCATION_UNRESOLVED"
-        ]
+    receipt_warnings = _receipt_warnings_for_confirmation(
+        receipt_intelligence, reconciliation, active_lines
+    )
     warnings.extend(receipt_warnings)
     automatic_preview = None
     if len(active_lines) == 1 and reconciliation["inventory_basis_target_cents"] is not None and reconciliation["inventory_basis_target_cents"] >= 0:
@@ -1282,14 +1309,9 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
                 line["allocation_status"] = "CONFIRMED"
     _validate_lines_for_confirmation(lines)
     reconciliation = reconciliation_payload(dict(row), lines)
-    receipt_warnings = list(receipt_intelligence.get("warnings", []))
-    if reconciliation["partition_reconciled"] and all(
-        line.get("allocation_status") == "CONFIRMED" for line in active_lines
-    ):
-        receipt_warnings = [
-            warning for warning in receipt_warnings
-            if warning.get("code") != "RECEIPT_ALLOCATION_UNRESOLVED"
-        ]
+    receipt_warnings = _receipt_warnings_for_confirmation(
+        receipt_intelligence, reconciliation, active_lines
+    )
     if receipt_warnings:
         raise ValueError("Receipt intelligence still needs attention before confirmation")
     if not reconciliation["partition_reconciled"]:

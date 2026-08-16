@@ -332,6 +332,11 @@ def _job_payload(db: sqlite3.Connection, job_id: int) -> dict:
         "SELECT * FROM receipt_lines WHERE job_id=? ORDER BY line_sequence,id", (job_id,)
     ).fetchall()]
     job["raw_text_available"] = False
+    job["capability_unavailable"] = job.get("error_code") == "FORMAT_PROVIDER_UNAVAILABLE"
+    job["retry_plausible"] = bool(
+        job.get("status") in ("FAILED", "NO_FACTS")
+        and not job["capability_unavailable"]
+    )
     return job
 
 
@@ -513,7 +518,9 @@ def _match_receipt_lines(db: sqlite3.Connection, acquisition_id: int, job_id: in
 def _candidate_groups(db: sqlite3.Connection, acquisition_id: int) -> dict[str, list[dict]]:
     rows = db.execute(
         """SELECT c.* FROM receipt_candidate_facts c JOIN receipt_extraction_jobs j ON j.id=c.job_id
+            JOIN acquisition_documents d ON d.id=j.document_id
             WHERE c.acquisition_id=? AND j.status='COMPLETED' AND c.disposition<>'REJECTED' AND j.disposition<>'REJECTED'
+              AND d.storage_status='STORED'
             ORDER BY c.created_at,c.id""", (acquisition_id,)
     ).fetchall()
     groups: dict[str, list[dict]] = {}
@@ -766,7 +773,9 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
         raise ValueError("Final USD remains Unknown; allocation cannot be proposed")
     receipt_rows = db.execute(
         """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
+            JOIN acquisition_documents d ON d.id=j.document_id
             WHERE r.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
+              AND d.storage_status='STORED'
               AND r.classification NOT IN ('DUPLICATE_EXTRACTION') ORDER BY r.id""", (acquisition_id,)
     ).fetchall()
     if any(row["classification"] in ("UNRESOLVED", "PERSONAL_NONBUSINESS", "BUSINESS_NONINVENTORY") for row in receipt_rows):
@@ -848,6 +857,15 @@ def _proposal_payload(row: Mapping | None) -> dict | None:
 
 
 def allocation_for_confirmation(db: sqlite3.Connection, acquisition_id: int, final_paid: int) -> dict | None:
+    active_receipt = db.execute(
+        """SELECT 1 FROM receipt_extraction_jobs j
+             JOIN acquisition_documents d ON d.id=j.document_id
+            WHERE j.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
+              AND d.storage_status='STORED' LIMIT 1""",
+        (acquisition_id,),
+    ).fetchone()
+    if not active_receipt:
+        return None
     row = db.execute(
         """SELECT * FROM receipt_allocation_proposals WHERE acquisition_id=? AND status='APPLIED'
             ORDER BY created_at DESC,id DESC LIMIT 1""", (acquisition_id,)
@@ -874,9 +892,18 @@ def accept_allocation_on_confirmation(db: sqlite3.Connection, acquisition_id: in
 
 
 def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
-    jobs = [_job_payload(db, int(row["id"])) for row in db.execute(
+    all_jobs = [_job_payload(db, int(row["id"])) for row in db.execute(
         "SELECT id FROM receipt_extraction_jobs WHERE acquisition_id=? ORDER BY created_at,id", (acquisition_id,)
     ).fetchall()]
+    active_document_ids = {
+        int(row["id"])
+        for row in db.execute(
+            "SELECT id FROM acquisition_documents WHERE acquisition_id=? AND storage_status='STORED'",
+            (acquisition_id,),
+        ).fetchall()
+    }
+    jobs = [job for job in all_jobs if int(job["document_id"]) in active_document_ids]
+    historical_jobs = [job for job in all_jobs if int(job["document_id"]) not in active_document_ids]
     groups = _candidate_groups(db, acquisition_id)
     acquisition = _acquisition(db, acquisition_id)
     conflicts = []
@@ -901,7 +928,9 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
                 low_confidence_critical.append(field)
     receipt_lines = [receipt_line_payload(db, row) for row in db.execute(
         """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
-            WHERE r.acquisition_id=? AND j.disposition<>'SUPERSEDED' ORDER BY r.id""", (acquisition_id,)
+            JOIN acquisition_documents d ON d.id=j.document_id
+            WHERE r.acquisition_id=? AND j.disposition<>'SUPERSEDED' AND d.storage_status='STORED'
+            ORDER BY r.id""", (acquisition_id,)
     ).fetchall()]
     unresolved = [item for item in receipt_lines if item["classification"] == "UNRESOLVED"]
     fuzzy = [item for item in receipt_lines if item.get("best_match") and item["best_match"]["match_method"] == "FUZZY_TEXT"]
@@ -912,9 +941,11 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
             line = db.execute("SELECT quantity FROM acquisition_lines WHERE id=?", (match["acquisition_line_id"],)).fetchone()
             if line and line["quantity"] and int(line["quantity"]) != int(item["quantity"]):
                 quantity_conflicts.append(item["id"])
-    proposal = _proposal_payload(db.execute(
-        "SELECT * FROM receipt_allocation_proposals WHERE acquisition_id=? AND status IN ('APPLIED','ACCEPTED') ORDER BY created_at DESC,id DESC LIMIT 1", (acquisition_id,)
-    ).fetchone())
+    proposal = None
+    if active_document_ids:
+        proposal = _proposal_payload(db.execute(
+            "SELECT * FROM receipt_allocation_proposals WHERE acquisition_id=? AND status IN ('APPLIED','ACCEPTED') ORDER BY created_at DESC,id DESC LIMIT 1", (acquisition_id,)
+        ).fetchone())
     warnings = []
     if conflicts or any(item["conflicts_with_manual"] for candidates in groups.values() for item in candidates):
         warnings.append({"code": "RECEIPT_FIELD_CONFLICT", "message": "Receipt candidates conflict with another document or existing manual facts."})
@@ -929,18 +960,83 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
     if len([row for row in db.execute("SELECT id FROM acquisition_lines WHERE acquisition_id=? AND canceled_at IS NULL", (acquisition_id,)).fetchall()]) > 1 and jobs and not proposal:
         warnings.append({"code": "RECEIPT_ALLOCATION_UNRESOLVED", "message": "Receipt evidence does not yet support an exact multi-line landed-cost allocation."})
     failed_jobs = [job for job in jobs if job["status"] == "FAILED"]
+    unavailable_jobs = [job for job in failed_jobs if job.get("capability_unavailable")]
+    manual_fallback_available = bool(
+        jobs
+        and not any(job["status"] == "COMPLETED" for job in jobs)
+        and any(job["status"] in ("FAILED", "NO_FACTS") for job in jobs)
+    )
+    manual_fallback_selected = bool(db.execute(
+        """SELECT 1 FROM receipt_extraction_events
+            WHERE acquisition_id=? AND event_type='MANUAL_FALLBACK_SELECTED' LIMIT 1""",
+        (acquisition_id,),
+    ).fetchone())
     status = "NOT_REQUESTED"
     if any(job["status"] == "PROCESSING" for job in jobs): status = "PROCESSING"
     elif any(job["status"] == "COMPLETED" for job in jobs): status = "READY_TO_REVIEW"
+    elif failed_jobs and unavailable_jobs and len(unavailable_jobs) == len(failed_jobs): status = "FAILED_MANUAL_AVAILABLE"
     elif failed_jobs: status = "FAILED_RETRYABLE"
     elif jobs: status = "NO_FACTS"
     return {
-        "status": status, "jobs": jobs, "candidate_groups": groups, "proposed_fields": proposed_fields,
+        "status": status, "jobs": jobs, "historical_jobs": historical_jobs,
+        "candidate_groups": groups, "proposed_fields": proposed_fields,
         "conflicts": conflicts, "receipt_lines": receipt_lines, "allocation_proposal": proposal,
         "warnings": warnings, "failed_job_count": len(failed_jobs), "manual_entry_available": True,
+        "manual_fallback_available": manual_fallback_available,
+        "manual_fallback_selected": manual_fallback_selected,
+        "retry_plausible": any(job.get("retry_plausible") for job in jobs),
         "raw_ocr_available": False, "external_transmission": False,
         "calculation_version": ALLOCATION_VERSION,
     }
+
+
+def select_manual_fallback(db: sqlite3.Connection, acquisition_id: int, payload: Mapping) -> dict:
+    """Record that the operator will use independently confirmed manual facts.
+
+    This event does not accept extraction, allocate basis, or confirm any financial
+    fact. It only makes an unavailable receipt allocation informational while the
+    established acquisition confirmation rules continue to enforce all accounting.
+    """
+
+    request_id = str(payload.get("request_id") or "").strip()
+    if not request_id:
+        raise ValueError("request_id is required")
+    prior = db.execute(
+        "SELECT 1 FROM receipt_extraction_events WHERE request_id=?", (request_id,)
+    ).fetchone()
+    if prior:
+        return receipt_intelligence_payload(db, acquisition_id) | {"idempotent_replay": True}
+    acquisition = _acquisition(db, acquisition_id)
+    _require_revision(acquisition, payload)
+    if payload.get("confirm_manual_fallback") is not True:
+        raise ValueError("Explicit confirmation is required to continue with manual purchase facts")
+    intelligence = receipt_intelligence_payload(db, acquisition_id)
+    if not intelligence["manual_fallback_available"]:
+        raise ValueError("Manual receipt fallback is available only after active extraction is unavailable or returns no facts")
+    affected_jobs = [
+        {"job_uuid": job["job_uuid"], "status": job["status"], "error_code": job.get("error_code")}
+        for job in intelligence["jobs"]
+        if job["status"] in ("FAILED", "NO_FACTS")
+    ]
+    db.execute(
+        "UPDATE acquisitions SET revision=revision+1,updated_at=? WHERE id=?",
+        (utcnow(), acquisition_id),
+    )
+    _event(
+        db,
+        acquisition_id,
+        request_id,
+        "MANUAL_FALLBACK_SELECTED",
+        reason_code="OPERATOR_MANUAL_FACTS",
+        notes="Operator chose authoritative manual purchase facts after receipt extraction was unavailable",
+        payload={
+            "affected_jobs": affected_jobs,
+            "receipt_remains_supporting_evidence": True,
+            "financial_facts_confirmed": False,
+            "allocation_authority_created": False,
+        },
+    )
+    return receipt_intelligence_payload(db, acquisition_id)
 
 
 def retry_extraction(db: sqlite3.Connection, job_uuid: str, payload: Mapping,
@@ -950,6 +1046,8 @@ def retry_extraction(db: sqlite3.Connection, job_uuid: str, payload: Mapping,
         raise ValueError("Extraction job not found")
     if prior["status"] not in ("FAILED", "NO_FACTS"):
         raise ValueError("Only failed or no-facts extraction jobs can be retried")
+    if prior["error_code"] == "FORMAT_PROVIDER_UNAVAILABLE":
+        raise ValueError("Retry is unavailable because the installed local provider cannot extract this image format; continue with manual purchase facts")
     retry_payload = dict(payload)
     retry_payload["retry_of_job_id"] = int(prior["id"])
     return queue_extraction(db, int(prior["document_id"]), retry_payload, store, extractor)

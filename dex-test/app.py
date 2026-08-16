@@ -132,6 +132,7 @@ from dex_receipts import (
     queue_extraction as queue_receipt_extraction,
     receipt_intelligence_payload,
     retry_extraction as retry_receipt_extraction,
+    select_manual_fallback as select_receipt_manual_fallback,
 )
 from dex_sealed import (
     acquisition_has_used_units,
@@ -2268,6 +2269,13 @@ class DexHandler(BaseHTTPRequestHandler):
                     result = generate_receipt_allocation_proposal(db, acquisition_id, payload)
                     result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
                 self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisitions/\d+/receipt-manual-fallback", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = select_receipt_manual_fallback(db, acquisition_id, payload)
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
             elif re.fullmatch(r"/api/acquisitions/\d+/product-scan", path):
                 acquisition_id = int(path.split("/")[3])
                 with DB_LOCK, connect() as db:
