@@ -61,6 +61,12 @@ DISCREPANCY_REASON_CODES = (
     "EXPLICIT_ZERO_COST",
     "OTHER",
 )
+NONINVENTORY_TREATMENT_CODES = (
+    "BUSINESS_NONINVENTORY",
+    "PERSONAL_NONBUSINESS",
+    "MIXED_NONINVENTORY",
+    "OTHER",
+)
 ACQUISITION_REMOVAL_REASON_CODES = (
     "DUPLICATE_ENTRY",
     "ORDER_CANCELED",
@@ -72,7 +78,7 @@ ACQUISITION_REMOVAL_REASON_CODES = (
 MATERIAL_DISCREPANCY_CENTS = 500
 MATERIAL_DISCREPANCY_PERCENT = 2.0
 EXTREME_DISCREPANCY_PERCENT = 50.0
-INBOUND_CALCULATION_VERSION = "inbound-acquisition-v1"
+INBOUND_CALCULATION_VERSION = "inbound-acquisition-v2"
 DECISION_LEVELS = ("AUTOMATIC", "AUTOMATIC_VISIBLE", "NEEDS_ATTENTION")
 WIZARD_STEPS = (
     "ACQUIRE",
@@ -101,6 +107,9 @@ AUTOSAVE_FIELDS = (
     "brokerage_cents",
     "acquisition_discount_cents",
     "final_usd_paid_cents",
+    "excluded_noninventory_cents",
+    "noninventory_treatment_code",
+    "noninventory_notes",
     "discrepancy_reason_code",
     "discrepancy_notes",
 )
@@ -114,6 +123,7 @@ CENT_FIELDS = {
     "brokerage_cents",
     "acquisition_discount_cents",
     "final_usd_paid_cents",
+    "excluded_noninventory_cents",
 }
 COMPONENT_FIELDS = (
     "purchase_subtotal_cents",
@@ -367,6 +377,18 @@ def _component_total(row: Mapping[str, object]) -> int:
     )
 
 
+def _inventory_basis_target(row: Mapping[str, object]) -> int | None:
+    """Return the inventory-only target without converting unknown exclusion to zero."""
+
+    final_paid = row.get("final_usd_paid_cents")
+    if final_paid is None:
+        return None
+    excluded = row.get("excluded_noninventory_cents")
+    if excluded is None:
+        return int(final_paid)
+    return int(final_paid) - int(excluded)
+
+
 def reconciliation_payload(row: Mapping[str, object], lines: list[Mapping[str, object]]) -> dict:
     component_total = _component_total(row)
     final_paid = row.get("final_usd_paid_cents")
@@ -380,11 +402,32 @@ def reconciliation_payload(row: Mapping[str, object], lines: list[Mapping[str, o
     extreme = bool(difference and float(percent or 0) >= EXTREME_DISCREPANCY_PERCENT)
     confirmed_lines = [line for line in lines if line.get("allocation_status") == "CONFIRMED" and not line.get("canceled_at")]
     assigned_total = sum(int(line.get("assigned_landed_cost_cents") or 0) for line in confirmed_lines)
-    allocation_difference = None if final_paid is None else int(final_paid) - assigned_total
+    excluded = row.get("excluded_noninventory_cents")
+    inventory_target = _inventory_basis_target(row)
+    partition_difference = (
+        None if inventory_target is None else int(inventory_target) - assigned_total
+    )
+    partition_reconciled = (
+        partition_difference == 0 if partition_difference is not None else False
+    )
+    component_reason = str(row.get("discrepancy_reason_code") or "").strip()
+    component_notes = str(row.get("discrepancy_notes") or "").strip()
+    component_reconciled = bool(
+        difference == 0 or (difference is not None and component_reason and component_notes)
+    )
+    exclusion_status = (
+        "UNKNOWN_REQUIRED"
+        if excluded is None and partition_difference not in (None, 0)
+        else "NOT_APPLICABLE"
+        if excluded is None
+        else "EXPLICIT"
+    )
     return {
         "component_total_cents": component_total,
         "final_usd_paid_cents": final_paid,
         "difference_cents": difference,
+        "component_adjustment_cents": difference,
+        "component_reconciled": component_reconciled,
         "difference_percent": percent,
         "severity": "EXTREME" if extreme else "MATERIAL" if material else "NOTICE" if difference else "NONE",
         "material": material,
@@ -392,8 +435,15 @@ def reconciliation_payload(row: Mapping[str, object], lines: list[Mapping[str, o
         "material_rule": "$5.00 OR 2%",
         "extreme_rule": "50% or greater difference",
         "assigned_line_cost_cents": assigned_total,
-        "allocation_difference_cents": allocation_difference,
-        "allocation_reconciled": allocation_difference == 0 if allocation_difference is not None else False,
+        "inventory_landed_cost_cents": assigned_total,
+        "excluded_noninventory_cents": excluded,
+        "inventory_basis_target_cents": inventory_target,
+        "partition_difference_cents": partition_difference,
+        "partition_reconciled": partition_reconciled,
+        "exclusion_status": exclusion_status,
+        # Compatibility aliases retained for existing Phase 2-7 consumers.
+        "allocation_difference_cents": partition_difference,
+        "allocation_reconciled": partition_reconciled,
         "allocation_notice": "Every suggested allocation must disclose its method and remains non-authoritative until explicitly confirmed.",
     }
 
@@ -408,8 +458,15 @@ def _attention_payload(
     ready = row.get("state") == "READY_FOR_INTAKE"
     final_paid = row.get("final_usd_paid_cents")
     zero_exception = final_paid == 0 and not ready
+    automatic_single_line_pending = bool(
+        len(active_lines) == 1
+        and active_lines[0].get("allocation_status") != "CONFIRMED"
+        and reconciliation.get("inventory_basis_target_cents") is not None
+        and int(reconciliation.get("inventory_basis_target_cents")) >= 0
+    )
     allocation_unresolved = bool(
-        len(active_lines) > 1 and not reconciliation.get("allocation_reconciled")
+        not reconciliation.get("partition_reconciled")
+        and not automatic_single_line_pending
     )
     discrepancy = bool(reconciliation.get("difference_cents"))
     incomplete = bool(warnings)
@@ -525,9 +582,12 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             }
     receipt_intelligence = receipt_intelligence_payload(db, acquisition_id)
     receipt_proposal = receipt_intelligence.get("allocation_proposal")
+    inventory_target = _inventory_basis_target(row)
     receipt_allocation_safe = bool(
         receipt_proposal and receipt_proposal.get("status") in ("APPLIED", "ACCEPTED")
         and receipt_proposal.get("difference_cents") == 0
+        and inventory_target is not None
+        and receipt_proposal.get("total_allocated_cents") == inventory_target
     )
     reconciliation_lines = [dict(line) for line in lines]
     if receipt_allocation_safe:
@@ -568,19 +628,45 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         automatic_single_line = len(active_lines) == 1 and row.get("final_usd_paid_cents") is not None
         if line.get("allocation_status") != "CONFIRMED" and not automatic_single_line and not receipt_allocation_safe:
             warnings.append({"code": "LINE_COST_UNCONFIRMED", "message": f"{label} landed cost is not confirmed."})
-    if row.get("final_usd_paid_cents") is not None and not reconciliation["allocation_reconciled"] and len(active_lines) != 1:
-        warnings.append({"code": "ALLOCATION_NOT_RECONCILED", "message": "Confirmed product-line costs do not equal final USD paid."})
+    automatic_single_line_pending = bool(
+        len(active_lines) == 1
+        and active_lines[0].get("allocation_status") != "CONFIRMED"
+        and reconciliation["inventory_basis_target_cents"] is not None
+        and reconciliation["inventory_basis_target_cents"] >= 0
+    )
+    if row.get("final_usd_paid_cents") is not None and not reconciliation["partition_reconciled"] and not automatic_single_line_pending:
+        warnings.append({"code": "ALLOCATION_NOT_RECONCILED", "message": "Inventory landed cost plus excluded noninventory must equal final USD paid exactly."})
+        if row.get("excluded_noninventory_cents") is None and reconciliation["partition_difference_cents"] > 0:
+            warnings.append({"code": "EXCLUDED_NONINVENTORY_REQUIRED", "message": "Inventory landed cost is below final USD paid. Enter an explicit excluded-noninventory amount or correct the line allocations."})
+    excluded = row.get("excluded_noninventory_cents")
+    treatment = str(row.get("noninventory_treatment_code") or "")
+    if treatment and excluded is None:
+        warnings.append({"code": "NONINVENTORY_AMOUNT_REQUIRED", "message": "Enter the net excluded-noninventory amount; a treatment label alone is not authoritative."})
+    if excluded is not None and int(excluded) > 0 and treatment not in NONINVENTORY_TREATMENT_CODES:
+        warnings.append({"code": "NONINVENTORY_TREATMENT_REQUIRED", "message": "Choose how the excluded noninventory portion should be described."})
+    if excluded is not None and int(excluded) > 0 and treatment == "OTHER" and not row.get("noninventory_notes"):
+        warnings.append({"code": "NONINVENTORY_NOTE_REQUIRED", "message": "Other excluded-noninventory treatment requires an explanation."})
+    if reconciliation["inventory_basis_target_cents"] is not None and reconciliation["inventory_basis_target_cents"] < 0:
+        warnings.append({"code": "NONINVENTORY_EXCEEDS_FINAL", "message": "Excluded noninventory cannot exceed final USD paid."})
     if reconciliation["difference_cents"] and not row.get("discrepancy_reason_code"):
         warnings.append({"code": "DISCREPANCY_REASON_REQUIRED", "message": "Choose a reason for the component-to-final difference."})
+    if reconciliation["difference_cents"] and not row.get("discrepancy_notes"):
+        warnings.append({"code": "DISCREPANCY_NOTE_REQUIRED", "message": "Explain every nonzero component-to-final adjustment."})
     if row.get("final_usd_paid_cents") == 0 and row.get("discrepancy_reason_code") != "EXPLICIT_ZERO_COST":
         warnings.append({"code": "ZERO_COST_REASON_REQUIRED", "message": "An intentional $0.00 acquisition requires the Explicit zero-cost reason."})
-    if reconciliation["material"] and not row.get("discrepancy_notes"):
-        warnings.append({"code": "MATERIAL_NOTE_REQUIRED", "message": "Material differences require an explanatory note."})
-    warnings.extend(receipt_intelligence.get("warnings", []))
+    receipt_warnings = list(receipt_intelligence.get("warnings", []))
+    if reconciliation["partition_reconciled"] and all(
+        line.get("allocation_status") == "CONFIRMED" for line in active_lines
+    ):
+        receipt_warnings = [
+            warning for warning in receipt_warnings
+            if warning.get("code") != "RECEIPT_ALLOCATION_UNRESOLVED"
+        ]
+    warnings.extend(receipt_warnings)
     automatic_preview = None
-    if len(active_lines) == 1 and row.get("final_usd_paid_cents") is not None:
+    if len(active_lines) == 1 and reconciliation["inventory_basis_target_cents"] is not None and reconciliation["inventory_basis_target_cents"] >= 0:
         line = active_lines[0]
-        cents = int(row["final_usd_paid_cents"])
+        cents = int(reconciliation["inventory_basis_target_cents"])
         quantity = line.get("quantity")
         per_unit = None
         if quantity:
@@ -597,7 +683,7 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             "line_id": int(line["id"]),
             "assigned_landed_cost_cents": cents,
             "allocation_method": "SINGLE_LINE_100_PERCENT",
-            "allocation_method_label": "Single line — 100% of authoritative landed cost",
+            "allocation_method_label": "Single line — 100% of inventory-basis target",
             "per_unit_cost": per_unit,
             "will_record_audit_event": line.get("allocation_status") != "CONFIRMED",
             "calculation_version": INBOUND_CALCULATION_VERSION,
@@ -684,6 +770,7 @@ def foundation_contract() -> dict:
         "product_classes": list(PRODUCT_CLASSES),
         "receipt_line_classifications": list(RECEIPT_LINE_CLASSIFICATIONS),
         "allocation_methods": list(ALLOCATION_METHODS),
+        "noninventory_treatment_codes": list(NONINVENTORY_TREATMENT_CODES),
         "wizard_steps": list(PRIMARY_WIZARD_STEPS),
         "legacy_persisted_wizard_steps": list(WIZARD_STEPS),
         "payment_methods": list(PAYMENT_METHODS),
@@ -762,8 +849,16 @@ def _normalized_acquisition_fields(payload: Mapping[str, object]) -> dict:
             if reason and reason not in DISCREPANCY_REASON_CODES:
                 raise ValueError("Discrepancy reason code is not supported")
             values[field] = reason
+        elif field == "noninventory_treatment_code":
+            treatment = _text(value, 40).upper()
+            if treatment and treatment not in NONINVENTORY_TREATMENT_CODES:
+                raise ValueError("Noninventory treatment code is not supported")
+            values[field] = treatment or None
         else:
-            values[field] = _text(value, 500 if field == "discrepancy_notes" else 180)
+            values[field] = _text(
+                value,
+                500 if field in {"discrepancy_notes", "noninventory_notes"} else 180,
+            ) or (None if field == "noninventory_notes" else "")
     if values.get("original_foreign_amount_minor") is not None and not (
         values.get("original_currency") or payload.get("original_currency")
     ):
@@ -1167,13 +1262,14 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
     lines = [dict(item) for item in db.execute("SELECT * FROM acquisition_lines WHERE acquisition_id=? ORDER BY line_sequence", (acquisition_id,)).fetchall()]
     active_lines = [line for line in lines if not line["canceled_at"]]
     receipt_intelligence = receipt_intelligence_payload(db, acquisition_id)
-    if receipt_intelligence.get("warnings"):
-        raise ValueError("Receipt intelligence still needs attention before confirmation")
-    receipt_proposal = allocation_for_confirmation(db, acquisition_id, int(row["final_usd_paid_cents"])) if len(active_lines) > 1 else None
+    inventory_target = _inventory_basis_target(dict(row))
+    if inventory_target is None or inventory_target < 0:
+        raise ValueError("Excluded noninventory cannot exceed final USD paid")
+    receipt_proposal = allocation_for_confirmation(db, acquisition_id, inventory_target) if len(active_lines) > 1 else None
     automatic_line: dict | None = None
     if len(active_lines) == 1 and active_lines[0]["allocation_status"] != "CONFIRMED":
         line = active_lines[0]
-        line["assigned_landed_cost_cents"] = int(row["final_usd_paid_cents"])
+        line["assigned_landed_cost_cents"] = inventory_target
         line["allocation_method"] = "SINGLE_LINE_100_PERCENT"
         line["allocation_status"] = "CONFIRMED"
         automatic_line = line
@@ -1186,8 +1282,30 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
                 line["allocation_status"] = "CONFIRMED"
     _validate_lines_for_confirmation(lines)
     reconciliation = reconciliation_payload(dict(row), lines)
-    if not reconciliation["allocation_reconciled"]:
-        raise ValueError("Confirmed product-line landed costs must equal final USD paid exactly")
+    receipt_warnings = list(receipt_intelligence.get("warnings", []))
+    if reconciliation["partition_reconciled"] and all(
+        line.get("allocation_status") == "CONFIRMED" for line in active_lines
+    ):
+        receipt_warnings = [
+            warning for warning in receipt_warnings
+            if warning.get("code") != "RECEIPT_ALLOCATION_UNRESOLVED"
+        ]
+    if receipt_warnings:
+        raise ValueError("Receipt intelligence still needs attention before confirmation")
+    if not reconciliation["partition_reconciled"]:
+        if row["excluded_noninventory_cents"] is None and reconciliation["partition_difference_cents"] > 0:
+            raise ValueError("An explicit excluded-noninventory amount is required; a reason label cannot reconcile the inventory basis partition")
+        raise ValueError("Inventory landed cost plus excluded noninventory must equal final USD paid exactly")
+    excluded = row["excluded_noninventory_cents"]
+    treatment = str(row["noninventory_treatment_code"] or "")
+    noninventory_notes = str(row["noninventory_notes"] or "")
+    if excluded is not None and int(excluded) > 0:
+        if treatment not in NONINVENTORY_TREATMENT_CODES:
+            raise ValueError("An excluded-noninventory treatment code is required")
+        if treatment == "OTHER" and not noninventory_notes:
+            raise ValueError("Other excluded-noninventory treatment requires an explanation")
+        if not _confirmed(payload.get("confirm_noninventory_exclusion")):
+            raise ValueError("Explicit excluded-noninventory confirmation is required")
     difference = reconciliation["difference_cents"]
     reason = str(row["discrepancy_reason_code"] or "")
     notes = str(row["discrepancy_notes"] or "")
@@ -1198,9 +1316,9 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
             raise ValueError("Explicit $0.00 acquisitions require special confirmation")
     if difference and not reason:
         raise ValueError("A discrepancy reason is required for every nonzero difference")
+    if difference and not notes:
+        raise ValueError("Every nonzero component adjustment requires an explanation")
     if reconciliation["material"]:
-        if not notes:
-            raise ValueError("Material discrepancies require explanatory notes")
         if not _confirmed(payload.get("confirm_material_discrepancy")):
             raise ValueError("Material discrepancy confirmation is required")
         if payload.get("reentered_final_usd_paid_cents") != row["final_usd_paid_cents"]:
@@ -1215,10 +1333,10 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
                   SET assigned_landed_cost_cents=?,allocation_method='SINGLE_LINE_100_PERCENT',
                       allocation_status='CONFIRMED',updated_at=?
                 WHERE id=?""",
-            (int(row["final_usd_paid_cents"]), now, int(automatic_line["id"])),
+            (inventory_target, now, int(automatic_line["id"])),
         )
         quantity = int(automatic_line["quantity"] or 0)
-        cents = int(row["final_usd_paid_cents"])
+        cents = inventory_target
         per_unit = None
         if quantity:
             base, remainder = divmod(cents, quantity)
@@ -1244,7 +1362,9 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
                 "allocation_method": "SINGLE_LINE_100_PERCENT",
                 "automatic": True,
                 "source_facts": {
-                    "final_usd_paid_cents": cents,
+                    "final_usd_paid_cents": int(row["final_usd_paid_cents"]),
+                    "excluded_noninventory_cents": excluded,
+                    "inventory_basis_target_cents": inventory_target,
                     "active_product_line_count": 1,
                     "quantity": quantity,
                     "line_uuid": automatic_line["line_uuid"],
@@ -1276,6 +1396,12 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
         payload={
             "calculation_version": INBOUND_CALCULATION_VERSION,
             "reconciliation": reconciliation,
+            "noninventory_partition": {
+                "excluded_noninventory_cents": excluded,
+                "treatment_code": treatment or None,
+                "notes": noninventory_notes or None,
+                "operator_confirmed": bool(excluded is not None and int(excluded) > 0),
+            },
             "automatic_allocation_event_id": automatic_allocation_event_id,
             "operator_confirmed_acquisition": True,
         },

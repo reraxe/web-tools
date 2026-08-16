@@ -1,16 +1,13 @@
-# RC3 Drop-In Deploy Instructions
+# Operator Deployment Instructions — RC3 Hotfix 1
 
-Target image tag: `192.168.2.92:5000/apps/dex:v2.2-test-rc3-r1`
+Deployment has not been performed.
 
-1. Open `DEX_v2.2-test_RC3_DEPLOY`.
-2. Copy **its contents**, not the enclosing folder, into the GitHub `dex-test` root.
-3. Confirm `app.py`, `Dockerfile`, `static/`, and the `dex_*.py` modules now appear directly at the GitHub root.
-4. Commit/upload the changes without adding databases, images, scanner folders, receipts, or secrets.
-5. In Jenkins, select **Build Now** and confirm the build and registry push succeed for the target tag above.
-6. In Portainer, change only the DEX image tag to the target tag and select **Update Stack**.
-7. Hard refresh DEX.
-8. Confirm `/api/health` returns HTTP 200 and runtime `v2.2-test`.
-9. Confirm Receipt / Source Documents shows **Take Photo** and **Upload**, then continue the operator smoke test.
+1. Create and verify a timestamped backup of the live DEX storage.
+2. Open `DEX_v2.2-test_RC3_HF1_DEPLOY`.
+3. Copy its contents into the GitHub `dex-test` root.
+4. Build the unique image tag `192.168.2.92:5000/apps/dex:v2.2-test-rc3-hf1` through the normal Jenkins workflow.
+5. Confirm the build and registry push succeed.
+6. In Portainer, update only the DEX image tag and update the stack.
+7. Hard-refresh DEX and verify `/api/health`, runtime `v2.2-test`, migration 0015, existing inventory, and the preserved Mom and Pop Shop draft.
 
-Rollback reference: the prior known-good RC2 image/checkpoint and matching database/storage backup. Never manually delete migrations or authoritative records.
-
+If startup fails, return the application to RC3-r4. Do not delete or edit production storage. Use the matching pre-0015 backup only if a database rollback is explicitly required.

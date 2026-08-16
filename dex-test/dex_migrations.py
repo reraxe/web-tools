@@ -1291,6 +1291,32 @@ def _v22_phase7_sam_recognition(connection: sqlite3.Connection) -> None:
     )
 
 
+def _v22_rc3_hf1_mixed_purchase_reconciliation(connection: sqlite3.Connection) -> None:
+    """Add an explicit, nullable noninventory partition to acquisition facts.
+
+    Existing rows are deliberately left NULL.  The migration does not infer an
+    excluded amount from a discrepancy reason, receipt line, or allocation gap.
+    """
+
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(acquisitions)")}
+    additions = {
+        "excluded_noninventory_cents": (
+            "INTEGER CHECK (excluded_noninventory_cents IS NULL "
+            "OR excluded_noninventory_cents >= 0)"
+        ),
+        "noninventory_treatment_code": (
+            "TEXT CHECK (noninventory_treatment_code IS NULL OR "
+            "noninventory_treatment_code IN ("
+            "'BUSINESS_NONINVENTORY','PERSONAL_NONBUSINESS',"
+            "'MIXED_NONINVENTORY','OTHER'))"
+        ),
+        "noninventory_notes": "TEXT",
+    }
+    for name, definition in additions.items():
+        if name not in columns:
+            connection.execute(f"ALTER TABLE acquisitions ADD COLUMN {name} {definition}")
+
+
 DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         "0001_phase3_acquisition_facts",
@@ -1361,6 +1387,11 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         "0014_v22_phase7_sam_recognition",
         "add provider-neutral SAM metadata, reference indexing, recognition, evidence, and review history",
         _v22_phase7_sam_recognition,
+    ),
+    Migration(
+        "0015_v22_rc3_hf1_mixed_purchase_reconciliation",
+        "add an explicit nullable noninventory partition for mixed acquisitions",
+        _v22_rc3_hf1_mixed_purchase_reconciliation,
     ),
 )
 
