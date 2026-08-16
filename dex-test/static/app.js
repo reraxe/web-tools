@@ -57,6 +57,7 @@ const state = {
   catalogSearchQueries: { manual: "", unknown: "" },
   upcScanPending: false,
   disclosureStates: new Map(),
+  acquisitionWorkingForms: new Map(),
   intakeRoutingPreview: null,
 };
 
@@ -113,6 +114,58 @@ function bindDisclosureState(root = document) {
       }
       state.disclosureStates.set(key, Boolean(details.open));
     });
+  });
+}
+
+function acquisitionWorkingFieldKey(field) {
+  const form = field.closest?.("form");
+  if (!form || !field.name) return "";
+  if (form.id === "acquisition-exception-form") return `exception:${field.name}`;
+  if (form.classList?.contains?.("acquisition-allocation-form")) return `allocation:${form.dataset.lineId}:${field.name}`;
+  return "";
+}
+
+function rememberAcquisitionWorkingState(root = document) {
+  const acquisitionId = state.activeAcquisition?.acquisition?.id;
+  if (!acquisitionId) return null;
+  const prior = state.acquisitionWorkingForms.get(acquisitionId) || { fields: new Map(), focusKey: "" };
+  Array.from(root.querySelectorAll?.("#acquisition-exception-form [name], .acquisition-allocation-form [name]") || []).forEach((field) => {
+    const key = acquisitionWorkingFieldKey(field);
+    if (!key) return;
+    prior.fields.set(key, {
+      value: field.value,
+      checked: Boolean(field.checked),
+      checkable: field.type === "checkbox" || field.type === "radio",
+    });
+  });
+  const activeKey = acquisitionWorkingFieldKey(document.activeElement);
+  if (activeKey) prior.focusKey = activeKey;
+  state.acquisitionWorkingForms.set(acquisitionId, prior);
+  return prior;
+}
+
+function clearAcquisitionWorkingLine(acquisitionId, lineId) {
+  const working = state.acquisitionWorkingForms.get(acquisitionId);
+  if (!working) return;
+  const prefix = `allocation:${lineId}:`;
+  [...working.fields.keys()].forEach((key) => { if (key.startsWith(prefix)) working.fields.delete(key); });
+  if (working.focusKey?.startsWith(prefix)) working.focusKey = "";
+}
+
+function restoreAcquisitionWorkingState(root = document) {
+  const acquisitionId = state.activeAcquisition?.acquisition?.id;
+  const working = state.acquisitionWorkingForms.get(acquisitionId);
+  if (!working) return;
+  Array.from(root.querySelectorAll?.("#acquisition-exception-form [name], .acquisition-allocation-form [name]") || []).forEach((field) => {
+    const saved = working.fields.get(acquisitionWorkingFieldKey(field));
+    if (!saved || field.disabled) return;
+    if (saved.checkable) field.checked = saved.checked;
+    else field.value = saved.value;
+  });
+  if (working.focusKey) requestAnimationFrame(() => {
+    const target = Array.from(root.querySelectorAll?.("#acquisition-exception-form [name], .acquisition-allocation-form [name]") || [])
+      .find((field) => acquisitionWorkingFieldKey(field) === working.focusKey && !field.disabled);
+    target?.focus?.({ preventScroll: true });
   });
 }
 
@@ -675,9 +728,21 @@ function receiptFieldSuggestion(fieldName) {
 
 function receiptJobControls(document, job) {
   if (!job) return `<button type="button" class="button secondary" data-action="extract-source-document" data-id="${document.id}">${icon("sparkles")}Extract purchase details</button>`;
-  if (job.status === "FAILED" || job.status === "NO_FACTS") return `<span class="receipt-job-state failed">${escapeHtml(job.status === "NO_FACTS" ? "No purchase facts found" : "Extraction failed")}</span><button type="button" class="button secondary" data-action="retry-receipt-extraction" data-job-uuid="${escapeHtml(job.job_uuid)}">${icon("rotate-ccw")}Retry extraction</button>`;
+  if (job.status === "FAILED" || job.status === "NO_FACTS") {
+    const unavailable = job.capability_unavailable || job.error_code === "FORMAT_PROVIDER_UNAVAILABLE";
+    const label = unavailable ? "Automatic image extraction unavailable" : job.status === "NO_FACTS" ? "No purchase facts found" : "Extraction failed";
+    const retry = job.retry_plausible === false || unavailable ? "" : `<button type="button" class="button secondary" data-action="retry-receipt-extraction" data-job-uuid="${escapeHtml(job.job_uuid)}">${icon("rotate-ccw")}Retry extraction</button>`;
+    return `<span class="receipt-job-state failed">${escapeHtml(label)}</span>${retry}`;
+  }
   if (job.status === "PROCESSING") return `<span class="receipt-job-state processing">Extracting privately…</span>`;
   return `<span class="receipt-job-state ready">${icon("circle-check")}Ready to review · ${job.receipt_lines?.length || 0} line(s)</span>`;
+}
+
+function receiptManualFallbackPanel() {
+  const intel = receiptIntelligence();
+  if (!intel.manual_fallback_available) return "";
+  if (intel.manual_fallback_selected) return `<section class="receipt-manual-fallback selected" role="status">${icon("circle-check")}<div><strong>Continuing with manual purchase facts</strong><p>Automatic extraction remains unavailable. The receipt stays attached as supporting evidence, while your confirmed manual facts control reconciliation.</p></div></section>`;
+  return `<section class="receipt-manual-fallback" role="status">${icon("file-warning")}<div><strong>Receipt image attached</strong><p>Automatic image extraction is unavailable. You can continue using manual purchase facts; the receipt will remain attached as supporting evidence.</p><button type="button" class="button primary" data-action="select-receipt-manual-fallback">Continue with manual facts</button></div></section>`;
 }
 
 function sourceDocumentPanel() {
@@ -693,13 +758,14 @@ function sourceDocumentPanel() {
     return `<article class="source-document-row ${document.storage_status.toLowerCase()}"><div>${icon(document.detected_mime_type === "application/pdf" ? "file-text" : "image")}<span><strong>${escapeHtml(document.original_filename)}</strong><small>${escapeHtml(statusLabel)}${document.integrity_status === "VERIFIED" ? " · SHA-256 verified" : ""}</small>${failed ? `<em>${escapeHtml(document.error_message || "Document could not be stored")}</em>` : ""}</span></div><div class="source-document-actions">${stored && !tombstoned ? receiptJobControls(document, job) : ""}${stored ? `<button type="button" class="button tertiary" data-action="view-source-document" data-id="${document.id}">${icon("eye")}View</button>` : ""}${failed ? `<button type="button" class="button secondary" data-action="retry-source-document" data-id="${document.id}">${icon("rotate-ccw")}Retry upload</button>` : ""}${!tombstoned ? `<button type="button" class="button tertiary" data-action="remove-source-document" data-id="${document.id}">${icon("x")}Remove</button>` : ""}</div></article>`;
   }).join("");
   const confirmed = acquisition.state === "READY_FOR_INTAKE";
-  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No document attached"}</strong><small>Private local extraction can suggest purchase facts from text-based PDFs. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document">${icon("upload")}Upload</button></div></div>
+  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No receipt currently attached"}</strong><small>Private local extraction can suggest purchase facts from text-based PDFs. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document">${icon("upload")}Upload</button></div></div>
     <input id="source-document-camera" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/heic,image/heif" capture="environment">
     <input id="source-document-files" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf" multiple>
     <input id="source-document-retry" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf">
     ${rows ? `<div class="source-document-list">${rows}</div>` : ""}
     ${summary.failed_count ? `<p class="source-document-warning">${icon("triangle-alert")}A document upload needs attention. Manual acquisition entry remains available.</p>` : ""}
-    ${receiptIntelligence().failed_job_count ? `<p class="source-document-warning">${icon("triangle-alert")}Receipt extraction needs attention. Retry it or continue with manual purchase facts.</p>` : ""}
+    ${receiptManualFallbackPanel()}
+    ${receiptIntelligence().failed_job_count && !receiptIntelligence().manual_fallback_available ? `<p class="source-document-warning">${icon("triangle-alert")}Receipt extraction needs attention. Retry it or continue with manual purchase facts.</p>` : ""}
     <p class="source-document-policy">${confirmed ? "Confirmed evidence can be tombstoned but is retained for durable history." : "Draft attachments can be removed; their audit metadata remains."} Missing documents never become a $0.00 cost.</p>
   </section>`;
 }
@@ -711,7 +777,7 @@ function purchaseDetailsForm() {
   const documentSummary = state.activeAcquisition.source_documents || { failed_count: 0 };
   const receiptStatus = state.activeAcquisition.receipt_intelligence?.status || "NOT_REQUESTED";
   const purchaseDetailsAttention = ["SOURCE_REQUIRED", "MERCHANT_REQUIRED", "PURCHASE_DATE_REQUIRED", "PAYMENT_METHOD_REQUIRED"].some((code) => warningCodes.has(code))
-    || Boolean(documentSummary.failed_count) || receiptStatus === "FAILED_RETRYABLE";
+    || Boolean(documentSummary.failed_count) || ["FAILED_RETRYABLE", "FAILED_MANUAL_AVAILABLE"].includes(receiptStatus);
   const purchaseAmountsAttention = ["COST_UNKNOWN", "DISCREPANCY_REASON_REQUIRED", "ZERO_COST_REASON_REQUIRED", "MATERIAL_NOTE_REQUIRED", "ALLOCATION_NOT_RECONCILED"].some((code) => warningCodes.has(code))
     || [...warningCodes].some((code) => code.startsWith("RECEIPT_") || code.startsWith("EXTRACTION_"));
   return `<form id="acquisition-purchase-form" class="wizard-form purchase-details" data-viewport-key="purchase-details">
@@ -810,21 +876,30 @@ function linePerUnitLabel(line) {
 }
 
 function allocationForm(line) {
-  return `<form class="allocation-card acquisition-allocation-form ${line.allocation_status === "CONFIRMED" ? "confirmed" : ""}" data-line-id="${line.id}" data-viewport-key="allocation-${line.id}">
-    <div><strong>Line ${line.line_sequence}: ${escapeHtml(line.product_name || productClassLabel(line.product_class))}</strong><small>${line.quantity || "Unknown"} unit(s) · ${escapeHtml(linePerUnitLabel(line))}</small></div>
+  const confirmed = line.allocation_status === "CONFIRMED";
+  return `<form class="allocation-card acquisition-allocation-form ${confirmed ? "confirmed" : ""}" data-line-id="${line.id}" data-confirmed="${confirmed}" data-viewport-key="allocation-${line.id}">
+    <div><strong>Line ${line.line_sequence}: ${escapeHtml(line.product_name || productClassLabel(line.product_class))}</strong><small>${line.quantity || "Unknown"} unit(s) · ${escapeHtml(linePerUnitLabel(line))}</small>${confirmed ? `<span class="allocation-confirmed-state">${icon("circle-check")}Allocation confirmed</span>` : `<span class="allocation-pending-state">Reconfirmation required</span>`}</div>
     <label>Assigned landed cost<div class="money-input"><span>$</span><input name="assigned_landed_cost" type="number" min="0" step=".01" value="${centsInputValue(line.assigned_landed_cost_cents)}" required></div></label>
     <label>Allocation method<select name="allocation_method" required><option value="">Choose and disclose method</option>${[
       ["ACTUAL_LINE_COST", "Actual line-item cost"], ["EQUAL", "Equal allocation"], ["SUBTOTAL_WEIGHTED", "Subtotal weighted"], ["QUANTITY_WEIGHTED", "Quantity weighted"], ["MANUAL", "Manual allocation"],
     ].map(([value, label]) => `<option value="${value}" ${line.allocation_method === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
-    <label class="checkbox-label"><input name="confirm_allocation" type="checkbox" required><span>I confirm this line cost and disclosed method. It remains draft-only until the full acquisition is confirmed.</span></label>
-    <button class="button ${line.allocation_status === "CONFIRMED" ? "secondary" : "primary"}">${line.allocation_status === "CONFIRMED" ? icon("check") + "Reconfirm allocation" : "Confirm line allocation"}</button>
+    <label class="checkbox-label"><input name="confirm_allocation" type="checkbox" ${confirmed ? "checked disabled" : "required"}><span>I confirm this line cost and disclosed method. It remains draft-only until the full acquisition is confirmed.</span></label>
+    ${confirmed ? `<button type="button" class="button allocation-confirmed-button" disabled>${icon("check")}Allocation confirmed</button>` : `<button class="button primary">Reconfirm allocation</button>`}
   </form>`;
 }
 
-function discrepancyPanel(reconciliation) {
-  const severity = reconciliation.severity.toLowerCase();
-  const difference = reconciliation.difference_cents === null ? "Unknown" : formatCents(reconciliation.difference_cents);
-  return `<div class="discrepancy-panel ${severity}" role="status"><div><span>Component total</span><strong>${formatCents(reconciliation.component_total_cents)}</strong></div><div><span>Final USD paid</span><strong>${formatCents(reconciliation.final_usd_paid_cents)}</strong></div><div><span>Difference</span><strong>${difference}</strong><small>${reconciliation.difference_percent === null ? "Unknown" : `${reconciliation.difference_percent}%`}</small></div><div><span>Level</span><strong>${titleCase(reconciliation.severity)}</strong><small>Material at $5 OR 2%; severe at 50%+</small></div></div>`;
+function componentReconciliationPanel(reconciliation) {
+  const severity = String(reconciliation.severity || "NONE").toLowerCase();
+  const adjustment = reconciliation.component_adjustment_cents === undefined ? reconciliation.difference_cents : reconciliation.component_adjustment_cents;
+  const componentReconciled = reconciliation.component_reconciled ?? (adjustment === 0);
+  const status = componentReconciled ? "Reconciled" : "Needs explanation";
+  return `<section class="reconciliation-block component-reconciliation ${severity}" role="status"><h3>Component discrepancy</h3><div><span>Purchase components</span><strong>${formatCents(reconciliation.component_total_cents)}</strong></div><div><span>Adjustment</span><strong>${formatCents(adjustment)}</strong><small>${reconciliation.difference_percent === null ? "Unknown" : `${reconciliation.difference_percent}%`}</small></div><div><span>Final paid</span><strong>${formatCents(reconciliation.final_usd_paid_cents)}</strong></div><div><span>Status</span><strong>${status}</strong><small>Material at $5 OR 2%; severe at 50%+</small></div></section>`;
+}
+
+function inventoryPartitionPanel(reconciliation) {
+  const partitionReconciled = reconciliation.partition_reconciled ?? reconciliation.allocation_reconciled;
+  const status = partitionReconciled ? "Reconciled" : "Needs Attention";
+  return `<section class="reconciliation-block inventory-partition ${partitionReconciled ? "pass" : "fail"}" role="status"><h3>Excluded from inventory basis</h3><div><span>Inventory landed cost</span><strong>${formatCents(reconciliation.inventory_landed_cost_cents ?? reconciliation.assigned_line_cost_cents)}</strong></div><div><span>Excluded noninventory</span><strong>${formatCents(reconciliation.excluded_noninventory_cents, "Unknown / unconfirmed")}</strong></div><div><span>Final paid</span><strong>${formatCents(reconciliation.final_usd_paid_cents)}</strong></div><div><span>Difference</span><strong>${formatCents(reconciliation.partition_difference_cents ?? reconciliation.allocation_difference_cents)}</strong><small>Status: ${status}</small></div></section>`;
 }
 
 function reviewLine(line) {
@@ -851,15 +926,25 @@ function paymentMethodLabel(value) {
 function reconciliationExceptionControls(acquisition, reconciliation) {
   const zero = acquisition.final_usd_paid_cents === 0;
   const discrepancy = reconciliation.difference_cents !== null && reconciliation.difference_cents !== 0;
-  if (!zero && !discrepancy) return "";
+  const exclusionNeeded = acquisition.excluded_noninventory_cents !== null && acquisition.excluded_noninventory_cents !== undefined
+    || (reconciliation.partition_difference_cents ?? reconciliation.allocation_difference_cents) > 0;
+  if (!zero && !discrepancy && !exclusionNeeded) return "";
   return `<form id="acquisition-exception-form" class="exception-body">
+      ${discrepancy || zero ? `<fieldset class="component-resolution"><legend>Resolve component discrepancy</legend>
       <label>Standardized reason<select name="discrepancy_reason_code" required><option value="">Select reason</option>${[
-        ["ROUNDING", "Rounding"], ["COMPONENTS_INCOMPLETE", "Components incomplete"], ["MERCHANT_TOTAL_CONTROLS", "Merchant final total controls"], ["NONINVENTORY_INCLUDED", "Noninventory included"], ["EXPLICIT_ZERO_COST", "Intentional $0.00 acquisition"], ["OTHER", "Other"],
+        ["ROUNDING", "Rounding"], ["COMPONENTS_INCOMPLETE", "Components incomplete"], ["MERCHANT_TOTAL_CONTROLS", "Merchant final total controls"], ["NONINVENTORY_INCLUDED", "Noninventory included (legacy reason; amount still required)"], ["EXPLICIT_ZERO_COST", "Intentional $0.00 acquisition"], ["OTHER", "Other"],
       ].map(([value, label]) => `<option value="${value}" ${acquisition.discrepancy_reason_code === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
-      <label>Explanation${reconciliation.material ? " (required)" : ""}<textarea name="discrepancy_notes" ${reconciliation.material ? "required" : ""} placeholder="Explain why final USD differs from the purchase components">${escapeHtml(acquisition.discrepancy_notes)}</textarea></label>
+      <label>Explanation${discrepancy ? " (required)" : ""}<textarea name="discrepancy_notes" ${discrepancy ? "required" : ""} placeholder="Explain why final USD differs from the purchase components">${escapeHtml(acquisition.discrepancy_notes)}</textarea></label>
       ${zero ? `<label class="checkbox-label zero-confirm"><input name="confirm_zero_cost" type="checkbox" required><span>I confirm this is an intentional $0.00 acquisition, not a missing cost.</span></label>` : ""}
       ${reconciliation.material ? `<label>Re-enter final USD paid<div class="money-input"><span>$</span><input name="reentered_final_usd_paid" type="number" min="0" step=".01" required></div></label><label class="checkbox-label"><input name="confirm_material_discrepancy" type="checkbox" required><span>I explicitly accept the material $5 OR 2% difference and its recorded explanation.</span></label>` : ""}
       ${reconciliation.extreme ? `<label class="checkbox-label severe-confirm"><input name="confirm_extreme_discrepancy" type="checkbox" required><span>I rechecked and explicitly accept this severe 50%+ difference.</span></label>` : ""}
+      </fieldset>` : ""}
+      ${exclusionNeeded ? `<fieldset class="noninventory-resolution"><legend>Excluded from inventory basis</legend><p>Record the net part of final payment that must not become inventory cost basis. This is not a tax or general-ledger classification.</p>
+        <label>Excluded noninventory amount<div class="money-input"><span>$</span><input name="excluded_noninventory" type="number" min="0" step=".01" value="${centsInputValue(acquisition.excluded_noninventory_cents)}" required></div></label>
+        <label>Treatment<select name="noninventory_treatment_code" required><option value="">Choose treatment</option>${[["BUSINESS_NONINVENTORY", "Business noninventory"], ["PERSONAL_NONBUSINESS", "Personal / nonbusiness"], ["MIXED_NONINVENTORY", "Mixed noninventory"], ["OTHER", "Other"]].map(([value, label]) => `<option value="${value}" ${acquisition.noninventory_treatment_code === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+        <label>Noninventory explanation<textarea name="noninventory_notes" placeholder="Optional unless Other is selected">${escapeHtml(acquisition.noninventory_notes)}</textarea></label>
+        <label class="checkbox-label"><input name="confirm_noninventory_exclusion" type="checkbox" required><span>I confirm this net amount is intentionally excluded from inventory basis.</span></label>
+      </fieldset>` : ""}
     </form>`;
 }
 
@@ -869,18 +954,19 @@ function attentionPanel(data, blockingWarnings) {
   const reconciliation = data.reconciliation;
   const acquisition = data.acquisition;
   const allocationUnresolved = attention.resolve_mode === "MULTI_LINE_ALLOCATION";
-  const financialException = acquisition.final_usd_paid_cents === 0 || Boolean(reconciliation.difference_cents);
+  const financialException = acquisition.final_usd_paid_cents === 0 || Boolean(reconciliation.difference_cents)
+    || acquisition.excluded_noninventory_cents != null
+    || (reconciliation.partition_difference_cents ?? reconciliation.allocation_difference_cents) > 0;
   const reasons = (data.readiness?.warnings || []).map((warning) => `<li><code>${escapeHtml(warning.code)}</code><span>${escapeHtml(warning.message)}</span></li>`).join("");
   const recordedReason = acquisition.discrepancy_reason_code ? titleCase(acquisition.discrepancy_reason_code) : "Unresolved";
   const allocationStatus = allocationUnresolved ? `<div class="allocation-attention-summary"><span>Assigned line cost</span><strong>${formatCents(reconciliation.assigned_line_cost_cents)}</strong><span>Difference from final USD</span><strong>${formatCents(reconciliation.allocation_difference_cents)}</strong></div>` : "";
-  const resolution = `<details class="attention-resolution"><summary>${icon("wrench")}Resolve</summary><div class="attention-resolution-body">
+  const resolution = `<details class="attention-resolution" data-disclosure-key="acquisition-${acquisition.id}-attention-resolution"><summary>${icon("wrench")}Resolve</summary><div class="attention-resolution-body">
     ${allocationUnresolved ? `<div class="allocation-section"><div><h4>Manual allocation exception</h4><p>Use this only because DEX lacks authoritative evidence for an automatic split. Every line must reconcile exactly.</p></div>${activeAcquisitionLines().map(allocationForm).join("")}</div>` : ""}
     ${financialException ? reconciliationExceptionControls(acquisition, reconciliation) : ""}
     ${attention.resolve_mode === "INCOMPLETE_FACTS" ? `<button type="button" class="button secondary" data-action="wizard-step" data-step="PRODUCTS">Complete product & purchase facts</button>` : ""}
   </div></details>`;
   return `<section class="purchase-needs-review ${String(attention.attention_level || "review").toLowerCase()}" aria-labelledby="acquisition-attention-title">
     <div class="attention-head"><div><span class="attention-state">Needs Attention · ${escapeHtml(titleCase(attention.attention_level || "Review"))}</span><strong id="acquisition-attention-title">Purchase needs attention</strong><p><b>${escapeHtml(attention.headline)}</b> · ${escapeHtml(attention.message)}</p><small>Status: ${escapeHtml(attention.decision_level)} · Recorded reason: ${escapeHtml(recordedReason)}</small></div>${icon(attention.attention_level === "CRITICAL" ? "octagon-alert" : "triangle-alert")}</div>
-    ${reconciliation.difference_cents ? discrepancyPanel(reconciliation) : ""}
     ${allocationStatus}
     ${reasons ? `<ul class="attention-reasons">${reasons}</ul>` : ""}
     ${resolution}
@@ -906,7 +992,9 @@ function receiptCandidateLabel(field) {
 
 function receiptIntelligenceReview() {
   const intel = receiptIntelligence();
-  if (!(intel.jobs || []).length) return `<section class="receipt-review empty"><div class="section-header"><div><span>Receipt Intelligence</span><h3>No extraction requested</h3><p>Manual entry remains fully available. Attach a text-based PDF and choose Extract purchase details if you want suggestions.</p></div></div></section>`;
+  const historicalJobs = intel.historical_jobs || [];
+  const historical = historicalJobs.length ? `<details class="receipt-history"><summary>Removed-document extraction history · ${historicalJobs.length}</summary><ul class="receipt-job-list">${historicalJobs.map((job) => `<li><div><strong>Removed source · ${escapeHtml(titleCase(job.status))}</strong><small>${escapeHtml(job.provider_name)} · ${escapeHtml(formatDate(job.completed_at || job.failed_at || job.queued_at))}</small></div><span>History retained; no active retry</span></li>`).join("")}</ul></details>` : "";
+  if (!(intel.jobs || []).length) return `<section class="receipt-review empty"><div class="section-header"><div><span>Receipt Intelligence</span><h3>No active receipt extraction</h3><p>${historicalJobs.length ? "No receipt currently attached. Removed-document history remains below." : "Manual entry remains fully available. Attach a text-based PDF and choose Extract purchase details if you want suggestions."}</p></div></div>${historical}</section>`;
   const jobs = (intel.jobs || []).map((job) => `<li><div><strong>${escapeHtml(job.status === "COMPLETED" ? "Ready to review" : titleCase(job.status))}</strong><small>${escapeHtml(job.provider_name)} · ${escapeHtml(job.provider_version)} · ${escapeHtml(formatDate(job.completed_at || job.failed_at || job.queued_at))}</small></div><span>${job.status === "FAILED" ? escapeHtml(job.error_message || "Retryable local extraction failure") : `${job.receipt_lines?.length || 0} receipt line(s)`}</span></li>`).join("");
   const candidates = Object.entries(intel.candidate_groups || {}).flatMap(([field, items]) => (items || []).map((candidate) => {
     const conflict = Boolean(candidate.conflicts_with_manual) || (intel.conflicts || []).some((item) => item.field_name === field);
@@ -924,12 +1012,21 @@ function receiptIntelligenceReview() {
   const proposal = intel.allocation_proposal;
   const lineNames = new Map(activeAcquisitionLines().map((line) => [Number(line.id), line.product_name || productClassLabel(line.product_class)]));
   const allocations = proposal ? proposal.allocations.map((item) => `<li><span>${escapeHtml(lineNames.get(Number(item.acquisition_line_id)) || `Line ${item.acquisition_line_id}`)}</span><span>Merchandise ${formatCents(item.direct_merchandise_cents)} + shared ${formatCents(item.shared_component_cents)}</span><strong>${formatCents(item.landed_cost_cents)}</strong></li>`).join("") : "";
-  const warnings = (intel.warnings || []).map((warning) => `<li><code>${escapeHtml(warning.code)}</code><span>${escapeHtml(warning.message)}</span></li>`).join("");
+  const warnings = (intel.warnings || []).map((warning) => `<li><code>${escapeHtml(warning.code)}</code><span>${escapeHtml(warning.message)}${warning.code === "RECEIPT_ALLOCATION_UNRESOLVED" && intel.manual_fallback_selected ? " · Informational after your manual-facts decision; HF1 accounting still controls confirmation." : ""}</span></li>`).join("");
+  const unavailableAllocation = !proposal && activeAcquisitionLines().length > 1;
+  const allocationFallback = unavailableAllocation && intel.manual_fallback_selected
+    ? `<div class="receipt-allocation manual"><strong>Manual line allocation selected.</strong><p>Confirm each product-line landed cost and complete both reconciliation equations. Receipt extraction remains failed/unavailable and does not supply authority.</p></div>`
+    : unavailableAllocation && intel.manual_fallback_available
+      ? receiptManualFallbackPanel()
+      : unavailableAllocation
+        ? `<div class="receipt-allocation unresolved"><strong>Automatic line allocation is not ready.</strong><p>Resolve receipt classifications, product matches, quantities, conflicts, and final USD first.</p><button type="button" class="button secondary" data-action="generate-receipt-allocation">Try exact allocation</button></div>`
+        : "";
   return `<section class="receipt-review" data-viewport-key="receipt-intelligence-review"><div class="section-header"><div><span>Receipt Intelligence</span><h3>Review extracted suggestions</h3><p>Suggestions and allocation proposals are not authoritative. Your final acquisition confirmation is still required.</p></div><span class="badge ${intel.status === "READY_TO_REVIEW" ? "green" : "amber"}">${escapeHtml(titleCase(intel.status))}</span></div>
     <details><summary>Source and extraction status · ${(intel.jobs || []).filter((job) => job.status === "COMPLETED").length} ready</summary><ul class="receipt-job-list">${jobs}</ul></details>
+    ${historical}
     ${candidates ? `<details><summary>Candidate purchase facts · ${Object.values(intel.candidate_groups || {}).flat().length} suggestion(s)</summary><div class="receipt-candidates">${candidates}</div></details>` : ""}
     ${receiptLines ? `<details><summary>Receipt product lines and classifications · ${(intel.receipt_lines || []).length} line(s)</summary><div class="receipt-review-lines">${receiptLines}</div></details>` : ""}
-    ${proposal ? `<details><summary>Suggested landed-cost allocation · ${formatCents(proposal.total_allocated_cents)} · exact</summary><div class="receipt-allocation"><div><span>Method</span><strong>Direct line prices + shared costs proportional by merchandise value</strong><small>${escapeHtml(proposal.calculation_version)} · remainder cents use immutable acquisition-line IDs</small></div><ul>${allocations}</ul><p>Total allocated ${formatCents(proposal.total_allocated_cents)} · Difference ${formatCents(proposal.difference_cents)} · Non-authoritative until acquisition confirmation.</p></div></details>` : activeAcquisitionLines().length > 1 ? `<div class="receipt-allocation unresolved"><strong>Automatic line allocation is not ready.</strong><p>Resolve receipt classifications, product matches, quantities, conflicts, and final USD first.</p><button type="button" class="button secondary" data-action="generate-receipt-allocation">Try exact allocation</button></div>` : ""}
+    ${proposal ? `<details><summary>Suggested landed-cost allocation · ${formatCents(proposal.total_allocated_cents)} · exact</summary><div class="receipt-allocation"><div><span>Method</span><strong>Direct line prices + shared costs proportional by merchandise value</strong><small>${escapeHtml(proposal.calculation_version)} · remainder cents use immutable acquisition-line IDs</small></div><ul>${allocations}</ul><p>Total allocated ${formatCents(proposal.total_allocated_cents)} · Difference ${formatCents(proposal.difference_cents)} · Non-authoritative until acquisition confirmation.</p></div></details>` : allocationFallback}
     ${warnings ? `<ul class="attention-reasons receipt-warnings">${warnings}</ul>` : ""}
     <p class="receipt-privacy-note">${icon("shield-check")}Extraction is local and provider-neutral. DEX stores normalized candidates and provenance—not raw OCR text—and sends nothing to an external service.</p>
   </section>`;
@@ -944,7 +1041,11 @@ function wizardReviewScreen() {
   const canceled = acquisition.state === "CANCELED";
   const warnings = data.readiness?.warnings || [];
   const allocationClean = reconciliation.allocation_reconciled || Boolean(data.automatic_single_line_allocation_preview);
-  const resolvableCodes = new Set(["DISCREPANCY_REASON_REQUIRED", "ZERO_COST_REASON_REQUIRED", "MATERIAL_NOTE_REQUIRED"]);
+  const resolvableCodes = new Set([
+    "DISCREPANCY_REASON_REQUIRED", "DISCREPANCY_NOTE_REQUIRED", "ZERO_COST_REASON_REQUIRED",
+    "MATERIAL_NOTE_REQUIRED", "EXCLUDED_NONINVENTORY_REQUIRED", "NONINVENTORY_AMOUNT_REQUIRED",
+    "NONINVENTORY_TREATMENT_REQUIRED", "NONINVENTORY_NOTE_REQUIRED", "ALLOCATION_NOT_RECONCILED",
+  ]);
   const blockingWarnings = warnings.filter((warning) => !resolvableCodes.has(warning.code));
   const needsAttention = data.attention?.decision_level === "NEEDS_ATTENTION";
   const documentSummary = data.source_documents || { active_count: 0, failed_count: 0 };
@@ -953,13 +1054,16 @@ function wizardReviewScreen() {
     ? `${documentSummary.failed_count} failed upload(s) · manual facts unaffected`
     : extractionStatus === "READY_TO_REVIEW"
       ? "Receipt suggestions ready to review"
+      : extractionStatus === "FAILED_MANUAL_AVAILABLE"
+        ? (data.receipt_intelligence?.manual_fallback_selected ? "Manual facts selected · receipt retained as evidence" : "Automatic image extraction unavailable · manual facts available")
       : extractionStatus === "FAILED_RETRYABLE"
         ? "Extraction failed · retry or use manual facts"
-        : "Source evidence attached · extraction not requested";
+        : documentSummary.active_count ? "Source evidence attached · extraction not requested" : "No receipt currently attached";
   return `<section class="wizard-screen" data-viewport-key="wizard-review"><div class="wizard-heading"><span>Step 3</span><h2 id="wizard-screen-title" tabindex="-1">Review Acquisition</h2><p>What did I buy? Where and how did I buy it? Is this summary correct?</p></div>
     <div class="review-hero ${ready ? "ready" : "incomplete"}"><div><span>${escapeHtml(acquisition.acquisition_code)}</span><h3>${escapeHtml(acquisition.merchant_name || "Merchant not entered")}</h3><p>${escapeHtml(acquisition.source_scope ? titleCase(acquisition.source_scope) : "Source incomplete")} · ${formatDate(acquisition.purchased_on)} · ${escapeHtml(paymentMethodLabel(acquisition.payment_method))}</p></div><div><span>Final USD paid</span><strong>${escapeHtml(data.readiness?.authoritative_cost_label || "Unknown / Setup incomplete")}</strong><small>${ready ? "Authoritative" : "Not authoritative until confirmed"}</small></div></div>
     <div class="review-lines">${activeAcquisitionLines().map(reviewLine).join("") || `<p>No product lines added.</p>`}</div>
     <div class="review-purchase-grid"><div><span>Purchase components</span><strong>${formatCents(reconciliation.component_total_cents)}</strong><small>Subtotal + tax + shipping + fees + duties/brokerage − discounts</small></div><div><span>Final USD paid</span><strong>${formatCents(reconciliation.final_usd_paid_cents)}</strong><small>Authoritative reporting currency</small></div><div><span>Source documents</span><strong>${documentSummary.active_count ? `${documentSummary.active_count} attached` : "Not attached"}</strong><small>${escapeHtml(documentStatusCopy)}</small></div></div>
+    <div class="independent-reconciliations">${componentReconciliationPanel(reconciliation)}${inventoryPartitionPanel(reconciliation)}</div>
     ${receiptIntelligenceReview()}
     ${ready || canceled ? "" : attentionPanel(data, blockingWarnings)}
     ${!needsAttention && allocationClean && acquisition.final_usd_paid_cents !== null ? `<div class="review-ready">${icon("circle-check")}Reconciled exactly</div>` : ""}
@@ -1019,6 +1123,7 @@ async function renderAcquisitionWizard(acquisitionId, options = {}) {
         : (removal.protected_history || removal.internal_economic_history) && !canceled ? `<span class="protected-removal-note" title="${escapeHtml(removal.blocked_message || "Use correction or reversal")}">${icon("lock-keyhole")}Protected history</span>` : "";
     app.innerHTML = `<div class="acquisition-wizard"><header class="wizard-shell-head"><button class="button secondary" data-action="back-acquisitions">${icon("arrow-left")}${[...confirmedStates, "CANCELED"].includes(acquisition.state) ? "Back to Inbound" : "Save incomplete & exit"}</button><div><span class="eyebrow">${escapeHtml(acquisition.acquisition_code)}</span><strong>${canceled ? "Canceled · history retained" : confirmedStates.includes(acquisition.state) ? acquisitionStateLabel(acquisition.state) : "ACQUISITION_INCOMPLETE · Setup incomplete"}</strong><small>${costStatus}</small></div><div class="wizard-shell-actions"><span class="autosave-indicator">${icon(canceled ? "archive" : "cloud-check")}${canceled ? "Read-only history" : confirmedStates.includes(acquisition.state) ? "Confirmed acquisition" : "Resumable draft"}</span>${removalAction}</div></header>${wizardProgress(step)}${wizardScreen(step)}</div>`;
     bindAcquisitionWizardForms();
+    restoreAcquisitionWorkingState(app);
     refreshIcons();
     if (options.focusHeading) requestAnimationFrame(() => document.querySelector("#wizard-screen-title")?.focus());
     if (options.viewport) restoreLogicalViewport(options.viewport);
@@ -1091,6 +1196,7 @@ async function saveCurrentWizardScreen() {
 async function moveWizardTo(step, options = {}) {
   if (!ACQUISITION_WIZARD_STEPS.includes(step)) return;
   try {
+    rememberAcquisitionWorkingState(app);
     if (options.saveCurrent) await saveCurrentWizardScreen();
     await enqueueAcquisitionMutation((current) => api(`/api/acquisitions/${current.acquisition.id}`, { method: "PATCH", body: JSON.stringify({ request_id: requestId("WIZARD-STEP"), expected_revision: current.acquisition.revision, wizard_step: step }) }));
     await renderAcquisitionWizard(state.activeAcquisition.acquisition.id, { data: state.activeAcquisition, focusHeading: true });
@@ -1117,8 +1223,23 @@ function bindAcquisitionWizardForms() {
   document.querySelector("#source-document-camera")?.addEventListener("change", (event) => uploadSourceDocuments(event.target.files, "CAMERA"));
   document.querySelector("#source-document-files")?.addEventListener("change", (event) => uploadSourceDocuments(event.target.files, "FILE_UPLOAD"));
   document.querySelector("#source-document-retry")?.addEventListener("change", (event) => retrySourceDocumentUpload(event.target.dataset.documentId, event.target.files?.[0]));
-  document.querySelectorAll(".acquisition-allocation-form").forEach((form) => form.addEventListener("submit", confirmAllocationForm));
-  document.querySelector("#acquisition-exception-form")?.addEventListener("submit", (event) => event.preventDefault());
+  document.querySelectorAll(".acquisition-allocation-form").forEach((form) => {
+    form.addEventListener("submit", confirmAllocationForm);
+    form.querySelectorAll("[name]").forEach((field) => {
+      field.addEventListener("input", () => rememberAcquisitionWorkingState(app));
+      field.addEventListener("change", () => rememberAcquisitionWorkingState(app));
+    });
+    if (form.dataset.confirmed === "true") {
+      form.elements.assigned_landed_cost?.addEventListener("change", invalidateConfirmedAllocationForm);
+      form.elements.allocation_method?.addEventListener("change", invalidateConfirmedAllocationForm);
+    }
+  });
+  const exceptionForm = document.querySelector("#acquisition-exception-form");
+  exceptionForm?.addEventListener("submit", (event) => event.preventDefault());
+  exceptionForm?.querySelectorAll("[name]").forEach((field) => {
+    field.addEventListener("input", () => rememberAcquisitionWorkingState(app));
+    field.addEventListener("change", () => rememberAcquisitionWorkingState(app));
+  });
   document.querySelector("#acquisition-confirm-form")?.addEventListener("submit", confirmAcquisitionForm);
   document.querySelector("#intake-routing-form")?.addEventListener("submit", previewIntakeRouting);
   document.querySelector("#upc-scan-form")?.addEventListener("submit", scanUpcForm);
@@ -1133,6 +1254,7 @@ function bindAcquisitionWizardForms() {
 }
 
 async function receiptMutation(path, options = {}) {
+  rememberAcquisitionWorkingState(app);
   const viewport = captureLogicalViewport();
   try {
     let response;
@@ -1162,6 +1284,14 @@ async function extractSourceDocument(documentId) {
 
 async function retryReceiptExtraction(jobUuid) {
   return receiptMutation(`/api/receipt-extractions/${encodeURIComponent(jobUuid)}/retry`, { prefix: "RECEIPT-RETRY", success: "Receipt extraction retry completed." });
+}
+
+async function selectReceiptManualFallback() {
+  return receiptMutation(`/api/acquisitions/${state.activeAcquisition.acquisition.id}/receipt-manual-fallback`, {
+    prefix: "RECEIPT-MANUAL-FALLBACK",
+    fields: { confirm_manual_fallback: true },
+    success: "Manual purchase facts selected. The receipt remains attached as supporting evidence.",
+  });
 }
 
 async function useReceiptCandidate(candidateId) {
@@ -1340,10 +1470,32 @@ async function confirmAllocationForm(event) {
   event.preventDefault();
   const form = event.currentTarget;
   const amount = form.elements.assigned_landed_cost.value;
+  const acquisitionId = state.activeAcquisition.acquisition.id;
+  const viewport = captureLogicalViewport();
+  rememberAcquisitionWorkingState(app);
   try {
     await enqueueAcquisitionMutation((current) => api(`/api/acquisition-lines/${form.dataset.lineId}/confirm-allocation`, { method: "POST", body: JSON.stringify({ request_id: requestId("ALLOCATION-CONFIRM"), expected_revision: current.acquisition.revision, assigned_landed_cost_cents: Math.round(Number(amount) * 100), allocation_method: form.elements.allocation_method.value, confirm_allocation: form.elements.confirm_allocation.checked }) }));
+    clearAcquisitionWorkingLine(acquisitionId, form.dataset.lineId);
     toast("Product-line cost allocation confirmed.");
-    await renderAcquisitionWizard(state.activeAcquisition.acquisition.id, { data: state.activeAcquisition, viewport: captureLogicalViewport() });
+    await renderAcquisitionWizard(acquisitionId, { data: state.activeAcquisition, viewport });
+  } catch (error) { toast(error.message, "error"); }
+}
+
+async function invalidateConfirmedAllocationForm(event) {
+  const form = event.currentTarget.closest(".acquisition-allocation-form");
+  if (!form || form.dataset.confirmed !== "true") return;
+  const acquisitionId = state.activeAcquisition.acquisition.id;
+  const viewport = captureLogicalViewport();
+  rememberAcquisitionWorkingState(app);
+  try {
+    const amount = form.elements.assigned_landed_cost.value;
+    await enqueueAcquisitionMutation((current) => api(`/api/acquisition-lines/${form.dataset.lineId}`, { method: "PATCH", body: JSON.stringify({
+      request_id: requestId("ALLOCATION-INVALIDATE"), expected_revision: current.acquisition.revision,
+      assigned_landed_cost_cents: Math.round(Number(amount) * 100), allocation_method: form.elements.allocation_method.value,
+    }) }));
+    clearAcquisitionWorkingLine(acquisitionId, form.dataset.lineId);
+    toast("Allocation changed. Reconfirmation is required.");
+    await renderAcquisitionWizard(acquisitionId, { data: state.activeAcquisition, viewport });
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -1362,6 +1514,9 @@ async function confirmAcquisitionForm(event) {
     const discrepancyFields = {};
     if (fields.discrepancy_reason_code) discrepancyFields.discrepancy_reason_code = fields.discrepancy_reason_code.value;
     if (fields.discrepancy_notes) discrepancyFields.discrepancy_notes = fields.discrepancy_notes.value;
+    if (fields.excluded_noninventory) discrepancyFields.excluded_noninventory_cents = fields.excluded_noninventory.value === "" ? null : Math.round(Number(fields.excluded_noninventory.value) * 100);
+    if (fields.noninventory_treatment_code) discrepancyFields.noninventory_treatment_code = fields.noninventory_treatment_code.value;
+    if (fields.noninventory_notes) discrepancyFields.noninventory_notes = fields.noninventory_notes.value;
     if (Object.keys(discrepancyFields).length) {
       await enqueueAcquisitionMutation((current) => api(`/api/acquisitions/${current.acquisition.id}`, { method: "PATCH", body: JSON.stringify({
         request_id: requestId("ACQ-EXCEPTION-AUTOSAVE"), expected_revision: current.acquisition.revision, ...discrepancyFields,
@@ -1374,8 +1529,10 @@ async function confirmAcquisitionForm(event) {
       confirm_zero_cost: fields.confirm_zero_cost?.checked || false,
       confirm_material_discrepancy: fields.confirm_material_discrepancy?.checked || false,
       confirm_extreme_discrepancy: fields.confirm_extreme_discrepancy?.checked || false,
+      confirm_noninventory_exclusion: fields.confirm_noninventory_exclusion?.checked || false,
       reentered_final_usd_paid_cents: reentered ? Math.round(Number(reentered.value) * 100) : undefined,
     }) }));
+    state.acquisitionWorkingForms.delete(state.activeAcquisition.acquisition.id);
     toast(`${state.activeAcquisition.acquisition.acquisition_code} is Ready for Intake.`);
     await renderAcquisitionWizard(state.activeAcquisition.acquisition.id, { data: state.activeAcquisition, focusHeading: true });
   } catch (error) { toast(error.message, "error"); }
@@ -2041,6 +2198,10 @@ async function removeSourceDocument(documentId) {
   const confirmed = state.activeAcquisition.acquisition.state === "READY_FOR_INTAKE";
   if (!confirm(confirmed ? "Remove this document from normal view? Confirmed evidence and audit history will be retained." : "Remove this draft document? Audit metadata will remain.")) return;
   const viewport = captureLogicalViewport();
+  for (const selector of ["#source-document-camera", "#source-document-files", "#source-document-retry"]) {
+    const input = document.querySelector(selector);
+    if (input) input.value = "";
+  }
   try {
     let response;
     await enqueueAcquisitionMutation(async (current) => {
@@ -3096,6 +3257,7 @@ document.addEventListener("click", async (event) => {
     if (action === "view-source-document") window.open(`/api/acquisition-documents/${encodeURIComponent(actionEl.dataset.id)}/content`, "_blank", "noopener,noreferrer");
     if (action === "extract-source-document") await extractSourceDocument(actionEl.dataset.id);
     if (action === "retry-receipt-extraction") await retryReceiptExtraction(actionEl.dataset.jobUuid);
+    if (action === "select-receipt-manual-fallback") await selectReceiptManualFallback();
     if (action === "use-receipt-candidate") await useReceiptCandidate(actionEl.dataset.id);
     if (action === "reject-receipt-candidate") await rejectReceiptCandidate(actionEl.dataset.id);
     if (action === "accept-receipt-match") await acceptReceiptMatch(actionEl.dataset.id);
