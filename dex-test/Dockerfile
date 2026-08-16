@@ -9,12 +9,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEX_DATA_DIR=/data \
     DEX_INBOUND_DIR=/scanner-inbox \
     DEX_SOURCE_DB_DIR=/source-database \
+    DEX_ONE_PIECE_REFERENCE_DIR=/source-database \
+    DEX_SAM_OCR_ENABLED=1 \
+    DEX_TESSERACT_CMD=/usr/bin/tesseract \
     DEX_TIMEZONE=America/New_York \
     DEX_TCG_CAPACITY=500 \
     DEX_HOST=0.0.0.0 \
     DEX_PORT=8080
 
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng \
+    && tesseract --version \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -26,6 +33,11 @@ COPY dex_post_sale.py ./
 COPY dex_portfolio_economics.py ./
 COPY dex_inbound.py ./
 COPY dex_catalog.py ./
+COPY dex_documents.py ./
+COPY dex_receipts.py ./
+COPY dex_intake_bridge.py ./
+COPY dex_sam.py ./
+COPY dex_sam_challenger.py ./
 COPY static ./static
 
 RUN python -c "import dex_migrations, dex_economics, dex_legacy_economics, dex_acquisition, dex_rip, dex_sealed, dex_batch_economics"
@@ -34,6 +46,11 @@ RUN python -c "import dex_post_sale"
 RUN python -c "import dex_portfolio_economics"
 RUN python -c "import dex_inbound"
 RUN python -c "import dex_catalog"
+RUN python -c "import dex_documents"
+RUN python -c "import dex_receipts"
+RUN python -c "import dex_intake_bridge"
+RUN python -c "import dex_sam"
+RUN python -c "import dex_sam_challenger"
 
 RUN useradd --uid 10001 --create-home dex \
     && mkdir -p /data /scanner-inbox /source-database \

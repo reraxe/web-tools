@@ -1,12 +1,12 @@
 # DEX v2.2-test — Inbound 2.0 Approved Plan
 
-Status: architecture approved; Phases 1–3 complete; Phase 4 not authorized
+Status: architecture approved; Phases 1–6 accepted; Phase 7 SAM Recognition + Human Review implemented pending operator QA
 
 Known-good baseline: immutable `v2.1-test` Phase 7C checkpoint
 
 Known-good restore point: preserved `v2.2-test` Inbound 2.0 Phase 2 Happy-Path Polish checkpoint
 
-Current checkpoint: `v2.2-test` Inbound 2.0 Phase 3 Product Catalog + UPC Intake
+Current checkpoint: `v2.2-test` Inbound 2.0 Phase 7 SAM Recognition + Human Review
 
 ## Approved Accounting-by-Default Contract
 
@@ -82,23 +82,49 @@ Ordinary autosave is permitted only while incomplete or reconciliation-required.
 - Silent reassignment is blocked. Explicit corrections require reason/note and append audit history without rewriting earlier mapping events or acquisition facts.
 - UPC identifies only a commercial product. Phase 3 creates no physical sealed-unit identity, batch, card, basis, receipt fact, or portfolio result.
 
-## Later Phases — Not Authorized
+## Phase 4: Source Documents — Complete
 
-### Phase 4: Source documents
+- Replace the receipt placeholders with camera/file capture for multiple JPG/JPEG/PNG/PDF artifacts. HEIC/HEIF remains visible but is rejected clearly unless the runtime has a verified safe decoder.
+- Keep raw artifacts outside SQLite behind `DocumentStore`; activate only private local filesystem storage and retain an unconfigured Google Drive-compatible boundary without credentials or public links.
+- Store provider metadata, SHA-256, detected MIME, byte size, integrity/storage state, acquisition linkage, tombstones, and append-only events in migration `0010_v22_phase4_source_documents`.
+- Validate size, signatures, decoded image safety, lightweight PDF structure/page limits, filenames/path containment, duplicates, request IDs, and optimistic acquisition revisions.
+- Let failed uploads remain visible and retryable without blocking manual facts. Draft removal deletes the local artifact but retains audit metadata; confirmed evidence becomes a durable tombstone and preserves the artifact outside normal view.
+- Provide server-mediated private viewing with no-store/nosniff headers. No extraction, suggested facts, receipt-line matching, or downstream projection occurs.
 
-Provider-neutral external storage, protected multi-document upload/capture, metadata/hash tracking, retryable failures, and Google Drive-compatible adapter contract. Provider failure must not block manual acquisition entry.
+## Implemented Phases
 
-### Phase 5: Receipt extraction and matching
+### Phase 5: Receipt extraction and matching — Complete
+
+- Provider-neutral extraction jobs use immutable IDs, provider/version/timestamps, retry state, normalized candidates, confidence, and page/line provenance.
+- The operational provider is private local PDF text extraction. Image OCR and external providers remain unconfigured; no document is transmitted externally.
+- Empty draft fields may receive visible high-confidence proposals. Manual/confirmed facts are never silently overwritten, and operator replacements preserve the original candidate.
+- Receipt lines support the approved classifications and deterministic matching priority. Fuzzy matches remain non-authoritative suggestions.
+- Multi-line landed cost uses `receipt-landed-allocation-v1`: direct receipt merchandise plus shared components allocated proportionally by merchandise value, with exact-cent remainder assignment by immutable acquisition-line ID.
+- Review keeps details collapsible, exposes Needs Attention exceptions, and preserves the final acquisition confirmation as the authority gate.
 
 Versioned candidates, field-level confidence, receipt-line classifications, and product/quantity reconciliation. Candidate facts populate Review but remain non-authoritative until acquisition confirmation. Deterministic calculations may be Automatic + Visible; ambiguous classification, matching, or allocation becomes Needs Attention. No mandatory Manual Economics or Reconciliation screen returns.
 
-### Phase 6: Downstream projection and routing
+### Phase 6: Downstream projection and routing — Complete
 
-Transactional projection of confirmed lines into established homogeneous batches, sealed units, rip/open, scans, and acquired-singles workflows.
+- Route confirmed lines partially through backend-generated preview and explicit confirmation. Decide Later remains resumable.
+- Project one homogeneous existing-style batch per acquisition line with exact confirmed landed cost and durable line linkage.
+- Create stable sealed units for Pack/Sealed lines; pending units are unavailable, Keep Sealed units become sellable inventory, and Rip/Open opens exact lowest eligible stable units into a draft rip.
+- Route acquired singles into one existing singles batch/allocation session without SAM or premature per-card basis.
+- Record append-only, idempotent operation and route events; use optimistic revisions and transactional locking to prevent duplicate projection or double claims.
+- Transition `READY_FOR_INTAKE` to `INTAKE_IN_PROGRESS` or `INTAKE_COMPLETE` only from exact quantity reconciliation.
 
-### Phase 7: Operator cutover and hardening
+### Phase 7: SAM Recognition + Human Review — Implemented, pending operator QA
 
-Make New Acquisition primary only after full compatibility, accessibility, performance, security, rollback, and operator QA gates pass.
+- Restrict recognition to One Piece while keeping provider-neutral metadata and reference interfaces for later TCGs.
+- Combine structured cached OPTCG facts, a non-destructive incremental local reference index, physical scan/card-number evidence, scan-quality observations, and bounded visual comparison.
+- Require strong multi-source agreement for `AUTO_MATCHED`; route ambiguity to `NEEDS_REVIEW` and absent trustworthy evidence to `UNIDENTIFIED`.
+- Preserve append-only recognition jobs, ranked candidates, evidence, engine/rules/index versions, operator confirmation/correction/unidentified decisions, and original suggestions.
+- Keep intake non-blocking with batch review queues and local Find Match. Only approved automatic or operator decisions become authoritative identity.
+- Preserve acquisition/batch/rip/processed-scan provenance and the strict identity-only economics boundary.
+
+## Later Phases — Not Authorized
+
+JANA pricing, listing automation, cross-TCG recognition, autonomous retraining, production cutover, and authentication changes require separate approval.
 
 ### Future: Attention Center — Not Scheduled or Authorized
 

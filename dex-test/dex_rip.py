@@ -307,6 +307,23 @@ def finalize_rip(db: sqlite3.Connection, rip_id: int, payload: dict) -> dict:
         raise ValueError("Confirm that every intended scanned or bulk card is accounted for")
     if not payload.get("confirm_finalization"):
         raise ValueError("Final allocation confirmation is required")
+    linked = db.execute(
+        """SELECT l.id,l.quantity,l.product_class
+             FROM batches b JOIN acquisition_lines l ON l.id=b.acquisition_line_id
+            WHERE b.id=?""",
+        (rip["batch_id"],),
+    ).fetchone()
+    if linked and linked["product_class"] == "SINGLE_CARDS":
+        routed = int(db.execute(
+            """SELECT COALESCE(SUM(quantity),0)
+                 FROM acquisition_intake_route_events
+                WHERE acquisition_line_id=? AND route_action='SCAN_IDENTIFY'""",
+            (linked["id"],),
+        ).fetchone()[0])
+        if routed != int(linked["quantity"]):
+            raise ValueError(
+                "Finish routing this singles acquisition line before finalizing its full cost allocation"
+            )
     request_id = _text(payload.get("request_id"), 100)
     if not request_id:
         raise ValueError("A unique request ID is required")

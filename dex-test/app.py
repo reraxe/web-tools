@@ -19,6 +19,7 @@ import shutil
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from http import HTTPStatus
@@ -48,6 +49,18 @@ from dex_catalog import (
     search_catalog_products,
 )
 from dex_economics import CALCULATION_VERSION
+from dex_documents import (
+    DocumentIntegrityError,
+    get_document as source_document_payload,
+    get_document_store,
+    list_documents as list_source_documents,
+    provider_contract as document_provider_contract,
+    read_document as read_source_document,
+    retry_document as retry_source_document,
+    tombstone_document as tombstone_source_document,
+    upload_document as upload_source_document,
+    verify_document as verify_source_document,
+)
 from dex_corrections import (
     batch_corrections_payload,
     card_has_economic_history,
@@ -86,7 +99,15 @@ from dex_inbound import (
     create_acquisition,
     foundation_contract as inbound_foundation_contract,
     list_acquisitions,
+    list_recycled_acquisitions,
     mark_reconciliation_required,
+    recycle_draft_acquisition,
+    restore_recycled_acquisition,
+)
+from dex_intake_bridge import (
+    confirm_intake_routing,
+    intake_preview,
+    intake_status,
 )
 from dex_rip import (
     activate_rip,
@@ -98,6 +119,19 @@ from dex_rip import (
     deactivate_rip,
     finalize_rip,
     rip_session_payload,
+)
+from dex_receipts import (
+    apply_proposed_facts as apply_receipt_proposed_facts,
+    candidate_disposition as receipt_candidate_disposition,
+    classify_receipt_line,
+    extraction_provider_contract,
+    extraction_job_payload as receipt_extraction_job_payload,
+    generate_allocation_proposal as generate_receipt_allocation_proposal,
+    get_receipt_extractor,
+    match_disposition as receipt_match_disposition,
+    queue_extraction as queue_receipt_extraction,
+    receipt_intelligence_payload,
+    retry_extraction as retry_receipt_extraction,
 )
 from dex_sealed import (
     acquisition_has_used_units,
@@ -111,6 +145,26 @@ from dex_sealed import (
     undo_sealed_sale,
     undo_specific_sealed_sale,
 )
+from dex_sam import (
+    AUTO_MATCH_THRESHOLD as SAM_AUTO_MATCH_THRESHOLD,
+    RULES_VERSION as SAM_RULES_VERSION,
+    decide_recognition,
+    default_provider as default_sam_metadata_provider,
+    index_reference_library,
+    metadata_provider_status,
+    recognition_history,
+    recognition_result,
+    reference_index_status,
+    reference_path as sam_reference_path,
+    refresh_metadata as refresh_sam_metadata,
+    review_queue as sam_review_queue,
+    search_references as search_sam_references,
+    submit_recognition_for_sku,
+)
+from dex_sam_challenger import (
+    load_shadow_comparison as load_sam_challenger_comparison,
+    shadow_recognition_for_job as sam_challenger_shadow_for_job,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -120,6 +174,17 @@ DB_PATH = Path(os.environ.get("DEX_DB_PATH", DATA_DIR / "dex.db")).resolve()
 IMAGE_DIR = Path(os.environ.get("DEX_IMAGE_DIR", DATA_DIR / "images")).resolve()
 INBOUND_DIR = Path(os.environ.get("DEX_INBOUND_DIR", DATA_DIR / "inbound")).resolve()
 SOURCE_DB_DIR = Path(os.environ.get("DEX_SOURCE_DB_DIR", DATA_DIR / "source-database")).resolve()
+ONE_PIECE_REFERENCE_DIR = Path(
+    os.environ.get("DEX_ONE_PIECE_REFERENCE_DIR", SOURCE_DB_DIR)
+).resolve()
+SAM_CHALLENGER_REPORT_PATH = (
+    Path(os.environ["DEX_SAM_CHALLENGER_REPORT_PATH"]).resolve()
+    if os.environ.get("DEX_SAM_CHALLENGER_REPORT_PATH")
+    else None
+)
+DOCUMENT_STORE = get_document_store(DATA_DIR)
+RECEIPT_EXTRACTOR = get_receipt_extractor()
+SAM_METADATA_PROVIDER = default_sam_metadata_provider()
 HOST = os.environ.get("DEX_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
@@ -263,7 +328,9 @@ def init_db() -> None:
                 match_confidence REAL,
                 match_source TEXT NOT NULL DEFAULT 'Manual',
                 match_reviewed INTEGER NOT NULL DEFAULT 0,
-                matched_at TEXT
+                matched_at TEXT,
+                sam_recognition_state TEXT,
+                sam_recognition_job_id INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS source_cards (
@@ -360,6 +427,8 @@ def init_db() -> None:
             ("match_source", "TEXT NOT NULL DEFAULT 'Manual'"),
             ("match_reviewed", "INTEGER NOT NULL DEFAULT 0"),
             ("matched_at", "TEXT"),
+            ("sam_recognition_state", "TEXT"),
+            ("sam_recognition_job_id", "INTEGER"),
         ):
             if name not in card_columns:
                 db.execute(f"ALTER TABLE cards ADD COLUMN {name} {declaration}")
@@ -619,6 +688,13 @@ def apply_source_match(db: sqlite3.Connection, card: sqlite3.Row, source: sqlite
 def sam_match_card(db: sqlite3.Connection, card: sqlite3.Row, batch: sqlite3.Row | None = None) -> dict:
     if card["recycled_at"]:
         return {"sku": card["sku"], "matched": False, "reason": "Card is in the Recycle Bin"}
+    if card["sam_recognition_state"] in ("OPERATOR_CONFIRMED", "OPERATOR_CORRECTED"):
+        return {
+            "sku": card["sku"], "matched": True,
+            "confidence": float(card["match_confidence"] or 1),
+            "match_source": "Operator-confirmed identity preserved",
+            "reason": "Legacy SAM cannot overwrite an operator-confirmed identity",
+        }
     normalized = normalize_card_number(card["card_number"])
     source = None
     if normalized:
@@ -1060,6 +1136,10 @@ def dashboard() -> dict:
         values["recycled_count"] = db.execute(
             "SELECT COUNT(*) FROM cards WHERE recycled_at IS NOT NULL"
         ).fetchone()[0]
+        values["recycled_acquisition_count"] = db.execute(
+            "SELECT COUNT(*) FROM acquisitions WHERE recycled_at IS NOT NULL"
+        ).fetchone()[0]
+        values["recycle_total_count"] = int(values["recycled_count"]) + int(values["recycled_acquisition_count"])
         values["recent_batches"] = [
             dict(row)
             for row in db.execute(
@@ -1274,6 +1354,7 @@ class DexHandler(BaseHTTPRequestHandler):
                 resolved.is_relative_to(STATIC_DIR.resolve())
                 or resolved.is_relative_to(DATA_DIR)
                 or resolved.is_relative_to(SOURCE_DB_DIR.resolve())
+                or resolved.is_relative_to(ONE_PIECE_REFERENCE_DIR)
             )
             if not allowed or not resolved.is_file():
                 self.send_error(404)
@@ -1583,6 +1664,10 @@ class DexHandler(BaseHTTPRequestHandler):
                 self.send_json(result)
             elif path == "/api/inbound/foundation":
                 self.send_json(inbound_foundation_contract())
+            elif path == "/api/document-providers/status":
+                self.send_json(document_provider_contract(DOCUMENT_STORE))
+            elif path == "/api/receipt-extraction/providers/status":
+                self.send_json(extraction_provider_contract(RECEIPT_EXTRACTOR))
             elif path == "/api/catalog/contract":
                 self.send_json(catalog_contract())
             elif path == "/api/catalog/products":
@@ -1621,6 +1706,69 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     result = inbound_acquisition_payload(db, acquisition_id)
                 self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = intake_status(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing/(links|continue)", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    routing = intake_status(db, acquisition_id)
+                links = [link for line in routing["lines"] for link in line["links"]]
+                self.send_json({
+                    "acquisition_id": acquisition_id,
+                    "state": routing["state"],
+                    "links": links,
+                    "recommended_action": (
+                        "CONTINUE_INTAKE" if routing["summary"]["quantity_undecided"]
+                        else "VIEW_INVENTORY"
+                    ),
+                })
+            elif re.fullmatch(r"/api/acquisitions/\d+/documents", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = list_source_documents(db, acquisition_id)
+                self.send_json({"documents": result})
+            elif re.fullmatch(r"/api/acquisition-documents/\d+", path):
+                document_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = source_document_payload(db, document_id)
+                self.send_json({"document": result})
+            elif re.fullmatch(r"/api/acquisition-documents/\d+/content", path):
+                document_id = int(path.split("/")[3])
+                try:
+                    with connect() as db:
+                        document, body = read_source_document(db, document_id, DOCUMENT_STORE)
+                except DocumentIntegrityError:
+                    with DB_LOCK, connect() as db:
+                        db.execute("BEGIN IMMEDIATE")
+                        verify_source_document(
+                            db, document_id,
+                            {"request_id": f"AUTO-INTEGRITY-{document_id}-{uuid.uuid4()}"},
+                            DOCUMENT_STORE,
+                        )
+                    raise
+                disposition = f'inline; filename="{document["safe_filename"]}"'
+                self.send_response(200)
+                self.send_header("Content-Type", document["detected_mime_type"])
+                self.send_header("Content-Disposition", disposition)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store, private")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+                self.end_headers()
+                self.wfile.write(body)
+            elif re.fullmatch(r"/api/acquisitions/\d+/receipt-intelligence", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = receipt_intelligence_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/receipt-extractions/RCPT-JOB-[0-9a-f-]+", path):
+                job_uuid = path.rsplit("/", 1)[-1]
+                with connect() as db:
+                    result = receipt_extraction_job_payload(db, job_uuid)
+                self.send_json(result)
             elif path == "/api/settings":
                 with connect() as db:
                     values = {row["key"]: row["value"] for row in db.execute("SELECT key, value FROM settings")}
@@ -1628,6 +1776,62 @@ class DexHandler(BaseHTTPRequestHandler):
                 values["recycle_retention_days"] = int(values.get("recycle_retention_days", 180))
                 values["recycle_auto_purge"] = values.get("recycle_auto_purge", "0") == "1"
                 self.send_json(values)
+            elif path == "/api/sam/provider/health":
+                probe = query.get("probe", ["0"])[0] == "1"
+                with connect() as db:
+                    result = metadata_provider_status(db, SAM_METADATA_PROVIDER, probe=probe)
+                self.send_json(result)
+            elif path == "/api/sam/metadata/status":
+                with connect() as db:
+                    result = metadata_provider_status(db, SAM_METADATA_PROVIDER, probe=False)
+                self.send_json(result)
+            elif path == "/api/sam/references/status":
+                with connect() as db:
+                    result = reference_index_status(db, ONE_PIECE_REFERENCE_DIR)
+                self.send_json(result)
+            elif path == "/api/sam/references/search":
+                filters = {key: values[0] for key, values in query.items() if values}
+                with connect() as db:
+                    result = search_sam_references(db, filters)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sam/references/\d+/image", path):
+                reference_id = int(path.split("/")[4])
+                with connect() as db:
+                    _, image_path = sam_reference_path(db, reference_id, ONE_PIECE_REFERENCE_DIR)
+                body = image_path.read_bytes()
+                content_type = mimetypes.guess_type(image_path.name)[0] or "application/octet-stream"
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "private, max-age=3600")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+            elif path == "/api/sam/review-queues":
+                batch_id = int(query["batch_id"][0]) if query.get("batch_id") else None
+                with connect() as db:
+                    result = sam_review_queue(db, batch_id=batch_id)
+                self.send_json(result)
+            elif path == "/api/sam/challenger/comparison":
+                self.send_json(load_sam_challenger_comparison(SAM_CHALLENGER_REPORT_PATH))
+            elif re.fullmatch(r"/api/sam/recognitions/SAM-JOB-[0-9a-f-]+/challenger", path):
+                job_uuid = path.split("/")[-2]
+                with open_readonly_database(DB_PATH) as db:
+                    result = sam_challenger_shadow_for_job(db, job_uuid, data_dir=DATA_DIR)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sam/recognitions/SAM-JOB-[0-9a-f-]+", path):
+                job_uuid = path.rsplit("/", 1)[-1]
+                with connect() as db:
+                    result = recognition_result(db, job_uuid)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/sam/history", path):
+                sku = unquote(path.split("/")[3])
+                with connect() as db:
+                    card = db.execute("SELECT id FROM cards WHERE sku=?", (sku,)).fetchone()
+                    if not card:
+                        raise ValueError("Card not found")
+                    result = recognition_history(db, card["id"])
+                self.send_json(result)
             elif path == "/api/sam/source":
                 with connect() as db:
                     rows = db.execute(
@@ -1640,6 +1844,14 @@ class DexHandler(BaseHTTPRequestHandler):
                     payload = {
                         "summary": source_summary(db),
                         "cards": [source_payload(row) for row in rows],
+                        "phase7": {
+                            "provider": metadata_provider_status(db, SAM_METADATA_PROVIDER, probe=False),
+                            "references": reference_index_status(db, ONE_PIECE_REFERENCE_DIR),
+                            "review": sam_review_queue(db),
+                            "rules_version": SAM_RULES_VERSION,
+                            "auto_match_threshold": SAM_AUTO_MATCH_THRESHOLD,
+                            "challenger": load_sam_challenger_comparison(SAM_CHALLENGER_REPORT_PATH),
+                        },
                     }
                 self.send_json(payload)
             elif path == "/api/activity":
@@ -1830,7 +2042,8 @@ class DexHandler(BaseHTTPRequestHandler):
                         """,
                         params,
                     ).fetchall()
-                self.send_json({"cards": [dict(row) for row in rows]})
+                    recycled_acquisitions = list_recycled_acquisitions(db, search)
+                self.send_json({"cards": [dict(row) for row in rows], "acquisitions": recycled_acquisitions})
             elif path == "/api/sales":
                 with connect() as db:
                     ids = [row[0] for row in db.execute("SELECT id FROM sale_orders ORDER BY sold_at DESC, id DESC LIMIT 100").fetchall()]
@@ -1859,7 +2072,10 @@ class DexHandler(BaseHTTPRequestHandler):
                 self.serve_file(DATA_DIR / rel)
             elif path.startswith("/source-media/"):
                 rel = unquote(path.removeprefix("/source-media/"))
-                self.serve_file(SOURCE_DB_DIR / rel)
+                source_path = SOURCE_DB_DIR / rel
+                if not source_path.is_file():
+                    source_path = ONE_PIECE_REFERENCE_DIR / rel
+                self.serve_file(source_path)
             elif path == "/":
                 self.serve_file(STATIC_DIR / "index.html", cache=False)
             else:
@@ -1912,8 +2128,40 @@ class DexHandler(BaseHTTPRequestHandler):
             payload = self.read_json()
             if path == "/api/sam/source/rescan":
                 with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
                     result = scan_source_database(db)
+                    phase7_index = index_reference_library(
+                        db,
+                        ONE_PIECE_REFERENCE_DIR,
+                        request_id=clean_text(payload.get("request_id"), 120) or f"LEGACY-RESCAN-{uuid.uuid4()}",
+                    )
                     result["summary"] = source_summary(db)
+                    result["phase7_index"] = phase7_index
+                self.send_json(result)
+            elif path == "/api/sam/metadata/refresh":
+                card_numbers = payload.get("card_numbers", [])
+                if not isinstance(card_numbers, list):
+                    raise ValueError("card_numbers must be a list")
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = refresh_sam_metadata(
+                        db, SAM_METADATA_PROVIDER, card_numbers,
+                        request_id=payload.get("request_id", ""),
+                    )
+                self.send_json(result)
+            elif path in ("/api/sam/references/index", "/api/sam/references/reindex"):
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = index_reference_library(
+                        db, ONE_PIECE_REFERENCE_DIR,
+                        request_id=payload.get("request_id", ""),
+                    )
+                self.send_json(result)
+            elif re.fullmatch(r"/api/sam/recognitions/SAM-JOB-[0-9a-f-]+/decision", path):
+                job_uuid = path.split("/")[4]
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = decide_recognition(db, job_uuid, payload)
                 self.send_json(result)
             elif path == "/api/catalog/products":
                 with DB_LOCK, connect() as db:
@@ -1936,6 +2184,89 @@ class DexHandler(BaseHTTPRequestHandler):
                 with DB_LOCK, connect() as db:
                     db.execute("BEGIN IMMEDIATE")
                     result = create_acquisition(db, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisitions/\d+/documents", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = upload_source_document(db, acquisition_id, payload, DOCUMENT_STORE)
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisition-documents/\d+/retry", path):
+                document_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = retry_source_document(db, document_id, payload, DOCUMENT_STORE)
+                    acquisition_id = int(result["document"]["acquisition_id"])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisition-documents/\d+/verify", path):
+                document_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = verify_source_document(db, document_id, payload, DOCUMENT_STORE)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-documents/\d+/tombstone", path):
+                document_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = tombstone_source_document(db, document_id, payload, DOCUMENT_STORE)
+                    acquisition_id = int(result["document"]["acquisition_id"])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisition-documents/\d+/extractions", path):
+                document_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = queue_receipt_extraction(db, document_id, payload, DOCUMENT_STORE, RECEIPT_EXTRACTOR)
+                    acquisition_id = int(db.execute("SELECT acquisition_id FROM receipt_extraction_jobs WHERE id=?", (result["id"],)).fetchone()[0])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/receipt-extractions/RCPT-JOB-[0-9a-f-]+/retry", path):
+                job_uuid = path.split("/")[3]
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = retry_receipt_extraction(db, job_uuid, payload, DOCUMENT_STORE, RECEIPT_EXTRACTOR)
+                    acquisition_id = int(result["acquisition_id"])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/acquisitions/\d+/receipt-candidates/apply", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = apply_receipt_proposed_facts(db, acquisition_id, payload)
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/receipt-candidates/\d+/disposition", path):
+                candidate_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = receipt_candidate_disposition(db, candidate_id, payload)
+                    acquisition_id = int(db.execute("SELECT acquisition_id FROM receipt_candidate_facts WHERE id=?", (candidate_id,)).fetchone()[0])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/receipt-lines/\d+/classification", path):
+                receipt_line_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = classify_receipt_line(db, receipt_line_id, payload)
+                    acquisition_id = int(db.execute("SELECT acquisition_id FROM receipt_lines WHERE id=?", (receipt_line_id,)).fetchone()[0])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/receipt-line-matches/\d+/disposition", path):
+                match_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = receipt_match_disposition(db, match_id, payload)
+                    acquisition_id = int(db.execute("SELECT r.acquisition_id FROM receipt_line_matches m JOIN receipt_lines r ON r.id=m.receipt_line_id WHERE m.id=?", (match_id,)).fetchone()[0])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/receipt-allocation-proposals", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = generate_receipt_allocation_proposal(db, acquisition_id, payload)
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
                 self.send_json(result, 201)
             elif re.fullmatch(r"/api/acquisitions/\d+/product-scan", path):
                 acquisition_id = int(path.split("/")[3])
@@ -1973,11 +2304,45 @@ class DexHandler(BaseHTTPRequestHandler):
                     db.execute("BEGIN IMMEDIATE")
                     result = confirm_acquisition(db, acquisition_id, payload)
                 self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing/preview", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = intake_preview(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing/additional/preview", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = intake_preview(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing/confirm", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = confirm_intake_routing(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/intake-routing/additional/confirm", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = confirm_intake_routing(db, acquisition_id, payload)
+                self.send_json(result)
             elif re.fullmatch(r"/api/acquisitions/\d+/cancel", path):
                 acquisition_id = int(path.split("/")[3])
                 with DB_LOCK, connect() as db:
                     db.execute("BEGIN IMMEDIATE")
                     result = cancel_acquisition(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/recycle", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = recycle_draft_acquisition(db, acquisition_id, payload)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/restore", path):
+                acquisition_id = int(path.split("/")[3])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = restore_recycled_acquisition(db, acquisition_id, payload)
                 self.send_json(result)
             elif re.fullmatch(r"/api/acquisition-lines/\d+/confirm-allocation", path):
                 line_id = int(path.split("/")[3])
@@ -2202,7 +2567,7 @@ class DexHandler(BaseHTTPRequestHandler):
                         raise ValueError("Reopen this batch before adding cards")
                     cards = [create_card(db, batch, item if isinstance(item, dict) else {}) for item in items]
                 self.send_json({"cards": cards, "created": len(cards)}, 201)
-            elif re.fullmatch(r"/api/batches/\d+/sam", path):
+            elif re.fullmatch(r"/api/batches/\d+/sam(?:/recognize)?", path):
                 batch_id = int(path.split("/")[3])
                 requested = payload.get("skus", [])
                 if requested is not None and not isinstance(requested, list):
@@ -2220,9 +2585,28 @@ class DexHandler(BaseHTTPRequestHandler):
                         where += f" AND sku IN ({placeholders})"
                         params.extend(requested_skus)
                     cards = db.execute(f"SELECT * FROM cards WHERE {where} ORDER BY id", params).fetchall()
-                    results = [sam_match_card(db, card, batch) for card in cards]
-                matched = sum(1 for result in results if result.get("matched"))
-                self.send_json({"batch_id": batch_id, "matched": matched, "checked": len(results), "results": results})
+                    if path.endswith("/recognize"):
+                        base_request_id = clean_text(payload.get("request_id"), 100) or f"SAM-BATCH-{uuid.uuid4()}"
+                        results = [
+                            submit_recognition_for_sku(
+                                db, card["sku"], data_dir=DATA_DIR,
+                                request_id=f"{base_request_id}-{card['id']}",
+                            )
+                            for card in cards
+                        ]
+                    else:
+                        results = [sam_match_card(db, card, batch) for card in cards]
+                if not path.endswith("/recognize"):
+                    matched = sum(1 for result in results if result.get("matched"))
+                    self.send_json({"batch_id": batch_id, "matched": matched, "checked": len(results), "results": results})
+                    return
+                matched = sum(1 for result in results if result.get("effective_state") in ("AUTO_MATCHED", "OPERATOR_CONFIRMED", "OPERATOR_CORRECTED"))
+                self.send_json({
+                    "batch_id": batch_id, "matched": matched, "checked": len(results),
+                    "needs_review": sum(1 for result in results if result.get("effective_state") == "NEEDS_REVIEW"),
+                    "unidentified": sum(1 for result in results if result.get("effective_state") == "UNIDENTIFIED"),
+                    "scanning_blocked": False, "results": results,
+                })
             elif re.fullmatch(r"/api/batches/\d+/complete", path):
                 batch_id = int(path.split("/")[3])
                 with DB_LOCK, connect() as db:
@@ -2322,15 +2706,30 @@ class DexHandler(BaseHTTPRequestHandler):
                     log_action(db, "IMAGE_SWAP", f"Swapped images for {sku}", {"sku": sku})
                     card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
                 self.send_json(dict(card))
-            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/sam", path):
+            elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/sam(?:/recognize)?", path):
                 sku = unquote(path.split("/")[3])
                 with DB_LOCK, connect() as db:
-                    card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
-                    if not card:
-                        self.send_error_json("Card not found", 404)
-                        return
-                    batch = db.execute("SELECT * FROM batches WHERE id = ?", (card["batch_id"],)).fetchone()
-                    result = sam_match_card(db, card, batch)
+                    if path.endswith("/recognize"):
+                        db.execute("BEGIN IMMEDIATE")
+                        result = submit_recognition_for_sku(
+                            db, sku, data_dir=DATA_DIR,
+                            request_id=clean_text(payload.get("request_id"), 120) or f"SAM-CARD-{uuid.uuid4()}",
+                        )
+                    else:
+                        card = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
+                        if not card:
+                            self.send_error_json("Card not found", 404)
+                            return
+                        batch = db.execute("SELECT * FROM batches WHERE id = ?", (card["batch_id"],)).fetchone()
+                        result = sam_match_card(db, card, batch)
+                if not path.endswith("/recognize"):
+                    self.send_json(result)
+                    return
+                result["matched"] = result.get("effective_state") in ("AUTO_MATCHED", "OPERATOR_CONFIRMED", "OPERATOR_CORRECTED")
+                result["confidence"] = result["job"]["confidence"]
+                result["match_source"] = "SAM Phase 7"
+                result["source"] = result.get("top_candidate")
+                result["reason"] = "Operator review required" if result.get("effective_state") == "NEEDS_REVIEW" else "No trustworthy identity" if result.get("effective_state") == "UNIDENTIFIED" else "Trusted identity"
                 self.send_json(result)
             elif re.fullmatch(r"/api/cards/[A-Z0-9-]+/recycle", path):
                 sku = unquote(path.split("/")[3])

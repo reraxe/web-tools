@@ -745,6 +745,552 @@ def _v22_phase3_product_catalog_upc(connection: sqlite3.Connection) -> None:
     )
 
 
+def _v22_phase4_source_documents(connection: sqlite3.Connection) -> None:
+    """Add provider-neutral source-document metadata; binary artifacts stay outside SQLite."""
+
+    connection.execute(
+        """
+        CREATE TABLE acquisition_documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_uuid TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            upload_request_id TEXT NOT NULL UNIQUE,
+            provider_name TEXT NOT NULL,
+            provider_resource_id TEXT NOT NULL DEFAULT '',
+            original_filename TEXT NOT NULL,
+            safe_filename TEXT NOT NULL,
+            declared_mime_type TEXT NOT NULL DEFAULT '',
+            detected_mime_type TEXT NOT NULL DEFAULT '',
+            byte_size INTEGER NOT NULL DEFAULT 0 CHECK (byte_size >= 0),
+            sha256 TEXT NOT NULL DEFAULT '',
+            document_role TEXT NOT NULL DEFAULT 'RECEIPT',
+            capture_method TEXT NOT NULL DEFAULT 'FILE_UPLOAD',
+            storage_status TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (storage_status IN ('PENDING','STORED','FAILED','TOMBSTONED')),
+            extraction_status TEXT NOT NULL DEFAULT 'NOT_REQUESTED'
+                CHECK (extraction_status = 'NOT_REQUESTED'),
+            integrity_status TEXT NOT NULL DEFAULT 'UNVERIFIED'
+                CHECK (integrity_status IN ('UNVERIFIED','VERIFIED','FAILED','NOT_AVAILABLE')),
+            error_code TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            duplicate_of_document_id INTEGER REFERENCES acquisition_documents(id),
+            replaced_by_document_id INTEGER REFERENCES acquisition_documents(id),
+            captured_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_verified_at TEXT,
+            tombstoned_at TEXT,
+            tombstone_reason TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE acquisition_document_events (
+            event_id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            document_id INTEGER REFERENCES acquisition_documents(id),
+            event_type TEXT NOT NULL,
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX idx_acquisition_documents_acquisition ON acquisition_documents(acquisition_id, created_at, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_acquisition_documents_hash ON acquisition_documents(acquisition_id, sha256, storage_status)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_acquisition_document_events_acquisition ON acquisition_document_events(acquisition_id, recorded_at, event_id)"
+    )
+
+
+def _v22_phase5_receipt_intelligence(connection: sqlite3.Connection) -> None:
+    """Add versioned receipt candidates and proposal history without changing source facts."""
+
+    connection.execute(
+        """
+        CREATE TABLE receipt_extraction_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            document_id INTEGER NOT NULL REFERENCES acquisition_documents(id),
+            retry_of_job_id INTEGER REFERENCES receipt_extraction_jobs(id),
+            provider_name TEXT NOT NULL,
+            provider_version TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('QUEUED','PROCESSING','COMPLETED','FAILED','NO_FACTS')),
+            disposition TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (disposition IN ('PENDING','ACCEPTED','REJECTED','SUPERSEDED')),
+            queued_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            failed_at TEXT,
+            error_code TEXT NOT NULL DEFAULT '',
+            error_message TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_candidate_facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidate_uuid TEXT NOT NULL UNIQUE,
+            job_id INTEGER NOT NULL REFERENCES receipt_extraction_jobs(id),
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            field_name TEXT NOT NULL,
+            normalized_value TEXT NOT NULL,
+            value_type TEXT NOT NULL CHECK (value_type IN ('TEXT','DATE','CURRENCY','INTEGER','CENTS','SCOPE')),
+            confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+            confidence_band TEXT NOT NULL CHECK (confidence_band IN ('HIGH','MEDIUM','LOW')),
+            source_page INTEGER,
+            source_location TEXT NOT NULL DEFAULT '',
+            disposition TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (disposition IN ('PENDING','ACCEPTED','REJECTED','SUPERSEDED')),
+            accepted_value TEXT,
+            disposition_reason TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(job_id, field_name)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            line_uuid TEXT NOT NULL UNIQUE,
+            job_id INTEGER NOT NULL REFERENCES receipt_extraction_jobs(id),
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            document_id INTEGER NOT NULL REFERENCES acquisition_documents(id),
+            line_sequence INTEGER NOT NULL,
+            description TEXT NOT NULL,
+            quantity INTEGER,
+            unit_price_cents INTEGER,
+            line_total_cents INTEGER,
+            currency TEXT NOT NULL DEFAULT '',
+            extracted_identifier TEXT NOT NULL DEFAULT '',
+            manufacturer_product_code TEXT NOT NULL DEFAULT '',
+            confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+            confidence_band TEXT NOT NULL CHECK (confidence_band IN ('HIGH','MEDIUM','LOW')),
+            source_page INTEGER,
+            source_location TEXT NOT NULL DEFAULT '',
+            classification TEXT NOT NULL DEFAULT 'UNRESOLVED'
+                CHECK (classification IN ('INVENTORY','SHIPPING_FEE','BUSINESS_NONINVENTORY','PERSONAL_NONBUSINESS','DUPLICATE_EXTRACTION','UNRESOLVED')),
+            classification_source TEXT NOT NULL DEFAULT 'EXTRACTOR',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(job_id, line_sequence)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_line_matches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            match_uuid TEXT NOT NULL UNIQUE,
+            receipt_line_id INTEGER NOT NULL REFERENCES receipt_lines(id),
+            acquisition_line_id INTEGER NOT NULL REFERENCES acquisition_lines(id),
+            match_method TEXT NOT NULL CHECK (match_method IN ('EXACT_IDENTIFIER','EXACT_MANUFACTURER_CODE','EXACT_NAME_SET','FUZZY_TEXT')),
+            confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+            status TEXT NOT NULL DEFAULT 'PROPOSED'
+                CHECK (status IN ('PROPOSED','ACCEPTED','REJECTED','SUPERSEDED')),
+            authoritative_identity INTEGER NOT NULL DEFAULT 0 CHECK (authoritative_identity IN (0,1)),
+            rationale TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_allocation_proposals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proposal_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            method TEXT NOT NULL,
+            calculation_version TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PROPOSED'
+                CHECK (status IN ('PROPOSED','APPLIED','ACCEPTED','REJECTED','SUPERSEDED')),
+            input_facts TEXT NOT NULL DEFAULT '{}',
+            allocations TEXT NOT NULL DEFAULT '[]',
+            total_allocated_cents INTEGER NOT NULL,
+            difference_cents INTEGER NOT NULL,
+            explanation TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            accepted_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE acquisition_field_provenance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            field_name TEXT NOT NULL,
+            candidate_id INTEGER NOT NULL REFERENCES receipt_candidate_facts(id),
+            proposed_value TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PROPOSED'
+                CHECK (status IN ('PROPOSED','OPERATOR_REPLACED','ACCEPTED','REJECTED','SUPERSEDED')),
+            operator_value TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(acquisition_id, field_name, candidate_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_extraction_events (
+            event_id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            job_id INTEGER REFERENCES receipt_extraction_jobs(id),
+            candidate_id INTEGER REFERENCES receipt_candidate_facts(id),
+            receipt_line_id INTEGER REFERENCES receipt_lines(id),
+            event_type TEXT NOT NULL,
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute("CREATE INDEX idx_receipt_jobs_acquisition ON receipt_extraction_jobs(acquisition_id, created_at, id)")
+    connection.execute("CREATE INDEX idx_receipt_candidates_acquisition ON receipt_candidate_facts(acquisition_id, field_name, created_at)")
+    connection.execute("CREATE INDEX idx_receipt_lines_acquisition ON receipt_lines(acquisition_id, classification, line_sequence)")
+    connection.execute("CREATE INDEX idx_receipt_matches_line ON receipt_line_matches(receipt_line_id, status, confidence)")
+    connection.execute("CREATE INDEX idx_receipt_allocations_acquisition ON receipt_allocation_proposals(acquisition_id, status, created_at)")
+    connection.execute("CREATE INDEX idx_receipt_events_acquisition ON receipt_extraction_events(acquisition_id, recorded_at, event_id)")
+
+
+def _v22_prephase_ux_safety_hotfix(connection: sqlite3.Connection) -> None:
+    """Add recoverable acquisition tombstone facts without deleting source history."""
+
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(acquisitions)")}
+    additions = (
+        ("recycled_at", "TEXT"),
+        ("recycle_reason_code", "TEXT NOT NULL DEFAULT ''"),
+        ("recycle_notes", "TEXT NOT NULL DEFAULT ''"),
+        ("pre_recycle_state", "TEXT"),
+    )
+    for name, definition in additions:
+        if name not in columns:
+            connection.execute(f"ALTER TABLE acquisitions ADD COLUMN {name} {definition}")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_acquisitions_recycled_updated "
+        "ON acquisitions(recycled_at, updated_at)"
+    )
+
+
+def _v22_phase6_downstream_intake_bridge(connection: sqlite3.Connection) -> None:
+    """Add an append-only routing ledger between acquisitions and batches.
+
+    Historical batches and sealed units are deliberately left unlinked.  The
+    disposition default keeps every existing remaining sealed unit available,
+    while Phase 6 projections explicitly mark new units pending until routed.
+    """
+
+    sealed_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(sealed_units)")
+    }
+    if "intake_disposition" not in sealed_columns:
+        connection.execute(
+            "ALTER TABLE sealed_units ADD COLUMN intake_disposition TEXT NOT NULL "
+            "DEFAULT 'LEGACY_AVAILABLE' CHECK (intake_disposition IN "
+            "('LEGACY_AVAILABLE','PENDING','KEEP_SEALED','RIP_OPEN'))"
+        )
+    connection.execute(
+        """
+        CREATE TABLE acquisition_intake_operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operation_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            from_state TEXT NOT NULL,
+            to_state TEXT NOT NULL,
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE acquisition_line_projections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            projection_uuid TEXT NOT NULL UNIQUE,
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            acquisition_line_id INTEGER NOT NULL UNIQUE REFERENCES acquisition_lines(id),
+            batch_id INTEGER NOT NULL UNIQUE REFERENCES batches(id),
+            product_class TEXT NOT NULL CHECK (product_class IN ('SINGLE_CARDS','PACK_PRODUCT','SEALED_PRODUCT')),
+            quantity_acquired INTEGER NOT NULL CHECK (quantity_acquired > 0),
+            landed_cost_cents INTEGER NOT NULL CHECK (landed_cost_cents >= 0),
+            catalog_product_id INTEGER REFERENCES catalog_products(id),
+            created_by_operation_id INTEGER NOT NULL REFERENCES acquisition_intake_operations(id),
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE acquisition_intake_route_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            route_event_uuid TEXT NOT NULL UNIQUE,
+            operation_id INTEGER NOT NULL REFERENCES acquisition_intake_operations(id),
+            acquisition_line_id INTEGER NOT NULL REFERENCES acquisition_lines(id),
+            batch_id INTEGER NOT NULL REFERENCES batches(id),
+            route_action TEXT NOT NULL CHECK (route_action IN ('KEEP_SEALED','RIP_OPEN','SCAN_IDENTIFY')),
+            quantity INTEGER NOT NULL CHECK (quantity > 0),
+            basis_cents INTEGER NOT NULL CHECK (basis_cents >= 0),
+            rip_session_id INTEGER REFERENCES rip_sessions(id),
+            created_at TEXT NOT NULL,
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX idx_batches_one_acquisition_line "
+        "ON batches(acquisition_line_id) WHERE acquisition_line_id IS NOT NULL"
+    )
+    connection.execute(
+        "CREATE INDEX idx_intake_operations_acquisition "
+        "ON acquisition_intake_operations(acquisition_id, recorded_at, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_intake_routes_line "
+        "ON acquisition_intake_route_events(acquisition_line_id, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_intake_routes_batch "
+        "ON acquisition_intake_route_events(batch_id, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sealed_units_intake_disposition "
+        "ON sealed_units(batch_id, intake_disposition, status, unit_sequence)"
+    )
+
+
+def _v22_phase7_sam_recognition(connection: sqlite3.Connection) -> None:
+    """Add provider-neutral SAM metadata, reference, recognition, and review facts."""
+
+    cards_exist = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='cards'"
+    ).fetchone()
+    if cards_exist:
+        card_columns = {row[1] for row in connection.execute("PRAGMA table_info(cards)")}
+        for name, definition in (
+            ("sam_recognition_state", "TEXT"),
+            ("sam_recognition_job_id", "INTEGER"),
+        ):
+            if name not in card_columns:
+                connection.execute(f"ALTER TABLE cards ADD COLUMN {name} {definition}")
+
+    connection.execute(
+        """
+        CREATE TABLE sam_metadata_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            provider TEXT NOT NULL,
+            source_key TEXT NOT NULL,
+            card_number TEXT NOT NULL DEFAULT '',
+            normalized_metadata TEXT NOT NULL DEFAULT '{}',
+            provider_version TEXT NOT NULL DEFAULT '',
+            fetched_at TEXT,
+            refreshed_at TEXT NOT NULL,
+            cache_state TEXT NOT NULL
+                CHECK (cache_state IN ('ACTIVE','STALE','MISSING')),
+            error_code TEXT NOT NULL DEFAULT '',
+            UNIQUE(provider, source_key)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_metadata_refresh_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            provider TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('COMPLETED','PARTIAL','FAILED')),
+            requested_keys INTEGER NOT NULL DEFAULT 0,
+            refreshed_keys INTEGER NOT NULL DEFAULT 0,
+            missing_keys INTEGER NOT NULL DEFAULT 0,
+            duration_ms REAL NOT NULL DEFAULT 0,
+            started_at TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            error_code TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_reference_index_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            library_root TEXT NOT NULL,
+            index_version TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('COMPLETED','PARTIAL','FAILED')),
+            files_seen INTEGER NOT NULL DEFAULT 0,
+            indexed INTEGER NOT NULL DEFAULT 0,
+            unchanged INTEGER NOT NULL DEFAULT 0,
+            changed INTEGER NOT NULL DEFAULT 0,
+            duplicate_hashes INTEGER NOT NULL DEFAULT 0,
+            near_duplicates INTEGER NOT NULL DEFAULT 0,
+            missing_marked INTEGER NOT NULL DEFAULT 0,
+            duration_ms REAL NOT NULL DEFAULT 0,
+            started_at TEXT NOT NULL,
+            completed_at TEXT NOT NULL,
+            error_code TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_reference_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference_uuid TEXT NOT NULL UNIQUE,
+            game TEXT NOT NULL,
+            card_number TEXT NOT NULL DEFAULT '',
+            set_code TEXT NOT NULL DEFAULT '',
+            card_name TEXT NOT NULL DEFAULT '',
+            rarity TEXT NOT NULL DEFAULT '',
+            card_type TEXT NOT NULL DEFAULT '',
+            color TEXT NOT NULL DEFAULT '',
+            language TEXT NOT NULL DEFAULT 'Unknown',
+            variant TEXT NOT NULL DEFAULT 'Unknown',
+            printing TEXT NOT NULL DEFAULT 'Unknown',
+            source_filename TEXT NOT NULL,
+            source_reference TEXT NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            file_size INTEGER NOT NULL,
+            mtime_ns INTEGER NOT NULL,
+            sha256 TEXT NOT NULL,
+            perceptual_hash TEXT NOT NULL DEFAULT '',
+            visual_bucket TEXT NOT NULL DEFAULT '',
+            metadata_provider TEXT NOT NULL DEFAULT '',
+            metadata_source_key TEXT NOT NULL DEFAULT '',
+            library_provenance TEXT NOT NULL DEFAULT 'LOCAL_OPERATOR_LIBRARY',
+            index_version TEXT NOT NULL,
+            indexed_at TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+            duplicate_of_reference_id INTEGER REFERENCES sam_reference_records(id),
+            UNIQUE(game, source_reference)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_recognition_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            recognition_key TEXT NOT NULL UNIQUE,
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            batch_id INTEGER NOT NULL REFERENCES batches(id),
+            rip_session_id INTEGER REFERENCES rip_sessions(id),
+            acquisition_line_id INTEGER REFERENCES acquisition_lines(id),
+            game TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('QUEUED','COMPLETED','FAILED')),
+            revision INTEGER NOT NULL DEFAULT 1,
+            engine_version TEXT NOT NULL,
+            rules_version TEXT NOT NULL,
+            scan_sha256 TEXT NOT NULL DEFAULT '',
+            raw_ocr_candidate TEXT NOT NULL DEFAULT '',
+            normalized_card_number TEXT NOT NULL DEFAULT '',
+            card_number_confidence REAL NOT NULL DEFAULT 0,
+            top_reference_id INTEGER REFERENCES sam_reference_records(id),
+            confidence REAL NOT NULL DEFAULT 0,
+            recognition_state TEXT NOT NULL
+                CHECK (recognition_state IN ('AUTO_MATCHED','NEEDS_REVIEW','UNIDENTIFIED')),
+            identity_applied INTEGER NOT NULL DEFAULT 0 CHECK (identity_applied IN (0,1)),
+            scan_quality TEXT NOT NULL DEFAULT '{}',
+            exception_codes TEXT NOT NULL DEFAULT '[]',
+            evidence TEXT NOT NULL DEFAULT '{}',
+            submitted_at TEXT NOT NULL,
+            completed_at TEXT,
+            error_code TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_recognition_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL REFERENCES sam_recognition_jobs(id),
+            rank INTEGER NOT NULL,
+            reference_id INTEGER NOT NULL REFERENCES sam_reference_records(id),
+            confidence REAL NOT NULL,
+            card_number_score REAL NOT NULL DEFAULT 0,
+            visual_score REAL NOT NULL DEFAULT 0,
+            context_score REAL NOT NULL DEFAULT 0,
+            evidence TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(job_id, rank),
+            UNIQUE(job_id, reference_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_recognition_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            decision_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            job_id INTEGER NOT NULL REFERENCES sam_recognition_jobs(id),
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            decision_type TEXT NOT NULL
+                CHECK (decision_type IN ('OPERATOR_CONFIRMED','OPERATOR_CORRECTED','LEFT_UNIDENTIFIED')),
+            original_top_reference_id INTEGER REFERENCES sam_reference_records(id),
+            selected_reference_id INTEGER REFERENCES sam_reference_records(id),
+            expected_revision INTEGER NOT NULL,
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            evidence TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_metadata_number ON sam_metadata_cache(card_number, cache_state)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_reference_number ON sam_reference_records(game, card_number, active)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_reference_search ON sam_reference_records(game, set_code, card_name, active)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_reference_hash ON sam_reference_records(sha256, active)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_reference_bucket ON sam_reference_records(game, visual_bucket, active)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_jobs_queue ON sam_recognition_jobs(batch_id, recognition_state, submitted_at)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_jobs_card ON sam_recognition_jobs(card_id, submitted_at, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_decisions_job ON sam_recognition_decisions(job_id, recorded_at, id)"
+    )
+
+
 DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         "0001_phase3_acquisition_facts",
@@ -790,6 +1336,31 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         "0009_v22_phase3_product_catalog_upc",
         "add commercial product catalog, validated identifiers, audit history, and nullable acquisition-line linkage",
         _v22_phase3_product_catalog_upc,
+    ),
+    Migration(
+        "0010_v22_phase4_source_documents",
+        "add private provider-neutral source-document metadata, integrity state, and audit history",
+        _v22_phase4_source_documents,
+    ),
+    Migration(
+        "0011_v22_phase5_receipt_intelligence",
+        "add provider-neutral extraction jobs, normalized candidates, receipt lines, matches, allocations, and provenance",
+        _v22_phase5_receipt_intelligence,
+    ),
+    Migration(
+        "0012_v22_prephase_ux_safety_hotfix",
+        "add recoverable acquisition recycle tombstones and removal-state metadata",
+        _v22_prephase_ux_safety_hotfix,
+    ),
+    Migration(
+        "0013_v22_phase6_downstream_intake_bridge",
+        "add idempotent acquisition-line routing, batch projection, and sealed intake disposition",
+        _v22_phase6_downstream_intake_bridge,
+    ),
+    Migration(
+        "0014_v22_phase7_sam_recognition",
+        "add provider-neutral SAM metadata, reference indexing, recognition, evidence, and review history",
+        _v22_phase7_sam_recognition,
     ),
 )
 

@@ -1,0 +1,24 @@
+DEX v2.2-test RC3 — files and folders that MUST NOT be uploaded
+
+External/operator data:
+- the directory addressed by DEX_ONE_PIECE_REFERENCE_DIR
+- the 5,593 One Piece reference images or source archives
+- Pass 4, Variant Gauntlet, or Geometry Gauntlet physical scans
+- ground-truth CSV/data, blind-stage files, per-scan private predictions, or benchmark databases
+- TCGplayer source workbooks/exports and generated machine-local catalog caches
+- receipt/source-document originals or extracted private artifacts
+
+Runtime/private data patterns:
+- *.db, *.db-*, *.sqlite, *.sqlite3
+- data/, storage*/, inventory*/, source-database/, scanner-inbox/, inbound/, images/
+- physical-scans/, staged-blind/, private/, results/ containing operator benchmark data
+- receipts/, source-documents/
+- *.log, logs/
+- __pycache__/, *.pyc, *.pyo
+- .pytest_cache/, .mypy_cache/, .ruff_cache/, .coverage, htmlcov/
+- .env, .env.*, credentials*, secrets*, *.pem, *.key, id_rsa*, id_ed25519*
+- temporary/disposable QA directories and generated output not explicitly listed in the upload manifest
+- IDE/editor metadata and machine-local configuration
+
+Do not upload production data, real ShonenRiot inventory, credentials, passwords, API tokens, private keys, or machine-specific absolute paths.
+

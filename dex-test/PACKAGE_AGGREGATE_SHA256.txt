@@ -1,0 +1,3 @@
+DEX v2.2-test RC3 Operator Trial aggregate package digest
+sha256(SHA256SUMS.txt) = 5e18ae1daf813cffd30f1763b63853f608704ddbb31d7efc6e24f160f5150732
+SHA256SUMS.txt covers every packaged file except itself and this aggregate-digest file; this avoids circular hashes.

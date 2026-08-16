@@ -2,7 +2,7 @@
 
 Baseline date: 2026-08-15  
 Known-good restore baseline: `v2.1-test` Phase 7C  
-Active development lane: `v2.2-test` Inbound 2.0; Phase 3 Product Catalog + UPC Intake complete
+Active development lane: `v2.2-test` Inbound 2.0; Phase 7 SAM Recognition + Human Review implemented pending operator QA
 
 This document is the handoff baseline for future Dex development. It describes the observed implementation; plans and patch notes may describe broader intent.
 
@@ -15,12 +15,15 @@ Dex is a private, single-user TCG inventory system organized as a compact monoli
 - `dex_acquisition.py`: Phase 3 acquisition validation, exact-cent facts, authoritative USD reconciliation, and informational receipt-group payloads.
 - `dex_rip.py`: Phase 4 explicit rip intake, partial-unit cost, allocation previews, finalization, and append-only card/bulk basis events.
 - `dex_sealed.py`: Phase 5 exact sealed-unit ledger, deterministic unit basis, rip/sale claims, sealed-order economics, quantity adjustment, and atomic sale Undo.
+- `dex_receipts.py`: provider-neutral private receipt extraction, normalized non-authoritative candidates, receipt-line matching/classification, field provenance, and versioned exact-cent allocation proposals.
 - `dex_batch_economics.py`: Phase 6 query-only authoritative batch/group calculations, stable sale attribution, valuation coverage/freshness, reconciliation, and export rows.
 - `dex_corrections.py`: Phase 7A append-only correction/disposition ledger service, current corrected values, operational-loss treatment, durable tombstones, and linked inverse reversals.
 - `dex_post_sale.py`: Phase 7B immutable sale-adjustment ledger, effective financial facts, exact return/restoration state transitions, de-duplication, and linked inverses.
 - `dex_portfolio_economics.py`: Phase 7C read-only Finalized Economics portfolio totals, stable per-item order attribution, valuation coverage/freshness, reconciliation, and CSV rows.
-- `dex_inbound.py`: v2.2 Draft Acquisition identity, three-screen guided wizard facts, Accounting-by-Default reconciliation, explicit confirmation, and append-only lifecycle events. It creates no downstream batch or economics facts yet.
+- `dex_inbound.py`: v2.2 Draft Acquisition identity, three-screen guided wizard facts, Accounting-by-Default reconciliation, explicit confirmation, append-only lifecycle events, recoverable draft recycle, confirmed-acquisition cancellation, and downstream dependency protection.
+- `dex_intake_bridge.py`: Phase 6 transactional/idempotent routing of confirmed acquisition lines into the established batch, sealed-unit, rip, and scanning architecture with exact quantity/basis reconciliation.
 - `dex_catalog.py`: v2.2 local commercial-product catalog, validated text identifiers, request-safe scan aggregation, learned mappings, and append-only mapping corrections.
+- `dex_sam.py`: v2.2 One Piece-only recognition service with provider-neutral metadata/cache and reference interfaces, incremental local reference indexing, conservative versioned confidence rules, review queues, request idempotency, and append-only evidence/decisions.
 - `dex_legacy_economics.py`: query-only Phase 2 estimated economics for legacy batches.
 - `static/index.html`, `static/app.js`, and `static/styles.css`: vanilla-JavaScript single-page operator interface.
 - SQLite: source of truth for batches, physical cards, source cards, sales, settings, processed scans, and activity history.
@@ -42,8 +45,10 @@ The complete automated suite passes and confirms the core paths below.
 - Complete multi-card eBay or TCGplayer sales and retain protected financial history.
 - Move cards or batches to the Recycle Bin, restore them, purge eligible unsold cards, and undo supported recent actions.
 - Configure timezone, TCGplayer capacity, and recycle retention settings.
-- Index local One Piece reference images and optional CSV metadata for SAM.
-- Match by known card number or front-image fingerprint; run SAM for one card, selected cards, or a batch.
+- Index local One Piece references incrementally without modifying originals; unchanged hashes are skipped and duplicate/near-duplicate relationships remain visible.
+- Refresh/cache normalized OPTCG structured metadata or continue with stale/missing cache state, local references, and Find Match during provider outages.
+- Recognize one card or a batch with TCG/context narrowing, card-number evidence, scan-quality observations, bounded candidates, and rotation/crop/SAMPLE-tolerant visual evidence.
+- Confirm SAM's suggestion, correct it through local Find Match, or leave a scan unidentified while retaining the original suggestion, alternates, evidence, and decision history.
 - Upgrade a legacy v1.x database with SAM columns before creating the related index.
 - Open any existing batch to view a strictly read-only **Estimated Economics** preview with valuation coverage, warnings, separate recycled value, and estimated historical sale attribution. No permanent cost basis is assigned.
 - Create or edit Phase 3 acquisition facts for one homogeneous product batch: acquisition mode, product identity, units acquired, final USD paid, cost breakdown, optional foreign-currency reference, invoice, and receipt group.
@@ -83,24 +88,21 @@ The complete automated suite passes and confirms the core paths below.
 - Scan validated UPC-A, EAN-13, and GTIN-14 identifiers for Pack/Sealed lines; known products populate visibly, repeat scans increment one line, and different products stay economically independent.
 - Keep unknown identifiers unguessed, support acquisition-local identification or explicit operator-confirmed Remember Mapping, block silent collisions, and preserve reasoned mapping-correction history.
 - Preserve manual Pack Product, Sealed Product, and Single Cards entry. Product recognition creates no batch, card, sealed unit, basis, document, receipt extraction, SAM match, or portfolio fact.
+- Attach multiple private JPG/JPEG/PNG/PDF source artifacts to an acquisition, verify SHA-256 integrity, retry failed uploads, and preserve removal/tombstone history. These artifacts never auto-populate financial facts and create no inventory or economics records.
 
 ## Known Gaps
 
-- `card_type` is indexed on source records but is not stored or auto-filled on physical cards.
-- `match_reviewed` is set automatically for confident matches; there is no separate operator approval state or action.
-- Planned match labels differ from implemented values: the code uses `Manual`, `Card Number`, and `Image Fingerprint`; `Database` and `Visual Review` are not implemented.
-- Failed or low-confidence SAM attempts are returned but not persisted with candidate, confidence, or timestamp.
-- Known card numbers receive an exact `1.0` match without image corroboration.
-- Recognition uses whole-image perceptual fingerprints, not OCR or artwork-aware recognition. The fixed `0.84` threshold has no representative accuracy calibration.
-- SAM supports one source row per game/card number, which cannot model alternate art, parallels, languages, editions, or multiple reference images reliably.
-- Source rescans upsert records but do not remove stale records whose files were deleted.
-- Duplicate filenames normalizing to the same card number are resolved by traversal order. The current library contains duplicate `EB01-016` references.
-- The SAM source API returns at most 400 records and has no pagination.
-- Pokemon, Riftbound, live catalog synchronization, marketplace synchronization, automatic pricing, Janna, Goose, Portfolio Analytics, and DPS remain outside v2.0-test.
+- Phase 7 recognition is intentionally One Piece-only. Other games require later adapters, rules, and representative fixtures.
+- The bundled runtime does not require an OCR engine. Without optional local OCR, strong printed-number evidence comes from existing intake fields or filenames; visual/context evidence still works but more cards may require review.
+- The visual engine uses conservative perceptual/frame fingerprints rather than a trained embedding model. It tolerates ordinary rotation/crop and SAMPLE artifacts but is not a grading or counterfeit-detection system.
+- OPTCG refresh is operator-triggered for requested card numbers; no scheduled whole-catalog synchronization or live provider dependency is introduced.
+- Local reference quality, filenames, and variant coverage materially affect candidate narrowing. Unknown metadata stays Unknown, and new/provider-missing cards need local references or manual review.
+- Pokemon, Riftbound, live catalog synchronization, marketplace synchronization, automatic pricing, Janna, Goose, and DPS remain outside this Phase 7 scope.
 - The Phase 3 commercial-product catalog is local only; manufacturer/import synchronization and authoritative external provenance are not implemented.
+- HEIC/HEIF needs a verified decoder and is currently rejected with a retryable failure. PDF validation is intentionally lightweight and bounded; OCR/AI extraction and receipt-line matching are not implemented.
 - Physical keyboard-emulating barcode-scanner operator QA remains outstanding. Automated keyboard submission and browser simulation have passed, but production approval requires real-device confirmation.
 - The mapping-correction dialog uses a bounded product list; a large future catalog may need search within that dialog.
-- Receipt/document storage, extraction/OCR, SAM integration with acquisitions, downstream batch projection, and the global Attention Center remain later approval gates.
+- The global Attention Center, cross-TCG SAM, autonomous learning/retraining, JANA pricing, and listing automation remain later approval gates. Receipt image OCR/external extraction providers remain unconfigured.
 
 ## Technical Debt and Risks
 
@@ -109,13 +111,15 @@ The complete automated suite passes and confirms the core paths below.
 - Requests may contain up to 250 MB of base64 JSON; concurrent imports can create high memory pressure.
 - Legacy startup-time conditional `ALTER TABLE` statements still exist alongside the new Phase 1 migration framework. The framework provides a ledger and transactional rollback for registered migrations, but the legacy alterations have not yet been converted into registered migrations.
 - Broad exception handlers can expose internal error and path details through API responses.
-- Activity history is not a complete audit trail. SAM and several mutations are not logged or undoable; automatic purge lacks the manual purge record.
+- Activity history is not a complete system-wide audit trail. Phase 7 recognition suggestions and decisions are durable, but several older non-SAM mutations and automatic purge still lack equivalent comprehensive history.
 - Multi-card sale subtotal is divided evenly instead of retaining explicit item-level sale prices.
 - Receipt/Acquisition Groups are reference strings rather than a separate transaction table in Phase 3. This is intentional for the approved first release, but richer shared-charge reconciliation will require an audited model later.
 - Phase 4 stores one aggregate bulk reserve per rip rather than individual fake bulk-card SKUs. Resolution into later scanned cards uses audited basis transfers; richer bulk sale/disposition states remain later work.
 - Phase 5 uses one stable unit record per homogeneous acquired unit. Nested box/pack/component models and mixed-product batches remain deferred.
 - Sealed Sales rows retain exact consumed IDs and eligible Undo. Once immutable post-sale history exists, ordinary sealed Undo is disabled and corrections use linked events.
 - The legacy Phase 5 `/adjust` API remains for backwards compatibility, but the operator UI now routes sealed corrections/dispositions through the Phase 7A immutable event workflow.
+- Inbound receipt extraction currently operates only on text-layer PDFs through the local provider. JPG/PNG receipt OCR is intentionally provider-ready but unavailable; failure is retryable and manual entry remains usable.
+- Receipt-derived draft values and allocation proposals become authoritative only through the existing acquisition confirmation gate. No Phase 5 extraction operation creates downstream inventory.
 - Card orders retain the legacy equal item split; Undo now retains the canceled order/item history instead of deleting it. Explicit operator-entered per-card sale lines remain future work.
 - Phase 6 has no market/listed price fact for unopened sealed units, so those units correctly produce unknown valuation coverage rather than a guessed value. Marketplace pricing remains manual.
 - Phase 6 group rollups aggregate only explicitly assigned batch costs. Shared receipt shipping, tax, discounts, and fees remain informational until an audited allocation workflow exists.
@@ -124,19 +128,19 @@ The complete automated suite passes and confirms the core paths below.
 - Event-ledger targets use typed integer IDs without database foreign keys to every polymorphic target table; service validation and immutable event/tombstone relationships enforce target scope.
 - The Phase 2 pre-production gate script expects ledger-only schema mutation and is intentionally not valid for Phase 3's approved additive migration.
 - `app.py` and `static/app.js` are large single files, increasing coupling and regression risk.
-- Automated SAM coverage proves route and persistence plumbing with a trivial identical image, not real scan accuracy or false-positive behavior.
+- Automated SAM coverage includes high/ambiguous/unknown decisions, provider failure, watermark/crop/rotation variation, history, and 5,000 reference rows; physical scanner accuracy and false-positive rates still require operator QA with representative cards and variants.
 - Jenkins runs a health smoke test but not the full automated suite. The visual test is machine-specific and not part of CI.
-- The checked-in SAM library contains an apparent nested project copy inside the EB01 folder, adding unrelated files and making reference-library maintenance error-prone.
+- Reference libraries are private operator data outside Git. A large or poorly curated mixed tree can add indexing time and ambiguous duplicates; use a dedicated read-only One Piece root.
 - Root `index.html` coexists with the served `static/index.html`, creating ambiguity about which interface file is authoritative.
 - Operational backups cover SQLite through `scripts/backup.py`; a complete recovery plan must also preserve inventory images and configuration.
 
 ## Recommended Development Order
 
 1. **Preserve the gate:** retain the immutable Phase 7C and prior v2.2 Git-ready checkpoints; test v2.2 migrations only against disposable Phase 7C copies before any operator-authorized deployment.
-2. **Stop at the approved boundary:** do not begin receipt/document work or deploy to production. Physical-scanner QA and explicit production approval remain required.
+2. **Complete the Phase 7 gate:** run the disposable One Piece scenarios and representative physical scanner QA before promotion. Do not begin cross-TCG SAM, JANA, the global Attention Center, or production deployment without separate approval.
 3. **Keep reporting derived:** extend the backend event/source-fact model rather than storing dashboard totals or duplicating formulas in the frontend.
 4. **Secure private operation:** add authentication/authorization or an enforced trusted-proxy boundary, safer error responses, request limits, and consistent write serialization when separately approved.
-5. **Finish and harden SAM:** improve variant modeling, source reconciliation, review semantics, representative fixtures, confidence measurement, and false-positive protection when it returns to scope.
+5. **Measure SAM conservatism:** record physical false positives, variant confusion, OCR misses, poor-scan warnings, and reference gaps before changing versioned thresholds or methods.
 6. **Reduce coupling:** continue extracting dedicated economics/migration modules without reorganizing unrelated code; later separate persistence, scanner, sales, and frontend views.
 
 ## Baseline Rule

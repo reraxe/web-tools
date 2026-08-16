@@ -91,14 +91,18 @@ Implementation gates:
 - Phase 1: complete — additive Draft Acquisition, product-line, lifecycle-event, state-machine, API, migration, and compatibility foundation. No operator-facing replacement yet.
 - Phase 2: complete — focused three-screen New Acquisition wizard, resumable drafts, Accounting-by-Default one-line allocation, backend per-unit cents and audit evidence, exception-only multi-line/manual resolution, lightweight Needs Attention metadata, and legacy New Batch compatibility. No downstream projection.
 - Phase 3: complete — local commercial-product catalog, validated UPC/EAN/GTIN/internal identifiers, keyboard-scanner intake, quantity aggregation, unknown/manual/remember flows, and audited mapping correction. No downstream projection.
-- Phase 4 and later: not authorized.
+- Phase 4: complete — private provider-neutral source-document storage, hashes/integrity, retry/tombstone history, and Google Drive-compatible boundary. No extraction in this phase.
+- Phase 5: complete — local text-PDF receipt extraction, normalized non-authoritative candidates, receipt-line matching/classification, and deterministic exact-cent accounting proposals.
+- Phase 6: accepted — partial/resumable routing of confirmed lines into established homogeneous batches, exact sealed units, rip/open, and acquired-singles intake.
+- Phase 7: implemented, operator QA pending — One Piece-only conservative SAM recognition, OPTCG structured metadata cache, incremental local reference index, non-blocking review queues, local Find Match, and durable suggestion/decision evidence.
+- Cross-TCG SAM, JANA, global Attention Center, autonomous retraining, and production deployment: not authorized.
 
 Rules:
 
 - Preserve the immutable v2.1-test Phase 7C checkpoint.
-- Preserve the accepted v2.2-test Phase 2 Happy-Path Polish checkpoint as the prior known-good restore point; Product Catalog + UPC Intake is the current checkpoint.
-- Project confirmed acquisition lines into existing homogeneous batches in a later approved phase; do not replace established economics services.
-- Keep documents/extraction, SAM integration, and downstream batch projection outside Phase 3.
+- Preserve every accepted Phase 1–6 checkpoint; SAM Recognition + Human Review Phase 7 is the current development checkpoint.
+- Project confirmed acquisition lines only through the accepted Phase 6 bridge; do not replace established economics services.
+- Keep SAM identity-only. Do not let recognition assign basis, change economics, or feed later pricing/listing automation without a separate phase.
 - Apply the approved Accounting-by-Default rule to future phases: backend deterministic automation, visible results without repetitive tasks, and Needs Attention only for ambiguous or exceptional reality.
 - Keep the future Attention Center at design-contract status until separately authorized.
 - Test all migrations on disposable Phase 7C copies before any operator-authorized deployment.

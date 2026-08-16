@@ -214,10 +214,14 @@ def acquisition_has_used_units(db: sqlite3.Connection, batch_id: int) -> bool:
 def open_units_for_rip(db: sqlite3.Connection, batch_id: int, rip_id: int, quantity: int) -> list[dict]:
     _batch(db, batch_id)
     synchronize_sealed_units(db, batch_id)
+    projected = db.execute(
+        "SELECT 1 FROM batches WHERE id=? AND acquisition_line_id IS NOT NULL", (batch_id,)
+    ).fetchone()
+    disposition = "AND intake_disposition='RIP_OPEN'" if projected else ""
     rows = db.execute(
-        """SELECT * FROM sealed_units
-           WHERE batch_id=? AND status='REMAINING'
-           ORDER BY unit_sequence LIMIT ?""",
+        f"""SELECT * FROM sealed_units
+            WHERE batch_id=? AND status='REMAINING' {disposition}
+            ORDER BY unit_sequence LIMIT ?""",
         (batch_id, quantity),
     ).fetchall()
     if len(rows) != quantity:
@@ -260,8 +264,11 @@ def batch_sealed_payload(db: sqlite3.Connection, batch_id: int) -> dict:
         "SELECT * FROM sealed_units WHERE batch_id=? ORDER BY unit_sequence", (batch_id,)
     ).fetchall()
     counts = {status: 0 for status in SEALED_STATUSES}
+    intake_pending = 0
     for row in rows:
         counts[row["status"]] += 1
+        if row["status"] == "REMAINING" and row["intake_disposition"] == "PENDING":
+            intake_pending += 1
     acquired = int(batch["units_acquired"])
     accounted = sum(counts.values())
     units = []
@@ -281,10 +288,11 @@ def batch_sealed_payload(db: sqlite3.Connection, batch_id: int) -> dict:
         "acquisition_facts_locked": acquisition_has_used_units(db, batch_id),
         "units_acquired": acquired,
         "counts": {
-            "remaining": counts["REMAINING"],
+            "remaining": counts["REMAINING"] - intake_pending,
             "opened": counts["OPENED"],
             "sold": counts["SOLD"],
             "corrected_adjusted": counts["ADJUSTED"],
+            **({"intake_pending": intake_pending} if intake_pending else {}),
         },
         "reconciliation": {
             "acquired": acquired,
@@ -292,7 +300,10 @@ def batch_sealed_payload(db: sqlite3.Connection, batch_id: int) -> dict:
             "difference": acquired - accounted,
             "reconciled": acquired == accounted,
         },
-        "remaining_basis_cents": sum(row["basis_cents"] for row in units if row["status"] == "REMAINING"),
+        "remaining_basis_cents": sum(
+            row["basis_cents"] for row in units
+            if row["status"] == "REMAINING" and row["intake_disposition"] in ("LEGACY_AVAILABLE", "KEEP_SEALED")
+        ),
         "units": units,
     }
 
@@ -335,12 +346,17 @@ def _selected_units(db: sqlite3.Connection, payload: dict) -> tuple[sqlite3.Row,
         quantity = _integer(payload.get("quantity"), "Quantity", 1)
         rows = db.execute(
             """SELECT * FROM sealed_units WHERE batch_id=? AND status='REMAINING'
+                 AND intake_disposition IN ('LEGACY_AVAILABLE','KEEP_SEALED')
                ORDER BY unit_sequence LIMIT ?""",
             (batch_id, quantity),
         ).fetchall()
         if len(rows) != quantity:
             raise ValueError("Not enough sealed units remain available")
-    unavailable = [row["unit_code"] for row in rows if row["status"] != "REMAINING"]
+    unavailable = [
+        row["unit_code"] for row in rows
+        if row["status"] != "REMAINING"
+        or row["intake_disposition"] not in ("LEGACY_AVAILABLE", "KEEP_SEALED")
+    ]
     if unavailable:
         raise ValueError("Sealed unit is no longer available: " + ", ".join(unavailable))
     return batch, rows

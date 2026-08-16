@@ -41,6 +41,7 @@ ALLOCATION_METHODS = (
     "QUANTITY_WEIGHTED",
     "MANUAL",
     "SINGLE_LINE_100_PERCENT",
+    "RECEIPT_VALUE_PROPORTIONAL",
 )
 PAYMENT_METHODS = ("CREDIT_DEBIT_CARD", "CASH", "PAYPAL", "STORE_CREDIT", "OTHER")
 PRIMARY_WIZARD_STEPS = ("ACQUIRE", "PRODUCTS", "REVIEW")
@@ -58,6 +59,14 @@ DISCREPANCY_REASON_CODES = (
     "MERCHANT_TOTAL_CONTROLS",
     "NONINVENTORY_INCLUDED",
     "EXPLICIT_ZERO_COST",
+    "OTHER",
+)
+ACQUISITION_REMOVAL_REASON_CODES = (
+    "DUPLICATE_ENTRY",
+    "ORDER_CANCELED",
+    "RETURNED_TO_VENDOR",
+    "ACQUISITION_NOT_COMPLETED",
+    "TEST_OR_TRAINING_ENTRY",
     "OTHER",
 )
 MATERIAL_DISCREPANCY_CENTS = 500
@@ -190,6 +199,107 @@ def _require_revision(row: sqlite3.Row, payload: Mapping[str, object]) -> None:
 def _require_draft_mutable(row: sqlite3.Row) -> None:
     if row["state"] not in ("ACQUISITION_INCOMPLETE", "RECONCILIATION_REQUIRED"):
         raise ValueError("Only an incomplete or reconciliation-required acquisition can be autosaved")
+
+
+def acquisition_removal_eligibility(db: sqlite3.Connection, acquisition_id: int) -> dict:
+    """Describe removal safety without mutating acquisition or economic facts."""
+
+    row = _acquisition_row(db, acquisition_id)
+    line_ids = [
+        int(item[0])
+        for item in db.execute(
+            "SELECT id FROM acquisition_lines WHERE acquisition_id=? ORDER BY id",
+            (acquisition_id,),
+        ).fetchall()
+    ]
+    batch_ids: list[int] = []
+    if line_ids:
+        placeholders = ",".join("?" for _ in line_ids)
+        batch_ids = [
+            int(item[0])
+            for item in db.execute(
+                f"SELECT id FROM batches WHERE acquisition_line_id IN ({placeholders}) ORDER BY id",
+                tuple(line_ids),
+            ).fetchall()
+        ]
+    downstream_counts = {
+        "batches": len(batch_ids),
+        "cards": 0,
+        "sealed_units": 0,
+        "sale_items": 0,
+        "sealed_sale_items": 0,
+        "rip_sessions": 0,
+        "economic_events": 0,
+    }
+    if batch_ids:
+        placeholders = ",".join("?" for _ in batch_ids)
+        params = tuple(batch_ids)
+        downstream_counts["cards"] = int(db.execute(
+            f"SELECT COUNT(*) FROM cards WHERE batch_id IN ({placeholders})", params
+        ).fetchone()[0])
+        downstream_counts["sealed_units"] = int(db.execute(
+            f"SELECT COUNT(*) FROM sealed_units WHERE batch_id IN ({placeholders})", params
+        ).fetchone()[0])
+        downstream_counts["rip_sessions"] = int(db.execute(
+            f"SELECT COUNT(*) FROM rip_sessions WHERE batch_id IN ({placeholders})", params
+        ).fetchone()[0])
+        downstream_counts["economic_events"] = int(db.execute(
+            f"SELECT COUNT(*) FROM economic_events WHERE batch_id IN ({placeholders})", params
+        ).fetchone()[0])
+        downstream_counts["sale_items"] = int(db.execute(
+            f"""SELECT COUNT(*) FROM sale_items si JOIN cards c ON c.id=si.card_id
+                 WHERE c.batch_id IN ({placeholders})""", params
+        ).fetchone()[0])
+        downstream_counts["sealed_sale_items"] = int(db.execute(
+            f"""SELECT COUNT(*) FROM sealed_sale_items ssi
+                 JOIN sealed_units su ON su.id=ssi.sealed_unit_id
+                 WHERE su.batch_id IN ({placeholders})""", params
+        ).fetchone()[0])
+    internal_economic_counts = {
+        "confirmed_line_allocations": int(db.execute(
+            "SELECT COUNT(*) FROM acquisition_lines WHERE acquisition_id=? AND allocation_status='CONFIRMED'",
+            (acquisition_id,),
+        ).fetchone()[0]),
+        "accepted_receipt_allocations": int(db.execute(
+            "SELECT COUNT(*) FROM receipt_allocation_proposals WHERE acquisition_id=? AND status='ACCEPTED'",
+            (acquisition_id,),
+        ).fetchone()[0]),
+    }
+    downstream_protected = any(downstream_counts.values())
+    internal_economic_history = any(internal_economic_counts.values())
+    draft = row["state"] in ("ACQUISITION_INCOMPLETE", "RECONCILIATION_REQUIRED")
+    confirmed = row["state"] == "READY_FOR_INTAKE"
+    recycled = bool(row["recycled_at"])
+    return {
+        "protected_history": downstream_protected,
+        "protected_downstream_history": downstream_protected,
+        "internal_economic_history": internal_economic_history,
+        "internal_economic_counts": internal_economic_counts,
+        "downstream_counts": downstream_counts,
+        "can_recycle_draft": draft and not downstream_protected and not internal_economic_history and not recycled,
+        "can_cancel_confirmed": confirmed and not downstream_protected and not recycled,
+        "can_restore": recycled and not downstream_protected and row["pre_recycle_state"] in (
+            "ACQUISITION_INCOMPLETE", "RECONCILIATION_REQUIRED"
+        ),
+        "permanent_purge_supported": False,
+        "blocked_message": (
+            "This acquisition has downstream inventory or economic history. Use the relevant correction or reversal workflow."
+            if downstream_protected
+            else "Reverse or invalidate the confirmed draft allocation before moving this acquisition to Recycle Bin."
+            if internal_economic_history and draft
+            else ""
+        ),
+    }
+
+
+def _removal_reason(payload: Mapping[str, object], *, notes_required: bool) -> tuple[str, str]:
+    reason = _text(payload.get("reason_code"), 40).upper()
+    notes = _text(payload.get("notes"), 500)
+    if reason not in ACQUISITION_REMOVAL_REASON_CODES:
+        raise ValueError("Choose a supported acquisition removal reason")
+    if (notes_required or reason == "OTHER") and not notes:
+        raise ValueError("An operator note is required for this acquisition action")
+    return reason, notes
 
 
 def _event(
@@ -355,6 +465,9 @@ def _attention_payload(
 
 
 def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
+    from dex_documents import document_summary
+    from dex_receipts import receipt_intelligence_payload
+
     row = dict(_acquisition_row(db, acquisition_id))
     lines = [
         dict(item)
@@ -410,7 +523,21 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
                 "maximum_cents": base + (1 if remainder else 0),
                 "exact_when_uniform": remainder == 0,
             }
-    reconciliation = reconciliation_payload(row, lines)
+    receipt_intelligence = receipt_intelligence_payload(db, acquisition_id)
+    receipt_proposal = receipt_intelligence.get("allocation_proposal")
+    receipt_allocation_safe = bool(
+        receipt_proposal and receipt_proposal.get("status") in ("APPLIED", "ACCEPTED")
+        and receipt_proposal.get("difference_cents") == 0
+    )
+    reconciliation_lines = [dict(line) for line in lines]
+    if receipt_allocation_safe:
+        proposed = {int(item["acquisition_line_id"]): int(item["landed_cost_cents"]) for item in receipt_proposal["allocations"]}
+        for line in reconciliation_lines:
+            if int(line["id"]) in proposed and not line.get("canceled_at"):
+                line["assigned_landed_cost_cents"] = proposed[int(line["id"])]
+                line["allocation_method"] = "RECEIPT_VALUE_PROPORTIONAL"
+                line["allocation_status"] = "CONFIRMED"
+    reconciliation = reconciliation_payload(row, reconciliation_lines)
     warnings: list[dict[str, str]] = []
     if not row.get("source_scope"):
         warnings.append({"code": "SOURCE_REQUIRED", "message": "Choose Domestic or International purchase source."})
@@ -439,7 +566,7 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         if line.get("product_class") == "SINGLE_CARDS" and line.get("singles_cost_mode") not in ("KNOWN_LINE_COSTS", "LUMP_SUM"):
             warnings.append({"code": "SINGLES_COST_MODE_UNKNOWN", "message": f"{label} needs a singles cost method."})
         automatic_single_line = len(active_lines) == 1 and row.get("final_usd_paid_cents") is not None
-        if line.get("allocation_status") != "CONFIRMED" and not automatic_single_line:
+        if line.get("allocation_status") != "CONFIRMED" and not automatic_single_line and not receipt_allocation_safe:
             warnings.append({"code": "LINE_COST_UNCONFIRMED", "message": f"{label} landed cost is not confirmed."})
     if row.get("final_usd_paid_cents") is not None and not reconciliation["allocation_reconciled"] and len(active_lines) != 1:
         warnings.append({"code": "ALLOCATION_NOT_RECONCILED", "message": "Confirmed product-line costs do not equal final USD paid."})
@@ -449,6 +576,7 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         warnings.append({"code": "ZERO_COST_REASON_REQUIRED", "message": "An intentional $0.00 acquisition requires the Explicit zero-cost reason."})
     if reconciliation["material"] and not row.get("discrepancy_notes"):
         warnings.append({"code": "MATERIAL_NOTE_REQUIRED", "message": "Material differences require an explanatory note."})
+    warnings.extend(receipt_intelligence.get("warnings", []))
     automatic_preview = None
     if len(active_lines) == 1 and row.get("final_usd_paid_cents") is not None:
         line = active_lines[0]
@@ -476,6 +604,10 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             "decision_level": "AUTOMATIC_VISIBLE",
         }
     attention = _attention_payload(row, active_lines, reconciliation, warnings)
+    source_documents = document_summary(db, acquisition_id)
+    removal = acquisition_removal_eligibility(db, acquisition_id)
+    from dex_intake_bridge import intake_status
+    routing = intake_status(db, acquisition_id)
     return {
         "acquisition": row,
         "lines": lines,
@@ -492,35 +624,61 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         },
         "automatic_single_line_allocation_preview": automatic_preview,
         "attention": attention,
+        "source_documents": source_documents,
+        "receipt_intelligence": receipt_intelligence,
+        "removal": removal,
         "projection": {
-            "status": "NOT_IMPLEMENTED_PHASE_1",
-            "batch_ids": [
-                int(item["id"])
-                for item in db.execute(
-                    "SELECT id FROM batches WHERE acquisition_line_id IN (SELECT id FROM acquisition_lines WHERE acquisition_id=?) ORDER BY id",
-                    (acquisition_id,),
-                ).fetchall()
-            ],
-            "notice": "Phase 1 never creates or changes processing batches. Confirmed lines will project into the established Phase 3-7C model in a later approved phase.",
+            "status": "PROJECTED" if any(item["batch_id"] for item in routing["lines"]) else "NOT_IMPLEMENTED_PHASE_1",
+            "batch_ids": [item["batch_id"] for item in routing["lines"] if item["batch_id"]],
+            "notice": "Confirmed lines project into the established batch, sealed-unit, rip, and scanning model through explicit intake routing.",
         },
+        "intake_routing": routing,
     }
 
 
 def list_acquisitions(db: sqlite3.Connection) -> list[dict]:
-    return [
-        dict(row)
-        for row in db.execute(
-            """SELECT a.*,
-                      (SELECT COUNT(*) FROM acquisition_lines l WHERE l.acquisition_id=a.id AND l.canceled_at IS NULL) AS active_line_count
-                 FROM acquisitions a ORDER BY a.updated_at DESC,a.id DESC"""
-        ).fetchall()
-    ]
+    rows = db.execute(
+        """SELECT a.*,
+                  (SELECT COUNT(*) FROM acquisition_lines l WHERE l.acquisition_id=a.id AND l.canceled_at IS NULL) AS active_line_count
+             FROM acquisitions a WHERE a.recycled_at IS NULL
+             ORDER BY a.updated_at DESC,a.id DESC"""
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["removal"] = acquisition_removal_eligibility(db, int(row["id"]))
+        result.append(item)
+    return result
+
+
+def list_recycled_acquisitions(db: sqlite3.Connection, search: str = "") -> list[dict]:
+    term = _text(search, 100)
+    params: list[object] = []
+    clause = ""
+    if term:
+        clause = "AND (a.acquisition_code LIKE ? OR a.merchant_name LIKE ? OR a.order_reference LIKE ?)"
+        params.extend([f"%{term}%"] * 3)
+    rows = db.execute(
+        f"""SELECT a.*,
+                   (SELECT COUNT(*) FROM acquisition_lines l WHERE l.acquisition_id=a.id) AS line_count,
+                   (SELECT COUNT(*) FROM acquisition_documents d WHERE d.acquisition_id=a.id) AS document_count
+              FROM acquisitions a
+             WHERE a.recycled_at IS NOT NULL {clause}
+             ORDER BY a.recycled_at DESC,a.id DESC""",
+        params,
+    ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["removal"] = acquisition_removal_eligibility(db, int(row["id"]))
+        result.append(item)
+    return result
 
 
 def foundation_contract() -> dict:
     return {
         "version": "v2.2-test",
-        "phase": "INBOUND_2_PHASE_3_PRODUCT_CATALOG_UPC",
+        "phase": "INBOUND_2_PHASE_6_DOWNSTREAM_INTAKE_BRIDGE",
         "default_state": "ACQUISITION_INCOMPLETE",
         "states": list(ACQUISITION_STATES),
         "product_classes": list(PRODUCT_CLASSES),
@@ -541,9 +699,11 @@ def foundation_contract() -> dict:
             "operator_workflow_replaced": True,
             "legacy_batch_workflow_available": True,
             "upc_catalog": True,
-            "documents_or_extraction": False,
+            "documents_or_extraction": True,
+            "source_documents": True,
+            "receipt_extraction": False,
             "sam": False,
-            "batch_projection": False,
+            "batch_projection": True,
             "manual_entry_available_during_document_outage": True,
             "failed_document_uploads_retryable_later": True,
         },
@@ -665,6 +825,8 @@ def autosave_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: M
     updates = _normalized_acquisition_fields(payload)
     if not updates:
         raise ValueError("No draft acquisition fields were supplied")
+    from dex_receipts import record_manual_overrides
+    record_manual_overrides(db, acquisition_id, updates, request_id)
     previous_state = str(row["state"])
     progress_only = set(updates) == {"wizard_step"}
     if not progress_only:
@@ -980,6 +1142,13 @@ def mark_reconciliation_required(db: sqlite3.Connection, acquisition_id: int, pa
 
 
 def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Mapping[str, object]) -> dict:
+    from dex_receipts import (
+        accept_allocation_on_confirmation,
+        accept_confirmed_provenance,
+        allocation_for_confirmation,
+        receipt_intelligence_payload,
+    )
+
     request_id = _required_request_id(payload)
     replay = _replay_acquisition(db, request_id, acquisition_id)
     if replay:
@@ -997,6 +1166,10 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
         raise ValueError("Explicit reconciliation confirmation is required")
     lines = [dict(item) for item in db.execute("SELECT * FROM acquisition_lines WHERE acquisition_id=? ORDER BY line_sequence", (acquisition_id,)).fetchall()]
     active_lines = [line for line in lines if not line["canceled_at"]]
+    receipt_intelligence = receipt_intelligence_payload(db, acquisition_id)
+    if receipt_intelligence.get("warnings"):
+        raise ValueError("Receipt intelligence still needs attention before confirmation")
+    receipt_proposal = allocation_for_confirmation(db, acquisition_id, int(row["final_usd_paid_cents"])) if len(active_lines) > 1 else None
     automatic_line: dict | None = None
     if len(active_lines) == 1 and active_lines[0]["allocation_status"] != "CONFIRMED":
         line = active_lines[0]
@@ -1004,6 +1177,13 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
         line["allocation_method"] = "SINGLE_LINE_100_PERCENT"
         line["allocation_status"] = "CONFIRMED"
         automatic_line = line
+    elif len(active_lines) > 1 and receipt_proposal is not None:
+        proposed = {int(item["acquisition_line_id"]): int(item["landed_cost_cents"]) for item in receipt_proposal["allocations"]}
+        for line in active_lines:
+            if int(line["id"]) in proposed:
+                line["assigned_landed_cost_cents"] = proposed[int(line["id"])]
+                line["allocation_method"] = "RECEIPT_VALUE_PROPORTIONAL"
+                line["allocation_status"] = "CONFIRMED"
     _validate_lines_for_confirmation(lines)
     reconciliation = reconciliation_payload(dict(row), lines)
     if not reconciliation["allocation_reconciled"]:
@@ -1075,6 +1255,10 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
                 },
             },
         )
+    if receipt_proposal is not None:
+        accept_allocation_on_confirmation(db, acquisition_id, receipt_proposal, request_id)
+        automatic_allocation_event_id = f"RECEIPT-PROPOSAL-{receipt_proposal['id']}"
+    accept_confirmed_provenance(db, acquisition_id, request_id)
     db.execute(
         """UPDATE acquisitions SET state='READY_FOR_INTAKE',financial_facts_confirmed=1,
                   reconciliation_confirmed=1,confirmed_at=?,revision=revision+1,updated_at=? WHERE id=?""",
@@ -1106,11 +1290,12 @@ def cancel_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Map
         return replay
     row = _acquisition_row(db, acquisition_id)
     _require_revision(row, payload)
-    _require_draft_mutable(row)
-    reason = _text(payload.get("reason_code"), 40).upper()
-    notes = _text(payload.get("notes"), 500)
-    if not reason:
-        raise ValueError("Cancellation reason is required")
+    if row["state"] not in ("ACQUISITION_INCOMPLETE", "RECONCILIATION_REQUIRED", "READY_FOR_INTAKE"):
+        raise ValueError("Only an active draft or Ready for Intake acquisition can be canceled")
+    removal = acquisition_removal_eligibility(db, acquisition_id)
+    if removal["protected_downstream_history"]:
+        raise ValueError(removal["blocked_message"])
+    reason, notes = _removal_reason(payload, notes_required=row["state"] == "READY_FOR_INTAKE")
     now = utcnow()
     db.execute(
         """UPDATE acquisitions SET state='CANCELED',canceled_at=?,cancel_reason_code=?,
@@ -1126,5 +1311,72 @@ def cancel_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Map
         to_state="CANCELED",
         reason_code=reason,
         notes=notes,
+    )
+    return acquisition_payload(db, acquisition_id)
+
+
+def recycle_draft_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Mapping[str, object]) -> dict:
+    request_id = _required_request_id(payload)
+    replay = _replay_acquisition(db, request_id, acquisition_id)
+    if replay:
+        return replay
+    row = _acquisition_row(db, acquisition_id)
+    _require_revision(row, payload)
+    removal = acquisition_removal_eligibility(db, acquisition_id)
+    if not removal["can_recycle_draft"]:
+        raise ValueError(removal["blocked_message"] or "Only an unprotected incomplete acquisition can move to Recycle Bin")
+    reason, notes = _removal_reason(payload, notes_required=False)
+    now = utcnow()
+    db.execute(
+        """UPDATE acquisitions
+              SET state='CANCELED',canceled_at=?,cancel_reason_code=?,cancel_notes=?,
+                  recycled_at=?,recycle_reason_code=?,recycle_notes=?,pre_recycle_state=?,
+                  revision=revision+1,updated_at=?
+            WHERE id=?""",
+        (now, reason, notes, now, reason, notes, row["state"], now, acquisition_id),
+    )
+    _event(
+        db,
+        request_id=request_id,
+        acquisition_id=acquisition_id,
+        event_type="CANCELED",
+        from_state=str(row["state"]),
+        to_state="CANCELED",
+        reason_code=reason,
+        notes=notes,
+        payload={"disposition": "RECYCLED_DRAFT", "hard_deleted": False},
+    )
+    return acquisition_payload(db, acquisition_id)
+
+
+def restore_recycled_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Mapping[str, object]) -> dict:
+    request_id = _required_request_id(payload)
+    replay = _replay_acquisition(db, request_id, acquisition_id)
+    if replay:
+        return replay
+    row = _acquisition_row(db, acquisition_id)
+    _require_revision(row, payload)
+    removal = acquisition_removal_eligibility(db, acquisition_id)
+    if not removal["can_restore"]:
+        raise ValueError(removal["blocked_message"] or "This acquisition is not eligible for restore")
+    restore_state = str(row["pre_recycle_state"])
+    now = utcnow()
+    db.execute(
+        """UPDATE acquisitions
+              SET state=?,canceled_at=NULL,cancel_reason_code='',cancel_notes='',
+                  recycled_at=NULL,recycle_reason_code='',recycle_notes='',pre_recycle_state=NULL,
+                  revision=revision+1,updated_at=?
+            WHERE id=?""",
+        (restore_state, now, acquisition_id),
+    )
+    _event(
+        db,
+        request_id=request_id,
+        acquisition_id=acquisition_id,
+        event_type="STATE_TRANSITION",
+        from_state="CANCELED",
+        to_state=restore_state,
+        reason_code="RESTORED_FROM_RECYCLE",
+        payload={"restored_tombstone": True},
     )
     return acquisition_payload(db, acquisition_id)

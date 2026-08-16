@@ -1,0 +1,26 @@
+DEX v2.2-test RC3 workspace/package hash comparison
+
+Pre-manifest comparison result:
+- 156 copied files were SHA-256 identical to their tested authoritative or isolated research source.
+- 5 copied documentation files intentionally differ in the package only.
+- 7 RC3 release documents were package-only at this comparison point.
+- 0 application/runtime/source-code mismatches.
+
+Intentional documentation-only differences:
+- DEX_OPERATING_MODEL.md: RC3 status and locked system terminology appended.
+- README.md: RC3 release identity, external-library boundary, and shadow-only warning added.
+- RELEASE_CHECKPOINT_v2.2-test_RC2_POST_SAM.md: machine-local paths generalized without altering historical findings.
+- SAM_REAL_WORLD_VALIDATION_ONE_PIECE_PASS4_50_SCAN_STRESS_2026-08-16.md: machine-local artifact paths generalized.
+- research/geometry_challenger_v1/README.md: machine-local corpus path generalized.
+
+Package-only release documents at comparison time:
+- MIGRATION_NOTES_v2.2-test_RC3.md
+- OPERATOR_TRIAL_VALIDATION_v2.2-test_RC3.md
+- PACKAGE_VERIFICATION_RC3.md
+- PATCH_NOTES_v2.2-test_RC3_OPERATOR_TRIAL.md
+- RELEASE_CHECKPOINT_v2.2-test_RC3_OPERATOR_TRIAL.md
+- ROLLBACK_v2.2-test_RC3.md
+- SHADOW_MODULES_RC3.md
+
+Generated upload/exclusion manifests and hash ledgers are intentionally package-only and are created after this comparison.
+

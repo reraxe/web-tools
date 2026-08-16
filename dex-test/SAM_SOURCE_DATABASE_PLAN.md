@@ -1,10 +1,10 @@
-# SAM Source Database Folder Plan
+# SAM One Piece Reference Library Plan
 
-SAM uses a local source database as its reference shelf. This folder is not inventory. It is only the known-card library Dex uses to identify scanned physical cards.
+SAM uses a local One Piece reference library as one evidence layer. This folder is not inventory and is not the sole identity authority. Phase 7 combines physical-scan evidence, cached structured OPTCG metadata, acquisition/batch context, and local reference comparison.
 
 ## Server Folder
 
-For `v2.0-test`, Docker maps this host folder:
+Docker maps this host folder:
 
 ```text
 source-database-v2.0-test/
@@ -16,7 +16,7 @@ to this container folder:
 /source-database
 ```
 
-Dex scans the folder recursively, so subfolders are allowed.
+Dex scans the folder recursively, so subfolders are allowed. `DEX_ONE_PIECE_REFERENCE_DIR` selects the library and defaults to `DEX_SOURCE_DB_DIR`; never hardcode a workstation path. In Docker it defaults to `/source-database`.
 
 ## Recommended Layout
 
@@ -79,7 +79,20 @@ OP16-112,Boa Hancock,OP16,The Time of Battle,Super Rare,Yellow,Character
 EB01-001,Kozuki Oden,EB01,Memorial Collection,Leader,Red,Leader
 ```
 
-Dex can read CSV files anywhere inside `source-database-v2.0-test`, but keeping them in `metadata/` makes the folder easier to manage.
+Legacy Dex can read CSV files anywhere inside the source tree. Phase 7's provider-neutral index records image/reference facts and enriches them from the normalized OPTCG cache when available. Missing metadata remains Unknown.
+
+## Indexing and Preservation
+
+Phase 7 indexing is incremental and resumable:
+
+- SHA-256 is checked on every configured image;
+- unchanged files are skipped;
+- changed/new files are indexed;
+- exact duplicate hashes and near-duplicate visual families are recorded;
+- index runs record status, version, counts, duration, and errors;
+- derived hashes/features live in SQLite, while image bytes remain external.
+
+DEX never renames, relocates, resizes, overwrites, watermarks, or otherwise normalizes the original reference files. Mount the library read-only where practical and back it up independently from inventory storage.
 
 ## First Pilot Plan
 
@@ -105,14 +118,21 @@ Then test with one physical OP16 scan batch sorted by color.
 2. Add or update the metadata CSV if available.
 3. Open Dex.
 4. Go to **SAM**.
-5. Click **Rescan Source**.
-6. Open an inbound batch.
-7. Use **SAM Match All** or **SAM Match Selected**.
-8. Review low-confidence or unmatched cards manually.
+5. Click **Index references**.
+6. Optionally refresh OPTCG structured metadata for the test card numbers.
+7. Continue One Piece Scan & Identify intake or open SAM.
+8. Review the Matched, Needs Review, and Unidentified lanes.
+9. Compare the physical scan with SAM's best/alternate reference; confirm, Find Match and correct, or leave unidentified.
 
-## Future API Knowledge Sources
+## Structured Metadata Provider
 
-SAM starts with local images and CSV files. The broader Dex card knowledge database should also track API/cache sources:
+Phase 7 integrates `optcgapi.com` behind a provider-neutral service. Requests contain structured card-number/search data only. DEX never sends physical scans or local reference images. Normalized results retain provider, source key, provider/version information, fetch/refresh timestamps, and active/stale/missing state.
+
+Recognition does not depend on a live request. Provider outage or missing/new card coverage falls back to cached metadata, local reference evidence, and manual Find Match. External metadata never silently overwrites an operator-confirmed identity.
+
+## Future Knowledge Sources
+
+The provider/reference interfaces can later support other sources and games, but Phase 7 recognizes One Piece only:
 
 - One Piece: https://optcgapi.com/
 - Magic: The Gathering: https://mtgjson.com/
@@ -131,8 +151,8 @@ See `CARD_KNOWLEDGE_DATABASE_PLAN.md` for the full source plan and cache layout.
 
 ## Storage Notes
 
-The source database should be small enough for the home server. Even thousands of One Piece card images are likely much smaller than the 1 TB drive you mentioned. Full-size images are worth keeping for matching quality, and we can add compression later if the folder grows too large.
+Reference images do not belong in SQLite, DEX release packages, or Git. SQLite stores only normalized metadata, source references, hashes/features, duplicate relationships, index state, and recognition evidence. Physical inventory scans remain in DEX inventory storage and are not transmitted to the metadata provider.
 
 ## Do Not Put In GitHub
 
-Do not commit the full source image database to GitHub unless you intentionally want that repo to become large. Keep source images on the server volume. GitHub should keep Dex code; the server should keep Dex data.
+Do not commit the reference image database to GitHub. Keep references on a private operator-controlled volume. Git keeps DEX code, tests, and documentation only; the operator controls reference and inventory data.
