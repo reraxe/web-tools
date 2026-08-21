@@ -1,31 +1,35 @@
-# DEX v2.2-test RC3 Hotfix 2 Drop-In Deploy Verification
+# DEX v2.2-test RC3 HF3 Zero-Entry — Drop-In Deploy Verification
 
-Artifact: `DEX_v2.2-test_RC3_HF2_DEPLOY`  
-Source checkpoint: `DEX_v2.2-test_RC3_HF2_FULL_CHECKPOINT`  
+Artifact: `DEX_v2.2-test_RC3_HF3_ZERO_ENTRY_DEPLOY`  
+Source: tested Zero-Entry v1 workspace  
 Runtime identity: `v2.2-test`  
-Immutable image tag: `192.168.2.92:5000/apps/dex:v2.2-test-rc3-hf2`
+Immutable image tag: `192.168.2.92:5000/apps/dex:v2.2-test-rc3-hf3`
 
-## Root shape and verification
+## Certified results
 
 - `app.py` and `Dockerfile` are directly at DEPLOY root.
 - `static/app.js`, `static/index.html`, and `static/styles.css` exist.
-- Every runtime sibling imported by `app.py` is directly where the Dockerfile expects it.
-- Nested `DEX_v2.2-test_RC3_HF2_DEPLOY` directory: **absent**.
-- Runtime-source hash mismatches against the tested HF2 workspace: **0**.
-- Runtime sibling modules absent from the Dockerfile: **0**.
-- Python runtime imports: **PASS**.
-- Isolated startup and `/api/health`: **PASS**, HTTP 200, version `v2.2-test`.
-- Migrations: **0001–0015**; no 0016.
-- Prohibited/private artifacts: **0**.
-- Secret/private-key/credential patterns: **0**.
-- Machine-local absolute paths: **0**.
+- Every runtime sibling copied by the Dockerfile is present directly at the expected path.
+- Nested `DEX_v2.2-test_RC3_HF3_ZERO_ENTRY_DEPLOY` directory: absent.
+- Runtime-source hash mismatches against the tested workspace: 0.
+- Python regression: 194/194 passed from the DEPLOY artifact.
+- JavaScript syntax: passed.
+- Frontend regressions: 17/17 passed from the DEPLOY artifact.
+- Runtime imports, including `dex_receipt_ocr` and `dex_receipt_parser`: passed.
+- Isolated startup and `/api/health`: HTTP 200, runtime `v2.2-test`.
+- Local Tesseract provider: available, private/local, external transmission false.
+- Migrations: 0001–0015; no migration 0016.
+- Empty startup created 0 acquisitions, batches, cards, or sealed units; SQLite integrity `ok`.
+- Prohibited/private artifacts: 0.
+- Secrets/private keys/credentials: 0.
+- Machine-local paths/configuration: 0.
 
-Jenkins, Compose, ports, volumes, container names, and production storage configuration are not replaced. Docker was not built or deployed from the packaging workstation.
+The Dockerfile uses the HF3 OCI version label and installs/checks Tesseract. An actual Docker image build remains an operator/Jenkins-host gate. No deployment occurred during packaging.
 
 ## Operator copy rule
 
-Open `DEX_v2.2-test_RC3_HF2_DEPLOY`, select everything **inside** it, and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
+Open DEX_v2.2-test_RC3_HF3_ZERO_ENTRY_DEPLOY, select everything INSIDE it, and upload those contents directly into the GitHub dex-test root. Do not upload the outer DEPLOY folder.
 
 ## Rollback
 
-Return first to `v2.2-test-rc3-hf1`; HF2 adds no migration. Preserve the database/storage. RC3-r4 plus its matching pre-0015 backup remains the older rollback boundary.
+Return the application image to `192.168.2.92:5000/apps/dex:v2.2-test-rc3-hf2`. HF3 adds no migration. Preserve production database/storage.

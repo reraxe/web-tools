@@ -1,0 +1,26 @@
+Do not upload:
+
+*.db
+*.sqlite
+*.sqlite3
+data/
+storage*/
+scanner-inbox/
+inbound scanner folders/
+source-database/
+reference image libraries/
+physical scans or card images/
+receipt/source-document files/
+ground_truth.csv or benchmark corpora/
+staged-blind/ or validation results/
+logs/
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.env or environment override files
+passwords, tokens, API secrets, credentials, or private keys
+machine-specific paths or configuration
+temporary/disposable QA data
+generated runtime output
+the outer DEX_v2.2-test_RC3_HF3_ZERO_ENTRY_DEPLOY folder

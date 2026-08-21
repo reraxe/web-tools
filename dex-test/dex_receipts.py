@@ -1,9 +1,8 @@
-"""DEX v2.2-test Phase 5 receipt intelligence and proposed accounting.
+"""DEX v2.2-test receipt intelligence and proposed accounting.
 
 Extraction results are non-authoritative candidates. Raw OCR/text is never
-stored or logged. The only operational provider is a private, local PDF text
-extractor; image OCR remains provider-ready until a reviewed local decoder/OCR
-runtime is explicitly configured.
+stored or logged. Text-layer PDFs and JPG/PNG images are processed privately
+and locally through the same provider-neutral extraction contract.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ import io
 import json
 import re
 import sqlite3
+import time
 import uuid
 from abc import ABC, abstractmethod
 from datetime import date, datetime, timezone
@@ -22,9 +22,16 @@ from pypdf import PdfReader
 
 from dex_catalog import normalize_identifier
 from dex_documents import DocumentStore, read_document
+from dex_receipt_ocr import (
+    ReceiptOcrFailed,
+    ReceiptOcrUnavailable,
+    extract_image_text,
+    provider_health as image_ocr_health,
+)
+from dex_receipt_parser import PARSER_VERSION, parse_receipt_pages
 
 
-EXTRACTION_VERSION = "receipt-local-pattern-v1"
+EXTRACTION_VERSION = "receipt-local-zero-entry-v1"
 ALLOCATION_VERSION = "receipt-landed-allocation-v1"
 RECEIPT_CLASSIFICATIONS = (
     "INVENTORY", "SHIPPING_FEE", "BUSINESS_NONINVENTORY", "PERSONAL_NONBUSINESS",
@@ -38,7 +45,7 @@ FACT_FIELD_TYPES = {
     "acquisition_tax_cents": "CENTS", "inbound_shipping_cents": "CENTS",
     "acquisition_fees_cents": "CENTS", "import_duties_cents": "CENTS",
     "brokerage_cents": "CENTS", "acquisition_discount_cents": "CENTS",
-    "final_usd_paid_cents": "CENTS",
+    "final_usd_paid_cents": "CENTS", "payment_method": "TEXT",
 }
 AMOUNT_LABELS = {
     "subtotal": "purchase_subtotal_cents",
@@ -118,10 +125,13 @@ def _normalize_name(value: object) -> str:
 
 
 class LocalPdfTextReceiptExtractor(ReceiptExtractor):
-    provider_name = "LOCAL_PDF_TEXT"
+    """Compatibility name for the combined local PDF + image provider."""
+
+    provider_name = "LOCAL_RECEIPT_INTELLIGENCE"
     provider_version = EXTRACTION_VERSION
 
     def health(self) -> dict:
+        ocr = image_ocr_health()
         return {
             "provider": self.provider_name,
             "version": self.provider_version,
@@ -129,104 +139,46 @@ class LocalPdfTextReceiptExtractor(ReceiptExtractor):
             "available": True,
             "private_local_processing": True,
             "external_transmission": False,
-            "operational_formats": ["application/pdf"],
-            "provider_ready_formats": ["image/jpeg", "image/png"],
+            "operational_formats": ["application/pdf", *ocr["operational_formats"]],
+            "provider_ready_formats": [] if ocr["available"] else ["image/jpeg", "image/png"],
+            "image_ocr": ocr,
         }
 
     def extract(self, document: Mapping, data: bytes) -> dict:
-        if document.get("detected_mime_type") != "application/pdf":
-            raise UnsupportedExtractionFormat(
-                "Private local image OCR is not configured; the attached image remains available for manual entry"
-            )
-        try:
-            reader = PdfReader(io.BytesIO(data))
-            if reader.is_encrypted:
-                raise ExtractionError("Encrypted PDFs cannot be extracted")
-            pages = [(index + 1, page.extract_text() or "") for index, page in enumerate(reader.pages)]
-        except ExtractionError:
-            raise
-        except Exception as exc:
-            raise ExtractionError("PDF text extraction failed") from exc
-        return self._parse_pages(pages)
+        mime = document.get("detected_mime_type")
+        metrics: dict[str, object] = {}
+        if mime == "application/pdf":
+            started = time.perf_counter()
+            try:
+                reader = PdfReader(io.BytesIO(data))
+                if reader.is_encrypted:
+                    raise ExtractionError("Encrypted PDFs cannot be extracted")
+                pages = [(index + 1, page.extract_text() or "") for index, page in enumerate(reader.pages)]
+            except ExtractionError:
+                raise
+            except Exception as exc:
+                raise ExtractionError("PDF text extraction failed") from exc
+            metrics["pdf_text_extraction_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        elif mime in ("image/jpeg", "image/png"):
+            try:
+                image_result = extract_image_text(data)
+            except ReceiptOcrUnavailable as exc:
+                raise UnsupportedExtractionFormat(str(exc)) from exc
+            except ReceiptOcrFailed as exc:
+                failed = ExtractionError(str(exc))
+                failed.code = exc.code
+                raise failed from exc
+            pages = image_result["pages"]
+            metrics.update(image_result["metrics"])
+        else:
+            raise UnsupportedExtractionFormat("This receipt format is not supported by the installed local provider")
+        parsed = self._parse_pages(pages)
+        parsed["metrics"] = {**metrics, **parsed.get("metrics", {})}
+        parsed["parser_version"] = PARSER_VERSION
+        return parsed
 
     def _parse_pages(self, pages: list[tuple[int, str]]) -> dict:
-        located_lines: list[tuple[int, int, str]] = []
-        for page_number, text in pages:
-            for line_number, raw in enumerate(text.splitlines(), 1):
-                line = " ".join(raw.split())
-                if line:
-                    located_lines.append((page_number, line_number, line))
-        if not located_lines:
-            return {"candidates": [], "lines": []}
-
-        candidates: dict[str, dict] = {}
-        receipt_lines: list[dict] = []
-        amount_pattern = re.compile(r"^\s*([A-Za-z][A-Za-z &/.-]{1,35})\s*[:#]?\s*(?:USD|CAD|JPY|EUR|GBP)?\s*\$?\s*(-?\(?[\d,]+(?:\.\d{1,2})?\)?)\s*$", re.I)
-        date_pattern = re.compile(r"(?:purchase\s+date|date)?\s*[:#]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4})", re.I)
-        order_pattern = re.compile(r"(?:order|receipt|invoice)(?:\s*(?:number|no\.?|#))?\s*[#:]*\s*([A-Za-z0-9][A-Za-z0-9._/-]{2,})", re.I)
-
-        for page, line_number, line in located_lines:
-            location = f"line {line_number}"
-            lowered = line.lower()
-            if line.upper().startswith("ITEM |"):
-                parsed = self._parse_item(line, page, location)
-                if parsed:
-                    receipt_lines.append(parsed)
-                continue
-            amount_match = amount_pattern.match(line)
-            if amount_match:
-                label = " ".join(amount_match.group(1).lower().split())
-                field = AMOUNT_LABELS.get(label)
-                if field:
-                    try:
-                        value = abs(_money_cents(amount_match.group(2))) if field == "acquisition_discount_cents" else _money_cents(amount_match.group(2))
-                    except ValueError:
-                        value = None
-                    if value is not None and value >= 0:
-                        candidates[field] = _candidate(field, value, 0.96, page, location)
-                    continue
-            if "merchant" in lowered or "seller" in lowered:
-                match = re.search(r"(?:merchant|seller)\s*[:#]\s*(.+)$", line, re.I)
-                if match:
-                    candidates["merchant_name"] = _candidate("merchant_name", match.group(1).strip(), 0.96, page, location)
-                    continue
-            if "country" in lowered:
-                match = re.search(r"(?:merchant\s+)?country\s*[:#]\s*(.+)$", line, re.I)
-                if match:
-                    candidates["merchant_country"] = _candidate("merchant_country", match.group(1).strip(), 0.9, page, location)
-                    continue
-            date_match = date_pattern.search(line)
-            if date_match:
-                parsed_date = self._date(date_match.group(1))
-                if parsed_date:
-                    candidates["purchased_on"] = _candidate("purchased_on", parsed_date, 0.94, page, location)
-                    continue
-            order_match = order_pattern.search(line)
-            if order_match:
-                candidates["order_reference"] = _candidate("order_reference", order_match.group(1), 0.93, page, location)
-                continue
-            currency_match = re.search(r"(?:currency|charged\s+in)\s*[:#]\s*([A-Z]{3})\b", line, re.I)
-            if currency_match:
-                currency = currency_match.group(1).upper()
-                candidates["original_currency"] = _candidate("original_currency", currency, 0.97, page, location)
-                candidates["source_scope"] = _candidate("source_scope", "DOMESTIC" if currency == "USD" else "INTERNATIONAL", 0.82, page, location)
-                continue
-            foreign_match = re.search(r"(?:original|foreign)\s+(?:amount|total)\s*[:#]\s*(?:[A-Z]{3})?\s*([\d,]+(?:\.\d{1,2})?)", line, re.I)
-            if foreign_match:
-                candidates["original_foreign_amount_minor"] = _candidate("original_foreign_amount_minor", _money_cents(foreign_match.group(1)), 0.93, page, location)
-
-        first_page, first_line, first_text = located_lines[0]
-        if "merchant_name" not in candidates and not re.search(r"receipt|invoice|order", first_text, re.I):
-            candidates["merchant_name"] = _candidate("merchant_name", first_text[:180], 0.78, first_page, f"line {first_line}")
-        currency = candidates.get("original_currency", {}).get("normalized_value")
-        if not currency and any("$" in line for _, _, line in located_lines):
-            candidates["original_currency"] = _candidate("original_currency", "USD", 0.7, 1, "currency symbol")
-        if currency and currency != "USD" and "final_usd_paid_cents" in candidates:
-            final = candidates.pop("final_usd_paid_cents")
-            candidates.setdefault("original_foreign_amount_minor", _candidate(
-                "original_foreign_amount_minor", final["normalized_value"], final["confidence"], final["source_page"], final["source_location"]
-            ))
-        return {"candidates": list(candidates.values()), "lines": receipt_lines}
+        return parse_receipt_pages(pages)
 
     @staticmethod
     def _date(value: str) -> str | None:
@@ -332,7 +284,19 @@ def _job_payload(db: sqlite3.Connection, job_id: int) -> dict:
         "SELECT * FROM receipt_lines WHERE job_id=? ORDER BY line_sequence,id", (job_id,)
     ).fetchall()]
     job["raw_text_available"] = False
-    job["capability_unavailable"] = job.get("error_code") == "FORMAT_PROVIDER_UNAVAILABLE"
+    analysis_row = db.execute(
+        """SELECT payload FROM receipt_extraction_events
+            WHERE job_id=? AND event_type='RECEIPT_ANALYSIS_COMPLETED'
+            ORDER BY recorded_at DESC,event_id DESC LIMIT 1""",
+        (job_id,),
+    ).fetchone()
+    analysis = json.loads(analysis_row["payload"] or "{}") if analysis_row else {}
+    job["receipt_math"] = analysis.get("receipt_math")
+    job["performance"] = analysis.get("performance", {})
+    job["parser_version"] = analysis.get("parser_version")
+    job["capability_unavailable"] = job.get("error_code") in (
+        "FORMAT_PROVIDER_UNAVAILABLE", "LOCAL_OCR_UNAVAILABLE",
+    )
     job["retry_plausible"] = bool(
         job.get("status") in ("FAILED", "NO_FACTS")
         and not job["capability_unavailable"]
@@ -400,6 +364,7 @@ def queue_extraction(db: sqlite3.Connection, document_id: int, payload: Mapping,
     job_id = int(cursor.lastrowid)
     _event(db, acquisition_id, f"{request_id}:queued", "EXTRACTION_QUEUED", job_id=job_id,
            payload={"document_id": document_id, "provider": extractor.provider_name, "version": extractor.provider_version})
+    extraction_started = time.perf_counter()
     try:
         verified_document, data = read_document(db, document_id, store)
         extracted = extractor.extract(verified_document, data)
@@ -410,7 +375,18 @@ def queue_extraction(db: sqlite3.Connection, document_id: int, payload: Mapping,
             _supersede_allocation_proposals(db, acquisition_id)
         _event(db, acquisition_id, f"{request_id}:completed", "EXTRACTION_COMPLETED", job_id=job_id,
                payload={"candidate_count": len(extracted["candidates"]), "receipt_line_count": len(extracted["lines"]), "status": status})
+        _event(
+            db, acquisition_id, f"{request_id}:math", "RECEIPT_MATH_ANALYZED", job_id=job_id,
+            payload={
+                "receipt_math": extracted.get("receipt_math", {"status": "INCOMPLETE"}),
+                "parser_version": extracted.get("parser_version", PARSER_VERSION),
+                "authoritative": False,
+            },
+        )
+        matching_started = time.perf_counter()
+        _prepare_catalog_lines(db, acquisition_id, job_id, f"{request_id}:catalog-lines")
         _match_receipt_lines(db, acquisition_id, job_id, f"{request_id}:matching")
+        matching_ms = (time.perf_counter() - matching_started) * 1000
         if payload.get("auto_apply", True):
             current = _acquisition(db, acquisition_id)
             apply_proposed_facts(db, acquisition_id, {
@@ -423,6 +399,22 @@ def queue_extraction(db: sqlite3.Connection, document_id: int, payload: Mapping,
                 })
             except ValueError:
                 pass
+        performance = {
+            **dict(extracted.get("metrics", {})),
+            "matching_reconciliation_ms": round(matching_ms, 2),
+            "total_receipt_to_review_ms": round((time.perf_counter() - extraction_started) * 1000, 2),
+        }
+        _event(
+            db, acquisition_id, f"{request_id}:analysis", "RECEIPT_ANALYSIS_COMPLETED",
+            job_id=job_id,
+            payload={
+                "receipt_math": extracted.get("receipt_math", {"status": "INCOMPLETE"}),
+                "performance": performance,
+                "parser_version": extracted.get("parser_version", PARSER_VERSION),
+                "raw_ocr_persisted": False,
+                "external_transmission": False,
+            },
+        )
     except Exception as exc:
         failed = utcnow()
         code = getattr(exc, "code", "EXTRACTION_FAILED")
@@ -462,11 +454,125 @@ def _persist_extraction(db: sqlite3.Connection, job_id: int, acquisition_id: int
         )
 
 
+def _catalog_match_for_receipt(db: sqlite3.Connection, receipt: Mapping) -> tuple[sqlite3.Row, str, float] | None:
+    extracted_id = str(receipt.get("extracted_identifier") or "")
+    if extracted_id:
+        try:
+            normalized = normalize_identifier(extracted_id)["normalized_identifier"]
+        except ValueError:
+            normalized = ""
+        if normalized:
+            row = db.execute(
+                """SELECT p.* FROM product_identifiers i
+                    JOIN catalog_products p ON p.id=i.catalog_product_id
+                    WHERE i.normalized_identifier=? AND i.mapping_status='ACTIVE' AND p.active=1""",
+                (normalized,),
+            ).fetchone()
+            if row:
+                return row, "EXACT_IDENTIFIER", 1.0
+    description = _normalize_name(receipt.get("description"))
+    if not description:
+        return None
+    exact = [
+        row for row in db.execute("SELECT * FROM catalog_products WHERE active=1 ORDER BY id").fetchall()
+        if _normalize_name(row["display_name"]) == description
+    ]
+    if len(exact) == 1:
+        return exact[0], "EXACT_NAME_SET", 0.96
+    return None
+
+
+def _prepare_catalog_lines(db: sqlite3.Connection, acquisition_id: int, job_id: int,
+                           request_prefix: str) -> None:
+    """Prepare draft product lines only from unique, deterministic catalog matches."""
+
+    receipts = db.execute("SELECT * FROM receipt_lines WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
+    now = utcnow()
+    changed = False
+    for receipt_row in receipts:
+        receipt = dict(receipt_row)
+        match = _catalog_match_for_receipt(db, receipt)
+        if not match:
+            continue
+        product, method, confidence = match
+        line = db.execute(
+            """SELECT * FROM acquisition_lines
+                WHERE acquisition_id=? AND catalog_product_id=? AND canceled_at IS NULL
+                ORDER BY id LIMIT 1""",
+            (acquisition_id, product["id"]),
+        ).fetchone()
+        if line is None:
+            sequence = int(db.execute(
+                "SELECT COALESCE(MAX(line_sequence),0)+1 FROM acquisition_lines WHERE acquisition_id=?",
+                (acquisition_id,),
+            ).fetchone()[0])
+            cursor = db.execute(
+                """INSERT INTO acquisition_lines
+                   (line_uuid,acquisition_id,line_sequence,product_class,game,product_name,set_code,
+                    pack_type,quantity,quantity_certainty,intended_action,allocation_status,
+                    allocation_method,catalog_product_id,created_at,updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,'KNOWN','DECIDE_LATER','UNALLOCATED','',?,?,?)""",
+                (
+                    str(uuid.uuid4()), acquisition_id, sequence, product["product_class"],
+                    product["game"], product["display_name"], product["set_code"],
+                    product["product_subtype"], receipt.get("quantity") or 1,
+                    product["id"], now, now,
+                ),
+            )
+            line = db.execute("SELECT * FROM acquisition_lines WHERE id=?", (cursor.lastrowid,)).fetchone()
+            changed = True
+            _event(
+                db, acquisition_id, f"{request_prefix}:{receipt['id']}",
+                "RECEIPT_CATALOG_LINE_PREPARED", job_id=job_id,
+                receipt_line_id=int(receipt["id"]),
+                payload={
+                    "acquisition_line_id": int(line["id"]),
+                    "catalog_product_id": int(product["id"]),
+                    "match_method": method, "confidence": confidence,
+                    "authoritative": False,
+                },
+            )
+        existing_match = db.execute(
+            "SELECT id FROM receipt_line_matches WHERE receipt_line_id=? AND acquisition_line_id=?",
+            (receipt["id"], line["id"]),
+        ).fetchone()
+        if not existing_match:
+            db.execute(
+                """INSERT INTO receipt_line_matches
+                   (match_uuid,receipt_line_id,acquisition_line_id,match_method,confidence,status,
+                    authoritative_identity,rationale,created_at,updated_at)
+                   VALUES (?,?,?,?,?,'ACCEPTED',1,?,?,?)""",
+                (
+                    f"RCPT-MATCH-{uuid.uuid4()}", receipt["id"], line["id"], method,
+                    confidence, "Unique exact catalog identity; acquisition authority remains pending confirmation",
+                    now, now,
+                ),
+            )
+        # Pack-format catalog products are strong inventory evidence.  Broader
+        # sealed products remain a genuine business-purpose question.
+        if product["product_class"] == "PACK_PRODUCT":
+            db.execute(
+                """UPDATE receipt_lines SET classification='INVENTORY',
+                    classification_source='DETERMINISTIC_CATALOG_RULE',updated_at=? WHERE id=?""",
+                (now, receipt["id"]),
+            )
+    if changed:
+        db.execute(
+            "UPDATE acquisitions SET revision=revision+1,updated_at=? WHERE id=?",
+            (now, acquisition_id),
+        )
+
+
 def _match_receipt_lines(db: sqlite3.Connection, acquisition_id: int, job_id: int, request_prefix: str) -> None:
     lines = db.execute("SELECT * FROM acquisition_lines WHERE acquisition_id=? AND canceled_at IS NULL ORDER BY id", (acquisition_id,)).fetchall()
     receipt_lines = db.execute("SELECT * FROM receipt_lines WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
     now = utcnow()
     for receipt in receipt_lines:
+        if db.execute(
+            "SELECT 1 FROM receipt_line_matches WHERE receipt_line_id=? AND status<>'REJECTED' LIMIT 1",
+            (receipt["id"],),
+        ).fetchone():
+            continue
         candidates: list[tuple[sqlite3.Row, str, float, int, str]] = []
         extracted_id = str(receipt["extracted_identifier"] or "")
         for line in lines:
@@ -667,10 +773,38 @@ def classify_receipt_line(db: sqlite3.Connection, receipt_line_id: int, payload:
     now = utcnow()
     _supersede_allocation_proposals(db, int(line["acquisition_id"]))
     db.execute("UPDATE receipt_lines SET classification=?,classification_source='OPERATOR',updated_at=? WHERE id=?", (classification, now, receipt_line_id))
+    prepared_match = db.execute(
+        """SELECT m.acquisition_line_id FROM receipt_line_matches m
+            WHERE m.receipt_line_id=? AND EXISTS (
+                SELECT 1 FROM receipt_extraction_events e
+                WHERE e.receipt_line_id=? AND e.event_type='RECEIPT_CATALOG_LINE_PREPARED'
+            ) ORDER BY m.confidence DESC,m.id LIMIT 1""",
+        (receipt_line_id, receipt_line_id),
+    ).fetchone()
+    if prepared_match:
+        db.execute(
+            "UPDATE acquisition_lines SET canceled_at=?,updated_at=? WHERE id=?",
+            (None if classification == "INVENTORY" else now, now, prepared_match["acquisition_line_id"]),
+        )
     db.execute("UPDATE acquisitions SET revision=revision+1,updated_at=? WHERE id=?", (now, line["acquisition_id"]))
     _event(db, int(line["acquisition_id"]), request_id, "RECEIPT_LINE_CLASSIFIED", job_id=int(line["job_id"]),
            receipt_line_id=receipt_line_id, reason_code=classification, notes=str(payload.get("notes") or ""),
            payload={"from": line["classification"], "to": classification})
+    try:
+        current = _acquisition(db, int(line["acquisition_id"]))
+        generate_allocation_proposal(
+            db,
+            int(line["acquisition_id"]),
+            {
+                "request_id": f"{request_id}:zero-entry-allocation",
+                "expected_revision": current["revision"],
+                "auto_apply": True,
+            },
+        )
+    except ValueError:
+        # Classification is still a valid audited decision when other receipt
+        # facts remain unresolved.  The payload exposes the remaining question.
+        pass
     return receipt_intelligence_payload(db, int(line["acquisition_id"]))
 
 
@@ -766,8 +900,8 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
     acquisition = _acquisition(db, acquisition_id)
     _require_revision(acquisition, payload)
     active_lines = db.execute("SELECT * FROM acquisition_lines WHERE acquisition_id=? AND canceled_at IS NULL ORDER BY id", (acquisition_id,)).fetchall()
-    if len(active_lines) < 2:
-        raise ValueError("Receipt allocation proposal is only needed for multiple product lines")
+    if not active_lines:
+        raise ValueError("At least one inventory product line is required for receipt allocation")
     final_paid = acquisition.get("final_usd_paid_cents")
     if final_paid is None:
         raise ValueError("Final USD remains Unknown; allocation cannot be proposed")
@@ -776,10 +910,18 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
             JOIN acquisition_documents d ON d.id=j.document_id
             WHERE r.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
               AND d.storage_status='STORED'
-              AND r.classification NOT IN ('DUPLICATE_EXTRACTION') ORDER BY r.id""", (acquisition_id,)
+              AND r.classification NOT IN ('DUPLICATE_EXTRACTION','SHIPPING_FEE') ORDER BY r.id""", (acquisition_id,)
     ).fetchall()
-    if any(row["classification"] in ("UNRESOLVED", "PERSONAL_NONBUSINESS", "BUSINESS_NONINVENTORY") for row in receipt_rows):
-        raise ValueError("Unresolved or noninventory receipt lines prevent automatic inventory allocation")
+    if not receipt_rows:
+        raise ValueError("No merchandise receipt lines are available for allocation")
+    if any(row["classification"] == "UNRESOLVED" for row in receipt_rows):
+        raise ValueError("Classify unresolved merchandise before deterministic allocation")
+    if any(row["classification"] in ("PERSONAL_NONBUSINESS", "BUSINESS_NONINVENTORY") for row in receipt_rows):
+        raise ValueError(
+            "Mixed inventory/noninventory landed-cost allocation requires an approved accounting policy"
+        )
+    if any(row["line_total_cents"] is None or int(row["line_total_cents"]) < 0 for row in receipt_rows):
+        raise ValueError("Every merchandise receipt line needs a nonnegative line total")
     direct = {int(line["id"]): 0 for line in active_lines}
     for receipt in [row for row in receipt_rows if row["classification"] == "INVENTORY"]:
         match = db.execute(
@@ -794,29 +936,50 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
             raise ValueError("Receipt quantity conflicts with the acquisition product quantity")
     if any(value <= 0 for value in direct.values()):
         raise ValueError("Every acquisition product line needs matched positive merchandise value")
-    groups = _candidate_groups(db, acquisition_id)
-    def unique_cents(field: str) -> int:
-        values = {int(item["value"]) for item in groups.get(field, []) if item["confidence_band"] != "LOW"}
-        if len(values) > 1:
-            raise ValueError(f"Conflicting receipt candidates exist for {field}")
-        return next(iter(values), 0)
-    shared_components = {
-        "tax": unique_cents("acquisition_tax_cents"), "shipping": unique_cents("inbound_shipping_cents"),
-        "fees": unique_cents("acquisition_fees_cents"), "duties": unique_cents("import_duties_cents"),
-        "brokerage": unique_cents("brokerage_cents"), "discounts": -unique_cents("acquisition_discount_cents"),
-    }
-    shared_total = sum(shared_components.values())
-    calculated_total = sum(direct.values()) + shared_total
-    if calculated_total != int(final_paid):
-        raise ValueError("Receipt merchandise and shared components do not reconcile exactly to final USD")
+    math_row = db.execute(
+        """SELECT e.payload FROM receipt_extraction_events e
+            JOIN receipt_extraction_jobs j ON j.id=e.job_id
+            JOIN acquisition_documents d ON d.id=j.document_id
+            WHERE e.acquisition_id=? AND e.event_type='RECEIPT_MATH_ANALYZED'
+              AND j.status='COMPLETED' AND j.disposition<>'REJECTED' AND d.storage_status='STORED'
+            ORDER BY e.recorded_at DESC,e.event_id DESC LIMIT 1""",
+        (acquisition_id,),
+    ).fetchone()
+    receipt_math = json.loads(math_row["payload"] or "{}").get("receipt_math", {}) if math_row else {}
     weights = sorted(direct.items())
+    merchandise_total = sum(int(row["line_total_cents"]) for row in receipt_rows)
+    if receipt_math.get("status") != "RECONCILED_EXACT" or not receipt_math.get("allocation_ready"):
+        raise ValueError("Receipt arithmetic must reconcile exactly before deterministic allocation")
+    if int(receipt_math.get("merchandise_total_cents", -1)) != merchandise_total:
+        raise ValueError("Receipt merchandise changed after arithmetic analysis; re-extract before allocation")
     shared_allocations = {line_id: 0 for line_id in direct}
-    component_allocations: dict[str, dict[int, int]] = {}
-    for name, cents in shared_components.items():
-        allocated = _allocate_weighted(cents, weights) if cents else {line_id: 0 for line_id in direct}
-        component_allocations[name] = allocated
+    component_allocations: list[dict] = []
+    supported_kinds = {"TAX", "SHIPPING", "FEE", "DISCOUNT", "DUTIES", "BROKERAGE"}
+    applied_components = [
+        dict(item) for item in receipt_math.get("components", [])
+        if item.get("kind") in supported_kinds
+        and item.get("math_role") in ("INCLUDED_IN_SUBTOTAL", "OUTSIDE_SUBTOTAL")
+    ]
+    for sequence, component in enumerate(applied_components):
+        cents = int(component.get("signed_cents") or 0)
+        allocated = _allocate_weighted(cents, weights) if cents else {
+            line_id: 0 for line_id in direct
+        }
+        component_allocations.append(
+            {
+                "component_sequence": sequence,
+                "kind": component.get("kind"),
+                "label": component.get("label"),
+                "scope": component.get("scope", "PURCHASE"),
+                "math_role": component.get("math_role"),
+                "signed_cents": cents,
+                "allocations": allocated,
+            }
+        )
         for line_id, value in allocated.items():
             shared_allocations[line_id] += value
+    if merchandise_total + sum(int(item["signed_cents"]) for item in applied_components) != int(final_paid):
+        raise ValueError("Separate receipt components do not reconcile exactly to final USD")
     allocations = [
         {"acquisition_line_id": line_id, "direct_merchandise_cents": direct[line_id],
          "shared_component_cents": shared_allocations[line_id], "landed_cost_cents": direct[line_id] + shared_allocations[line_id]}
@@ -832,9 +995,14 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
             total_allocated_cents,difference_cents,explanation,created_at,updated_at)
            VALUES (?,?,?,?,?,'APPLIED',?,?,?,?,?,?,?)""",
         (f"RCPT-ALLOC-{uuid.uuid4()}", request_id, acquisition_id, "RECEIPT_VALUE_PROPORTIONAL", ALLOCATION_VERSION,
-         json.dumps({"direct": direct, "shared_components": shared_components, "component_allocations": component_allocations}, separators=(",", ":"), sort_keys=True),
+         json.dumps({
+             "direct": direct,
+             "shared_components": applied_components,
+             "component_allocations": component_allocations,
+             "receipt_math_version": receipt_math.get("version"),
+         }, separators=(",", ":"), sort_keys=True),
          json.dumps(allocations, separators=(",", ":"), sort_keys=True), total, difference,
-         "Direct receipt-line merchandise plus shared transaction components allocated proportionally by merchandise value; remainder cents follow immutable acquisition-line IDs.", now, now),
+         "Existing receipt-landed-allocation-v1: direct receipt merchandise plus each separately preserved shared component allocated proportionally by merchandise value; remainder cents follow fractional remainder then immutable acquisition-line ID.", now, now),
     )
     for item in allocations:
         db.execute("UPDATE acquisition_lines SET assigned_landed_cost_cents=?,allocation_method='RECEIPT_VALUE_PROPORTIONAL',allocation_status='SUGGESTED',updated_at=? WHERE id=?",
@@ -842,7 +1010,8 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
     db.execute("UPDATE acquisitions SET revision=revision+1,updated_at=? WHERE id=?", (now, acquisition_id))
     _event(db, acquisition_id, f"{request_id}:event", "ALLOCATION_PROPOSED",
            payload={"proposal_id": int(cursor.lastrowid), "method": "RECEIPT_VALUE_PROPORTIONAL", "version": ALLOCATION_VERSION,
-                    "total_allocated_cents": total, "difference_cents": difference})
+                    "total_allocated_cents": total, "difference_cents": difference,
+                    "policy_boundary": "EXISTING_ALL_INVENTORY_V1"})
     return _proposal_payload(db.execute("SELECT * FROM receipt_allocation_proposals WHERE id=?", (cursor.lastrowid,)).fetchone())
 
 
@@ -946,6 +1115,43 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
         proposal = _proposal_payload(db.execute(
             "SELECT * FROM receipt_allocation_proposals WHERE acquisition_id=? AND status IN ('APPLIED','ACCEPTED') ORDER BY created_at DESC,id DESC LIMIT 1", (acquisition_id,)
         ).fetchone())
+    latest_analysis_job = next(
+        (job for job in reversed(jobs) if job.get("receipt_math")), None
+    )
+    receipt_math = latest_analysis_job.get("receipt_math") if latest_analysis_job else None
+    performance = latest_analysis_job.get("performance", {}) if latest_analysis_job else {}
+    receipt_classes = {str(item.get("classification") or "") for item in receipt_lines}
+    mixed_inventory_noninventory = bool(
+        "INVENTORY" in receipt_classes
+        and receipt_classes.intersection({"BUSINESS_NONINVENTORY", "PERSONAL_NONBUSINESS"})
+    )
+    allocation_policy = {
+        "status": "POLICY_REQUIRED",
+        "scope": "MIXED_INVENTORY_NONINVENTORY",
+        "message": (
+            "Receipt extraction and arithmetic are complete, but DEX has no approved default "
+            "for assigning shared purchase components between inventory and noninventory."
+        ),
+        "preserved_components": [
+            {
+                "kind": item.get("kind"), "label": item.get("label"),
+                "signed_cents": item.get("signed_cents"),
+                "scope": item.get("scope", "PURCHASE"),
+                "math_role": item.get("math_role"),
+            }
+            for item in (receipt_math or {}).get("components", [])
+        ],
+        "required_policy_dimensions": [
+            "SALES_TAX", "TRANSACTION_CARD_FEES", "SHIPPING_FREIGHT",
+            "PURCHASE_DISCOUNTS_CREDITS", "CENT_ROUNDING_REMAINDERS",
+        ],
+        "authoritative": False,
+    } if mixed_inventory_noninventory else {
+        "status": "EXISTING_V1",
+        "scope": "ALL_INVENTORY",
+        "calculation_version": ALLOCATION_VERSION,
+        "authoritative": False,
+    }
     warnings = []
     if conflicts or any(item["conflicts_with_manual"] for candidates in groups.values() for item in candidates):
         warnings.append({"code": "RECEIPT_FIELD_CONFLICT", "message": "Receipt candidates conflict with another document or existing manual facts."})
@@ -957,7 +1163,16 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
         warnings.append({"code": "AMBIGUOUS_PRODUCT_MATCH", "message": "Text-similarity matches remain suggestions and need operator review."})
     if quantity_conflicts:
         warnings.append({"code": "RECEIPT_QUANTITY_MISMATCH", "message": "Receipt quantities conflict with acquisition product quantities."})
-    if len([row for row in db.execute("SELECT id FROM acquisition_lines WHERE acquisition_id=? AND canceled_at IS NULL", (acquisition_id,)).fetchall()]) > 1 and jobs and not proposal:
+    if receipt_math and receipt_math.get("status") == "AMBIGUOUS":
+        warnings.append({"code": "RECEIPT_MATH_AMBIGUOUS", "message": "More than one receipt-math interpretation is possible; DEX will not guess."})
+    elif receipt_math and receipt_math.get("status") == "UNRECONCILED":
+        warnings.append({"code": "RECEIPT_MATH_UNRECONCILED", "message": "Printed receipt components do not reconcile exactly to final paid."})
+    if mixed_inventory_noninventory:
+        warnings.append({
+            "code": "MIXED_PURCHASE_ALLOCATION_POLICY_REQUIRED",
+            "message": "An approved mixed-purchase shared-component policy is required before landed cost can be finalized.",
+        })
+    elif len([row for row in db.execute("SELECT id FROM acquisition_lines WHERE acquisition_id=? AND canceled_at IS NULL", (acquisition_id,)).fetchall()]) > 1 and jobs and not proposal:
         warnings.append({"code": "RECEIPT_ALLOCATION_UNRESOLVED", "message": "Receipt evidence does not yet support an exact multi-line landed-cost allocation."})
     failed_jobs = [job for job in jobs if job["status"] == "FAILED"]
     unavailable_jobs = [job for job in failed_jobs if job.get("capability_unavailable")]
@@ -986,6 +1201,18 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
         "manual_fallback_selected": manual_fallback_selected,
         "retry_plausible": any(job.get("retry_plausible") for job in jobs),
         "raw_ocr_available": False, "external_transmission": False,
+        "receipt_math": receipt_math,
+        "performance": performance,
+        "allocation_policy": allocation_policy,
+        "operator_questions": [
+            {
+                "receipt_line_id": int(item["id"]),
+                "description": item["description"],
+                "question": "How should this purchase item be treated?",
+                "choices": ["INVENTORY", "BUSINESS_NONINVENTORY", "PERSONAL_NONBUSINESS"],
+            }
+            for item in unresolved
+        ],
         "calculation_version": ALLOCATION_VERSION,
     }
 
