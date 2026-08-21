@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#173f35">
   <title>Dex</title>
+  <!-- v2.2-test-inbound-phase6-intake-bridge v2.2-test-phase7-sam-ocr-pass2-r1 v2.2-test-phase7-sam-ocr-pass3-r1 v2.2-test-rc3-hf2 zero-entry-receipt-v1 -->
+  <!-- v2.3-test-inventory-intelligence-phase1-remediation1 -->
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/styles.css?v=v2.3-test-inventory-intelligence-phase1-remediation1">
 </head>
 <body>
   <div class="app-shell">
@@ -18,16 +20,19 @@
       <nav id="primary-nav">
         <button class="nav-item active" data-view="inventory"><i data-lucide="library-big"></i><span>Inventory</span></button>
         <button class="nav-item" data-view="inbound"><i data-lucide="scan-line"></i><span>Inbound</span><b id="nav-review-count">0</b></button>
+        <button class="nav-item" data-view="sam"><i data-lucide="sparkles"></i><span>SAM</span></button>
         <button class="nav-item" data-view="labels"><i data-lucide="qr-code"></i><span>Labels</span><b id="nav-label-count">0</b></button>
         <button class="nav-item" data-view="outbound"><i data-lucide="package-check"></i><span>Outbound</span></button>
         <button class="nav-item" data-view="sales"><i data-lucide="receipt-text"></i><span>Sales</span></button>
+        <button class="nav-item" data-view="economics"><i data-lucide="chart-no-axes-combined"></i><span>Economics</span></button>
+        <button class="nav-item recycle-nav" data-view="recycle"><i data-lucide="trash-2"></i><span>Recycle Bin</span><b id="nav-recycle-count">0</b></button>
       </nav>
       <div class="capacity-panel">
         <div><span>TCGplayer capacity</span><strong id="capacity-label">0 / 500</strong></div>
         <div class="capacity-track"><span id="capacity-bar"></span></div>
         <small id="capacity-note">500 slots available</small>
       </div>
-      <div class="server-state"><span></span>Home network · v1.1-test</div>
+      <div class="server-state"><span></span>Home Network - <strong data-runtime-version>Checking version…</strong></div>
     </aside>
 
     <div class="workspace">
@@ -36,7 +41,7 @@
         <div class="page-identity"><h1 id="page-title">Inventory</h1><p id="page-subtitle">Every physical card, accounted for.</p></div>
         <div class="top-actions">
           <button class="button secondary" id="quick-outbound"><i data-lucide="scan-qr-code"></i><span>Scan outbound</span></button>
-          <button class="button primary" id="quick-batch"><i data-lucide="plus"></i><span>New batch</span></button>
+          <button class="button primary" id="quick-batch"><i data-lucide="plus"></i><span>New acquisition</span></button>
         </div>
       </header>
       <main id="app" tabindex="-1"></main>
@@ -53,7 +58,7 @@
   </dialog>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/vendor/lucide.min.js"></script>
-  <script src="/app.js"></script>
+  <script src="/vendor/lucide.min.js?v=v2.1-test-phase4-checkpoint1"></script>
+  <script src="/app.js?v=v2.3-test-inventory-intelligence-phase1-remediation1"></script>
 </body>
 </html>
