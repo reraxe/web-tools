@@ -2,9 +2,9 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current development release: **Dex v2.3-test — Inventory Intelligence Phase 1**
+Current development candidate: **Dex v2.3-test — Inventory Intelligence Phase 1 Remediation 2**
 
-Frozen accepted baseline: **Dex v2.2-test RC3 HF3 ZERO ENTRY**. The v2.3-test Phase 1 workspace is isolated from that package and adds only non-authoritative receipt semantics, audit history, and a merchandise-only product-matching gate. No v2.3 deployment package has been produced.
+Accepted predecessor: **Dex v2.3-test — Inventory Intelligence Phase 1 Remediation 1**. The Remediation 2 workspace is isolated from that accepted package and retains HF3 as the underlying historical baseline. It adds only receipt-semantic generalization, merchant-suggestion ranking, review-noise reduction, and deployment-provenance documentation. No Remediation 2 FULL/DEPLOY package has been produced.
 
 Known-good restore baseline: **Dex v2.2-test RC3 HF3 ZERO ENTRY**. Its source/package hashes and behavior remain unchanged.
 

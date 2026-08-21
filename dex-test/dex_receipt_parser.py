@@ -10,7 +10,7 @@ from datetime import datetime
 from dex_receipt_semantics import classify_receipt_pages
 
 
-PARSER_VERSION = "receipt-structured-math-v1"
+PARSER_VERSION = "receipt-structured-math-v1-remediation2"
 
 
 def money_cents(value: str) -> int:
@@ -54,14 +54,19 @@ def _component_kind(label: str) -> str | None:
     normalized = _normalize_label(label)
     if "subtotal" in normalized:
         return "SUBTOTAL"
-    if normalized in ("total", "final paid", "amount paid", "amount due", "grand total", "charged"):
+    if normalized in (
+        "total", "final paid", "amount paid", "amount due", "grand total",
+        "order total", "purchase total", "charged",
+    ):
         return "FINAL_PAID"
     if re.search(r"\b(?:sales|state|county|local)?\s*tax\b", normalized):
         return "TAX"
     if "fee" in normalized or "surcharge" in normalized or "handling" in normalized:
         return "FEE"
     if (
-        "discount" in normalized or "credit" in normalized or "coupon" in normalized
+        "discount" in normalized or "coupon" in normalized or "savings" in normalized
+        or "promo credit" in normalized or "credit applied" in normalized
+        or normalized in ("store credit", "store credit applied")
         or re.search(r"\b\d+(?:\s+\d+)?\s+off\b", normalized)
     ):
         return "DISCOUNT"
@@ -148,6 +153,106 @@ def _parse_item(line: str, page: int, location: str) -> dict | None:
     }
     result["confidence_band"] = confidence_band(result["confidence"])
     return result
+
+
+def _is_street_address(line: str) -> bool:
+    return bool(re.search(
+        r"\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,6}"
+        r"(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|"
+        r"highway|hwy|broadway|parkway|pkwy|court|ct|terrace|ter|circle|cir|"
+        r"way|place|pl|route|rte)\b",
+        line,
+        re.I,
+    ))
+
+
+def _is_city_state_zip(line: str) -> bool:
+    return bool(re.search(r"\b[A-Za-z .'-]+,?\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?\b", line))
+
+
+def _merchant_candidate_ranking(
+    located: list[tuple[int, int, int, str]],
+    semantic_by_source_index: dict[int, dict],
+) -> list[dict]:
+    """Rank non-authoritative merchant suggestions using header and address evidence."""
+
+    repeated = {}
+    for _, _, _, line in located:
+        key = _normalize_label(line)
+        repeated[key] = repeated.get(key, 0) + 1
+
+    excluded_classes = {
+        "MERCHANDISE", "DISCOUNT_CREDIT", "FEE_SURCHARGE", "TAX", "SHIPPING",
+        "SUBTOTAL", "TOTAL", "TENDER_PAYMENT_METHOD", "PAYMENT_SUMMARY",
+        "INFORMATIONAL_FOOTER",
+    }
+    ranking: list[dict] = []
+    for position, (seq, page, line_number, line) in enumerate(located[:12]):
+        normalized = _normalize_label(line)
+        semantic_class = semantic_by_source_index.get(seq, {}).get("semantic_class", "UNKNOWN")
+        reasons: list[str] = []
+        disqualified = False
+
+        explicit = bool(re.match(r"^(?:merchant|seller)\s*[:#]", line, re.I))
+        value = re.sub(r"^(?:merchant|seller)\s*[:#]\s*", "", line, flags=re.I).strip()
+        letters = sum(character.isalpha() for character in value)
+        visible = sum(not character.isspace() for character in value)
+        alpha_ratio = letters / max(1, visible)
+        unusual = sum(character in "|{}[]\\~^`" for character in value)
+
+        if explicit:
+            reasons.append("EXPLICIT_MERCHANT_LABEL")
+        if semantic_class in excluded_classes or _amount_at_end(line):
+            disqualified = True
+            reasons.append("FINANCIAL_OR_MERCHANDISE_LINE")
+        if _is_street_address(line) or _is_city_state_zip(line):
+            disqualified = True
+            reasons.append("ADDRESS_LINE")
+        if re.search(r"\b(?:receipt|invoice|order|date|time|www\.|https?://|tel\.?|phone|auth|aid|cvm)\b", line, re.I):
+            disqualified = True
+            reasons.append("METADATA_OR_CONTACT_LINE")
+        if normalized in {
+            "item description qty price", "description", "items", "ship to", "bill to",
+            "customer copy", "merchant copy", "thank you",
+        }:
+            disqualified = True
+            reasons.append("SECTION_OR_FOOTER_LABEL")
+        if letters < 3 or alpha_ratio < 0.55 or unusual >= 2:
+            disqualified = True
+            reasons.append("LOW_TEXT_QUALITY")
+
+        score = 0.38 + max(0.0, 0.18 - position * 0.018)
+        if explicit:
+            score += 0.42
+        if re.search(r"\b(?:shop|store|cards?|games?|collectibles?|hobby|market|company|co|llc|inc|bay|vendor)\b", normalized):
+            score += 0.22
+            reasons.append("BUSINESS_NAME_LANGUAGE")
+        following = [entry[3] for entry in located[position + 1:position + 4]]
+        if any(_is_street_address(candidate) or _is_city_state_zip(candidate) for candidate in following):
+            score += 0.30
+            reasons.append("NEAR_ADDRESS")
+        if repeated.get(normalized, 0) > 1:
+            score += 0.10
+            reasons.append("REPEATED_HEADER_TEXT")
+        if alpha_ratio >= 0.75 and 1 <= len(normalized.split()) <= 8:
+            score += 0.10
+            reasons.append("PLAUSIBLE_NAME_TEXT")
+        if unusual:
+            score -= 0.22
+            reasons.append("OCR_NOISE_PENALTY")
+
+        score = round(max(0.0, min(0.99, score)), 4)
+        ranking.append({
+            "value": value[:180],
+            "score": score,
+            "eligible": bool(not disqualified and score >= 0.62),
+            "source_page": page,
+            "source_location": f"line {line_number}",
+            "source_line_index": seq,
+            "evidence_codes": reasons,
+        })
+    ranking.sort(key=lambda item: (-item["score"], item["source_line_index"], item["value"].casefold()))
+    return ranking
 
 
 def _subset_solutions(components: list[dict], target: int) -> list[tuple[int, ...]]:
@@ -307,6 +412,18 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
             candidates["order_reference"] = _candidate("order_reference", order_match.group(1), "TEXT", 0.91, page, location)
         if semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\b(?:credit|debit)(?:\s+card)?\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.9, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bmaster\s*card\b|\bmc\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "MASTERCARD", "TEXT", 0.94, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bvisa\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "VISA", "TEXT", 0.94, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\b(?:amex|american express)\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "AMEX", "TEXT", 0.94, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bdiscover\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "DISCOVER", "TEXT", 0.94, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bapple\s+pay\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "APPLE_PAY", "TEXT", 0.94, page, location)
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bgoogle\s+pay\b", line, re.I):
+            candidates["payment_method"] = _candidate("payment_method", "GOOGLE_PAY", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bpaypal\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "PAYPAL", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bcash\b", line, re.I):
@@ -348,20 +465,17 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
     for item in receipt_lines:
         item.pop("_sequence", None)
 
-    first = located[0]
-    merchant_candidates = [
-        line for seq, _, _, line in located[:5]
-        if seq not in structural_sequences
-        and not re.search(r"\b(?:receipt|invoice|order|date|www\.|tel\.?|phone)\b", line, re.I)
-        and not _amount_at_end(line)
-    ]
-    explicit_merchant = next((
-        re.sub(r"^(?:merchant|seller)\s*[:#]\s*", "", line, flags=re.I)
-        for _, _, _, line in located if re.match(r"^(?:merchant|seller)\s*[:#]", line, re.I)
-    ), "")
-    merchant = explicit_merchant or (merchant_candidates[0] if merchant_candidates else "")
-    if merchant:
-        candidates["merchant_name"] = _candidate("merchant_name", merchant[:180], "TEXT", 0.96 if explicit_merchant else 0.9, first[1], f"line {first[2]}")
+    merchant_ranking = _merchant_candidate_ranking(located, semantic_by_source_index)
+    selected_merchant = next((item for item in merchant_ranking if item["eligible"]), None)
+    if selected_merchant:
+        candidates["merchant_name"] = _candidate(
+            "merchant_name",
+            selected_merchant["value"],
+            "TEXT",
+            max(0.60, float(selected_merchant["score"])),
+            int(selected_merchant["source_page"]),
+            selected_merchant["source_location"],
+        )
     candidates.setdefault("source_scope", _candidate("source_scope", "DOMESTIC", "SCOPE", 0.86, 1, "USD receipt context"))
 
     receipt_math = _analyze_math(merchandise_lines, components, subtotal, final_paid)
@@ -393,6 +507,7 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
         "candidates": list(candidates.values()), "lines": merchandise_lines,
         "semantic_candidate_lines": receipt_lines,
         "semantic_lines": semantic_lines,
+        "merchant_candidate_ranking": merchant_ranking,
         "receipt_math": receipt_math,
         "metrics": {"structured_parsing_ms": round((time.perf_counter() - started) * 1000, 2)},
         "parser_version": PARSER_VERSION,

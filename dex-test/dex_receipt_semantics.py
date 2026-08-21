@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from typing import Mapping
 
 
-ENGINE_VERSION = "dex-receipt-semantic-v1"
-RULES_VERSION = "receipt-semantic-rules-v1"
+ENGINE_VERSION = "dex-receipt-semantic-v1-remediation2"
+RULES_VERSION = "receipt-semantic-rules-v2-remediation2"
 
 SEMANTIC_CLASSES = (
     "MERCHANDISE",
@@ -85,6 +85,96 @@ def _financial_label_words(line: str) -> str:
 def _has_product_context(words: str) -> bool:
     return bool(re.search(
         r"\b(?:booster|pack|box|deck|card|promo|starter|character|figure|sleeves?|playmat|bundle|display|set)\b",
+        words,
+    ))
+
+
+def _is_transaction_discount(words: str, amount: int | None) -> bool:
+    """Require financial adjustment evidence, not policy prose containing credit."""
+
+    if amount is None:
+        return False
+    return bool(
+        re.search(
+            r"\b(?:discount|coupon|savings|promo\s+credit|credit\s+applied|store\s+credit)\b",
+            words,
+        )
+        or re.search(r"\b\d+(?:\.\d+)?%\s+off\b", words)
+    )
+
+
+def _is_policy_prose(words: str, amount: int | None) -> bool:
+    """Recognize return/exchange policy language without inventing a credit event."""
+
+    if amount is not None:
+        return False
+    policy_subject = re.search(r"\b(?:returns?|refunds?|exchanges?|store\s+credit|credit\s+policy)\b", words)
+    policy_context = re.search(
+        r"\b(?:within|policy|only|accepted|eligible|required|receipt|purchase\s+date|all\s+sales\s+final|no\s+returns?)\b",
+        words,
+    )
+    return bool(policy_subject and policy_context)
+
+
+def _has_tax_label(words: str) -> bool:
+    """Recognize explicit and conservative OCR-near tax labels."""
+
+    if re.search(r"\b(?:sales|state|county|local|city|nj)?\s*tax\b", words):
+        return True
+    if re.search(r"\bvat\b", words):
+        return True
+    tokens = words.split()
+    # These bounded near-spellings cover common single-character OCR damage.
+    # They deliberately do not attempt to infer arbitrary short labels.
+    return any(re.fullmatch(r"(?:tx|t[a4][xk]|7ax|ta[kx])", token) for token in tokens)
+
+
+def _is_tender_identity(words: str, *, has_product_context: bool) -> bool:
+    strong_context = bool(re.search(
+        r"\b(?:payment|paid|sale|contactless|ending|last\s+four|apple\s+pay|google\s+pay|card\s+ending)\b",
+        words,
+    ))
+    brand = bool(re.search(
+        r"\b(?:visa|mastercard|master\s+card|mc|amex|american\s+express|discover|paypal|debit|credit\s+card)\b",
+        words,
+    ))
+    masked_or_last_four = bool(re.search(r"(?:\*{2,}\s*)?\b\d{4}\b", words))
+    standalone_method = bool(re.fullmatch(
+        r"(?:visa|mastercard|master\s+card|mc|amex|american\s+express|discover|paypal|cash|debit|credit\s+card|"
+        r"apple\s+pay|google\s+pay|contactless)(?:\s+(?:sale|payment))?",
+        words,
+    ))
+    return bool(
+        standalone_method
+        or (brand and (strong_context or masked_or_last_four) and not has_product_context)
+        or re.fullmatch(r"(?:apple\s+pay|google\s+pay|contactless|card\s+ending\s+\d{4})", words)
+    )
+
+
+def _is_payment_support_metadata(words: str) -> bool:
+    return bool(
+        re.match(r"^(?:auth(?:orization)?\s+code|approval\s+code)\b", words)
+        or re.match(r"^aid\b", words)
+        or re.fullmatch(r"(?:no\s+cvm|cvm(?:\s+result)?(?:\s+\w+)*)", words)
+    )
+
+
+def _is_address_or_transaction_metadata(text: str, words: str) -> bool:
+    if re.search(
+        r"\b\d{1,6}\s+(?:[A-Za-z0-9.'-]+\s+){0,6}"
+        r"(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|"
+        r"highway|hwy|broadway|parkway|pkwy|court|ct|terrace|ter|circle|cir|"
+        r"way|place|pl|route|rte)\b",
+        text,
+        re.I,
+    ):
+        return True
+    if re.search(r"\b[A-Za-z .'-]+,?\s+[A-Z]{2}\s+\d{5}(?:-\d{4})?\b", text):
+        return True
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", text):
+        return True
+    return bool(re.match(
+        r"^(?:order|receipt|invoice|transaction|register|terminal|cashier|clerk|store|phone|tel|date|time)\b",
         words,
     ))
 
@@ -166,9 +256,12 @@ def classify_source_line(
     if re.fullmatch(r"[-_=*.:|\s]{3,}", text):
         return make("STRUCTURAL", 0.98, "SEPARATOR")
 
+    if _is_policy_prose(words, amount):
+        return make("INFORMATIONAL_FOOTER", 0.97, "RETURN_OR_CREDIT_POLICY_PROSE")
+
     component_signals = [
-        bool(re.search(r"\b(?:state|county|local|sales)?\s*tax\b", words)),
-        bool(re.search(r"\b(?:discount|coupon|savings|promo\s+credit|store\s+credit)\b", words) or re.search(r"\b\d+(?:\.\d+)?%\s+off\b", words)),
+        _has_tax_label(words),
+        _is_transaction_discount(words, amount),
         bool(re.search(r"\b(?:fee|surcharge|service\s+charge|handling)\b", words)),
         bool(re.search(r"\b(?:shipping|delivery|freight)\b", words)),
     ]
@@ -179,6 +272,10 @@ def classify_source_line(
     # merchandise heuristic. The label comparison excludes only a trailing
     # currency amount, so product names containing words such as Cash, Visa,
     # Balance, or Card do not match these bounded phrases accidentally.
+    if _is_payment_support_metadata(words):
+        return make("STRUCTURAL", 0.98, "PAYMENT_SUPPORT_METADATA")
+    if _is_tender_identity(words, has_product_context=_has_product_context(words)):
+        return make("TENDER_PAYMENT_METHOD", 0.98, "TENDER_IDENTITY_OR_CONTEXT")
     if re.fullmatch(
         r"(?:total\s+by\s+(?:cash|card|credit|debit)|"
         r"(?:amount|amt)\s+tendered|cash\s+tendered|tendered?|"
@@ -202,15 +299,15 @@ def classify_source_line(
     if "subtotal" in words:
         return make("SUBTOTAL", 0.99, "SUBTOTAL_LABEL")
     if re.fullmatch(
-        r"(?:(?:grand\s+)?total|final\s+paid|(?:amount|amt)\s+due|balance\s+due|charged)",
+        r"(?:(?:grand\s+|order\s+|purchase\s+)?total|final\s+paid|(?:amount|amt)\s+due|balance\s+due|charged)",
         financial_label,
     ):
         return make("TOTAL", 0.99, "TOTAL_LABEL")
     if re.fullmatch(r"tx", financial_label) and has_trailing_amount:
         return make("TAX", 0.88, "TAX_ABBREVIATION", "AMOUNT_LABEL")
-    if re.search(r"\b(?:state|county|local|sales)?\s*tax\b", words):
+    if _has_tax_label(words):
         return make("TAX", 0.98, "TAX_LABEL", "PERCENTAGE_PRESENT" if "%" in words else "AMOUNT_LABEL")
-    if re.search(r"\b(?:discount|coupon|savings|promo\s+credit|store\s+credit)\b", words) or re.search(r"\b\d+(?:\.\d+)?%\s+off\b", words):
+    if _is_transaction_discount(words, amount):
         return make("DISCOUNT_CREDIT", 0.97, "DISCOUNT_OR_CREDIT_LABEL", "NEGATIVE_AMOUNT" if amount is not None and amount < 0 else "SIGNED_AMOUNT_UNKNOWN")
     if re.search(r"\b(?:fee|surcharge|service\s+charge|handling)\b", words):
         return make("FEE_SURCHARGE", 0.96, "FEE_OR_SURCHARGE_LABEL")
@@ -219,6 +316,10 @@ def classify_source_line(
 
     if re.search(r"\b(?:thank\s+you|returns?\s+(?:accepted|within)|visit\s+us|www\.|http|customer\s+service|all\s+sales\s+final)\b", text, re.I):
         return make("INFORMATIONAL_FOOTER", 0.92, "FOOTER_PHRASE")
+    if re.fullmatch(r"(?:customer|merchant)\s+copy", words):
+        return make("INFORMATIONAL_FOOTER", 0.96, "COPY_FOOTER_LABEL")
+    if _is_address_or_transaction_metadata(text, words):
+        return make("STRUCTURAL", 0.96, "ADDRESS_OR_TRANSACTION_METADATA")
     if re.search(r"[?]{2,}|\b(?:unreadable|illegible|smudged)\b", text, re.I):
         return make("UNKNOWN", 0.20, "UNREADABLE_OR_NOISY_OCR")
     if has_trailing_amount and re.fullmatch(
@@ -235,10 +336,18 @@ def classify_source_line(
         financial_label,
     ):
         return make("UNKNOWN", 0.30, "AMBIGUOUS_FINANCIAL_LINE")
+    if has_trailing_amount and "%" in text:
+        return make(
+            "UNKNOWN", 0.32,
+            "PERCENT_AMOUNT_FINANCIAL_UNKNOWN",
+            "AMBIGUOUS_FINANCIAL_LINE",
+        )
     if amount is not None and amount >= 0:
         return make("MERCHANDISE", 0.90, "POSITIVE_LINE_AMOUNT", "NO_COMPONENT_LABEL")
     if amount is not None and amount < 0:
         return make("UNKNOWN", 0.45, "UNLABELED_NEGATIVE_AMOUNT")
+    if source_line_index <= 6 and len(words.split()) <= 8 and amount is None:
+        return make("STRUCTURAL", 0.86, "EARLY_HEADER_OR_MERCHANT_TEXT")
     if len(words.split()) <= 8 and amount is None:
         return make("STRUCTURAL", 0.68, "SHORT_NONFINANCIAL_LINE")
     return make("UNKNOWN", 0.35, "NO_DETERMINISTIC_RULE")

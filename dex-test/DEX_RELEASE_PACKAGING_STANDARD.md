@@ -69,6 +69,21 @@ Every deploy package must contain:
 - `DEPLOY_SHA256SUMS.txt`
 - `DEPLOY_VERIFICATION.md`
 
+## GitHub Build-Context Provenance Gate
+
+`DEPLOYMENT-INTEGRITY-001` established that an accepted DEPLOY package can remain correct while an incomplete or stale GitHub upload causes Jenkins to build mixed backend/frontend source. Package verification alone is therefore not sufficient.
+
+After uploading the accepted DEPLOY contents and before selecting Jenkins **Build Now**:
+
+1. Record the resulting GitHub commit SHA.
+2. Obtain that exact commit in a disposable checkout or download.
+3. Verify the committed build context against the accepted package's `DEPLOY_SHA256SUMS.txt`.
+4. Require zero missing or mismatched release files.
+5. At minimum verify `app.py`, `static/index.html`, `static/app.js`, `static/styles.css`, and `Dockerfile`.
+6. Do not trigger Jenkins when any verification fails. Correct the upload/commit and repeat the gate.
+
+The accepted DEPLOY ledger—not an unverified ledger from the GitHub copy—is the comparison authority.
+
 ## Package and Privacy Boundaries
 
 The deploy package must exclude:
@@ -141,13 +156,18 @@ Every release handoff must include `OPERATOR_DEPLOY_INSTRUCTIONS.md`, written fo
 
 1. Open `*_DEPLOY`.
 2. Copy its contents into the GitHub `dex-test` root.
-3. Confirm the supplied Docker image tag.
-4. In Jenkins, select **Build Now**.
-5. Confirm the build and registry push succeed.
-6. In Portainer, update the image tag.
-7. Select **Update Stack**.
-8. Hard refresh DEX.
-9. Verify displayed release identity and health.
+3. Record the resulting GitHub commit SHA.
+4. Obtain that exact commit in a disposable checkout/download and verify it against the accepted `DEPLOY_SHA256SUMS.txt`; require zero missing or mismatched files, including the five critical files named above.
+5. Stop before Jenkins if verification fails.
+6. Confirm the supplied Docker image tag.
+7. In Jenkins, select **Build Now**.
+8. Confirm the build and registry push succeed; record the immutable image tag and digest where available.
+9. In Portainer, update the image tag.
+10. Select **Update Stack**.
+11. Verify `/api/health` and the visible sidebar report the same expected runtime version.
+12. Compare deployed hashes for `/app/app.py`, `/app/static/index.html`, `/app/static/app.js`, and `/app/static/styles.css` with the accepted DEPLOY ledger.
+
+`Dockerfile` belongs to the pre-build GitHub/build-context gate and may not be copied into `/app`. A backend/frontend version mismatch is a deployment-integrity failure, not a browser-cache assumption.
 
 Prefer the existing Jenkins and Portainer interfaces over unnecessary server commands.
 
@@ -176,4 +196,3 @@ Every future release must deliver:
 - rollback reference
 
 The primary requirement is to preserve the operator's simple deployment workflow while retaining full release integrity, provenance, and rollback evidence. Do not redesign Jenkins, Portainer, the Git layout, or production infrastructure without separate approval.
-

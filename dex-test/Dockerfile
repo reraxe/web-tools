@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="Dex" \
       org.opencontainers.image.description="Digital Encyclopedia Xchange TCG inventory" \
-      org.opencontainers.image.version="v2.3-test-inventory-intelligence-phase1-remediation1"
+      org.opencontainers.image.version="v2.3-test-inventory-intelligence-phase1-remediation2"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
