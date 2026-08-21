@@ -669,14 +669,17 @@ function catalogIdentity(line) {
 }
 
 function wizardAcquireScreen() {
-  return `<section class="wizard-screen" data-viewport-key="wizard-acquire"><div class="wizard-heading"><span>Step 1</span><h2 id="wizard-screen-title" tabindex="-1">What did you acquire?</h2><p>Choose the commercial product type. You can add different product lines to the same acquisition on the next screen.</p></div>
+  return `<section class="wizard-screen" data-viewport-key="wizard-acquire"><div class="wizard-heading"><span>Step 1</span><h2 id="wizard-screen-title" tabindex="-1">Start with the receipt</h2><p>Scan or upload the receipt. DEX will extract purchase facts, identify known products, reconcile the printed math, and ask only genuine business questions.</p></div>
+    <section class="receipt-first-start"><div><span class="eyebrow">Recommended</span><h3>Scan receipt → Review → Confirm</h3><p>JPG, JPEG, PNG, and text-layer PDF processing stays private and local. Original files are never modified.</p></div>${sourceDocumentPanel()}</section>
+    <details class="manual-acquisition-start" data-disclosure-key="acquisition-${state.activeAcquisition.acquisition.id}-manual-start"><summary>Advanced / Manual entry</summary><p>Use this for damaged, handwritten, or unreadable receipts, or when no receipt is available.</p>
+    <div class="wizard-heading"><h3>What did you acquire?</h3><p>Choose the commercial product type. You can add different product lines to the same acquisition on the next screen.</p></div>
     <div class="choice-grid" role="group" aria-label="Product type">
       ${[
         ["SINGLE_CARDS", "Single Cards", "A known or provisional lot of individual cards. Identify now or later."],
         ["PACK_PRODUCT", "Pack Product", "Scan a UPC for fast identification or enter the product manually."],
         ["SEALED_PRODUCT", "Sealed Product", "Scan a UPC for boxes, decks, collections, and other sealed products."],
       ].map(([value, label, copy]) => `<button class="choice-card" data-action="choose-acquisition-type" data-product-class="${value}">${icon(productClassIcon(value))}<strong>${label}</strong><span>${copy}</span></button>`).join("")}
-    </div>
+    </div></details>
     <div class="wizard-actions"><button class="button secondary" data-action="back-acquisitions">${icon("arrow-left")}Save incomplete & exit</button></div>
   </section>`;
 }
@@ -758,7 +761,7 @@ function sourceDocumentPanel() {
     return `<article class="source-document-row ${document.storage_status.toLowerCase()}"><div>${icon(document.detected_mime_type === "application/pdf" ? "file-text" : "image")}<span><strong>${escapeHtml(document.original_filename)}</strong><small>${escapeHtml(statusLabel)}${document.integrity_status === "VERIFIED" ? " · SHA-256 verified" : ""}</small>${failed ? `<em>${escapeHtml(document.error_message || "Document could not be stored")}</em>` : ""}</span></div><div class="source-document-actions">${stored && !tombstoned ? receiptJobControls(document, job) : ""}${stored ? `<button type="button" class="button tertiary" data-action="view-source-document" data-id="${document.id}">${icon("eye")}View</button>` : ""}${failed ? `<button type="button" class="button secondary" data-action="retry-source-document" data-id="${document.id}">${icon("rotate-ccw")}Retry upload</button>` : ""}${!tombstoned ? `<button type="button" class="button tertiary" data-action="remove-source-document" data-id="${document.id}">${icon("x")}Remove</button>` : ""}</div></article>`;
   }).join("");
   const confirmed = acquisition.state === "READY_FOR_INTAKE";
-  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No receipt currently attached"}</strong><small>Private local extraction can suggest purchase facts from text-based PDFs. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document">${icon("upload")}Upload</button></div></div>
+  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No receipt currently attached"}</strong><small>Private local extraction supports JPG, JPEG, PNG, and text-layer PDF. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document">${icon("upload")}Upload</button></div></div>
     <input id="source-document-camera" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/heic,image/heif" capture="environment">
     <input id="source-document-files" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf" multiple>
     <input id="source-document-retry" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf">
@@ -792,7 +795,7 @@ function purchaseDetailsForm() {
       ${sourceDocumentPanel()}
       <details class="additional-purchase" data-disclosure-key="acquisition-${acquisition.id}-additional-purchase"><summary>Additional purchase details</summary><label>Manual order / receipt reference<input name="order_reference" value="${escapeHtml(acquisition.order_reference)}" placeholder="Optional order number">${receiptFieldSuggestion("order_reference")}</label></details>
     </div></details>
-    <details class="purchase-disclosure purchase-economics" data-disclosure-key="acquisition-${acquisition.id}-purchase-amounts" data-disclosure-force-open="${purchaseAmountsAttention}" ${purchaseAmountsAttention ? "open" : ""}><summary><span><strong>Purchase amounts</strong><small>Final USD is authoritative only after confirmation. Blank remains Unknown.</small></span><span class="badge ${purchaseAmountsAttention ? "amber" : "green"}">${purchaseAmountsAttention ? "Needs Attention" : "Complete / clean"}</span></summary><div class="purchase-disclosure-body"><div class="form-grid">
+    <details class="purchase-disclosure purchase-economics" data-disclosure-key="acquisition-${acquisition.id}-purchase-amounts" data-disclosure-force-open="${purchaseAmountsAttention}" ${purchaseAmountsAttention ? "open" : ""}><summary><span><strong>Advanced / Manual purchase amounts</strong><small>Receipt-derived values populate automatically. Blank remains Unknown.</small></span><span class="badge ${purchaseAmountsAttention ? "amber" : "green"}">${purchaseAmountsAttention ? "Needs Attention" : "Complete / clean"}</span></summary><div class="purchase-disclosure-body"><div class="form-grid">
       ${moneyField("purchase_subtotal", "Subtotal")}${moneyField("acquisition_tax", "Tax")}${moneyField("inbound_shipping", "Shipping")}${moneyField("acquisition_fees", "Fees")}
       ${international ? `${moneyField("import_duties", "Import duties")}${moneyField("brokerage", "Brokerage")}` : ""}
       ${moneyField("acquisition_discount", "Discounts / credits")}${moneyField("final_usd_paid", "Final USD actually paid", "Missing cost stays Unknown; DEX performs no FX conversion.")}
@@ -986,8 +989,47 @@ function receiptCandidateLabel(field) {
     original_foreign_amount_minor: "Original foreign amount", purchase_subtotal_cents: "Subtotal",
     acquisition_tax_cents: "Tax", inbound_shipping_cents: "Shipping", acquisition_fees_cents: "Fees",
     import_duties_cents: "Duties", brokerage_cents: "Brokerage", acquisition_discount_cents: "Discounts",
-    final_usd_paid_cents: "Final paid",
+    final_usd_paid_cents: "Final paid", payment_method: "Payment method",
   })[field] || titleCase(field);
+}
+
+function receiptMathPanel(math) {
+  if (!math) return "";
+  const exact = math.status === "RECONCILED_EXACT";
+  const components = (math.components || []).map((item) => `<li><span>${escapeHtml(item.label || titleCase(item.kind))}</span><strong>${formatCents(item.signed_cents)}</strong><small>${escapeHtml(titleCase(item.math_role || "Unresolved"))}</small></li>`).join("");
+  return `<section class="receipt-understood ${exact ? "exact" : "attention"}" role="status"><div class="receipt-understood-head"><div><span>What DEX understood</span><h3>${exact ? "Receipt reconciled exactly" : "Receipt math needs attention"}</h3><p>${exact ? "Printed subtotal components were distinguished from amounts outside the subtotal. Included fees or discounts will not be counted twice." : "DEX will not guess between competing receipt interpretations."}</p></div><span class="badge ${exact ? "green" : "amber"}">${escapeHtml(titleCase(math.status))}</span></div><div class="receipt-math-summary"><div><span>Merchandise</span><strong>${formatCents(math.merchandise_total_cents)}</strong></div><div><span>Printed subtotal</span><strong>${formatCents(math.printed_subtotal_cents)}</strong></div><div><span>Final paid</span><strong>${formatCents(math.final_paid_cents)}</strong></div><div><span>Difference</span><strong>${formatCents(math.difference_cents)}</strong></div></div>${components ? `<details><summary>How printed components were interpreted</summary><ul>${components}</ul></details>` : ""}</section>`;
+}
+
+function receiptSemanticReview(review) {
+  const lines = review?.lines || [];
+  if (!lines.length) return "";
+  const classes = [
+    "MERCHANDISE", "DISCOUNT_CREDIT", "FEE_SURCHARGE", "TAX", "SHIPPING",
+    "SUBTOTAL", "TOTAL", "TENDER_PAYMENT_METHOD", "PAYMENT_SUMMARY",
+    "INFORMATIONAL_FOOTER", "STRUCTURAL", "UNKNOWN",
+  ];
+  const rows = lines.map((line) => {
+    const confidence = line.numeric_confidence === null || line.numeric_confidence === undefined
+      ? "Confidence unavailable"
+      : `${Math.round(Number(line.numeric_confidence) * 100)}% parser confidence`;
+    const amount = line.signed_amount_cents === null || line.signed_amount_cents === undefined
+      ? "No amount"
+      : formatCents(line.signed_amount_cents);
+    const confirmed = line.confidence_state === "OPERATOR_CONFIRMED";
+    const statusClass = confirmed ? "green" : ["UNRESOLVED", "CONFLICTING"].includes(line.confidence_state) ? "amber" : "";
+    const options = classes.map((value) => `<option value="${value}" ${line.semantic_class === value ? "selected" : ""}>${escapeHtml(titleCase(value))}</option>`).join("");
+    return `<article class="receipt-semantic-line ${confirmed ? "confirmed" : ""}" data-viewport-key="receipt-semantic-${escapeHtml(line.semantic_uuid)}">
+      <div class="receipt-semantic-source"><span>Source line ${line.source_line_index} · page ${line.source_page || "Unknown"}</span><strong>${escapeHtml(line.normalized_text)}</strong><small>${escapeHtml(line.source_location || "Location unavailable")} · ${amount} · ${escapeHtml(line.parser_version)}</small></div>
+      <div class="receipt-semantic-result"><span class="badge ${statusClass}">${escapeHtml(titleCase(line.semantic_class))}</span><strong>${escapeHtml(titleCase(line.confidence_state))}</strong><small>${confidence} · ${line.operator_confirmation_required ? "Operator confirmation requested" : "No confirmation required"} · ${line.product_match_eligible ? "Product-match eligible" : "Excluded from product matching"}</small></div>
+      <form class="receipt-semantic-form" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}" data-current-class="${escapeHtml(line.semantic_class)}">
+        <label>Semantic class<select name="semantic_class" aria-label="Semantic class for source line ${line.source_line_index}">${options}</select></label>
+        <label>Correction reason<select name="reason_code"><option value="OPERATOR_REVIEW">Operator review</option><option value="PARSER_MISCLASSIFIED">Parser misclassified</option><option value="AMBIGUOUS_SOURCE">Ambiguous source line</option><option value="OTHER">Other</option></select></label>
+        <label>Notes<input name="notes" maxlength="1000" placeholder="Optional review note"></label>
+        <div><button class="button secondary">${line.semantic_class === "UNKNOWN" ? "Save review" : confirmed ? "Update classification" : "Confirm / change"}</button>${line.semantic_class !== "UNKNOWN" ? `<button type="button" class="button tertiary" data-action="mark-semantic-unresolved" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}">Mark unresolved</button>` : ""}</div>
+      </form>
+    </article>`;
+  }).join("");
+  return `<details class="receipt-semantic-review" open data-disclosure-key="receipt-semantic-review"><summary>Receipt line meanings · ${lines.length} source line(s) · ${review.needs_confirmation_count || 0} need review</summary><div class="receipt-semantic-intro"><strong>Semantic suggestions only</strong><p>Line meaning is separate from business purpose, inventory identity, and landed-cost authority. Every correction preserves its earlier interpretation.</p></div><div class="receipt-semantic-lines">${rows}</div></details>`;
 }
 
 function receiptIntelligenceReview() {
@@ -1005,28 +1047,35 @@ function receiptIntelligenceReview() {
     const match = line.best_match;
     const matchName = match ? (match.product_name || `Acquisition line ${match.acquisition_line_id}`) : "No product match";
     const needsMatch = match?.match_method === "FUZZY_TEXT" && match.status !== "ACCEPTED";
-    return `<article class="receipt-review-line" data-viewport-key="receipt-line-${line.id}"><div><span>Receipt line ${line.line_sequence}</span><strong>${escapeHtml(line.description)}</strong><small>${line.quantity || "Unknown"} unit(s) · ${formatCents(line.line_total_cents)} · ${escapeHtml(titleCase(line.confidence_band))} confidence</small></div><div><span>Product match</span><strong>${escapeHtml(matchName)}</strong><small>${match ? `${escapeHtml(titleCase(match.match_method))} · ${Math.round(Number(match.confidence) * 100)}%${match.authoritative_identity ? " · authoritative identity" : " · suggestion only"}` : "Resolve manually before automatic allocation"}</small>${needsMatch ? `<button type="button" class="button secondary" data-action="accept-receipt-match" data-id="${match.id}">Accept suggested match</button>` : ""}</div><form class="receipt-classification-form" data-line-id="${line.id}"><label>Classification<select name="classification" aria-label="Classification for ${escapeHtml(line.description)}">${[
+    const question = line.classification === "UNRESOLVED" ? `<section class="receipt-business-question" aria-labelledby="receipt-question-${line.id}"><span>Needs Attention</span><strong id="receipt-question-${line.id}">How should ${escapeHtml(line.description)} be treated?</strong><div><button type="button" class="button secondary" data-action="receipt-classify-choice" data-id="${line.id}" data-classification="INVENTORY">Inventory for resale</button><button type="button" class="button secondary" data-action="receipt-classify-choice" data-id="${line.id}" data-classification="BUSINESS_NONINVENTORY">Business noninventory</button><button type="button" class="button secondary" data-action="receipt-classify-choice" data-id="${line.id}" data-classification="PERSONAL_NONBUSINESS">Personal / nonbusiness</button></div></section>` : `<span class="badge green">${escapeHtml(titleCase(line.classification))}</span>`;
+    return `<article class="receipt-review-line" data-viewport-key="receipt-line-${line.id}"><div><span>Receipt line ${line.line_sequence}</span><strong>${escapeHtml(line.description)}</strong><small>${line.quantity || "Unknown"} unit(s) · ${formatCents(line.line_total_cents)} · ${escapeHtml(titleCase(line.confidence_band))} confidence</small></div><div><span>Product match</span><strong>${escapeHtml(matchName)}</strong><small>${match ? `${escapeHtml(titleCase(match.match_method))} · ${Math.round(Number(match.confidence) * 100)}%${match.authoritative_identity ? " · deterministic catalog identity" : " · suggestion only"}` : "Resolve manually before automatic allocation"}</small>${needsMatch ? `<button type="button" class="button secondary" data-action="accept-receipt-match" data-id="${match.id}">Accept suggested match</button>` : ""}</div>${question}<details class="receipt-line-advanced"><summary>Advanced classification</summary><form class="receipt-classification-form" data-line-id="${line.id}"><label>Classification<select name="classification" aria-label="Classification for ${escapeHtml(line.description)}">${[
       ["UNRESOLVED", "Unresolved"], ["INVENTORY", "Inventory"], ["SHIPPING_FEE", "Shipping / Fee"], ["BUSINESS_NONINVENTORY", "Business Noninventory"], ["PERSONAL_NONBUSINESS", "Personal / Nonbusiness"], ["DUPLICATE_EXTRACTION", "Duplicate Extraction"],
-    ].map(([value, label]) => `<option value="${value}" ${line.classification === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="button tertiary">Save</button></form></article>`;
+    ].map(([value, label]) => `<option value="${value}" ${line.classification === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><button class="button tertiary">Save</button></form></details></article>`;
   }).join("");
   const proposal = intel.allocation_proposal;
   const lineNames = new Map(activeAcquisitionLines().map((line) => [Number(line.id), line.product_name || productClassLabel(line.product_class)]));
   const allocations = proposal ? proposal.allocations.map((item) => `<li><span>${escapeHtml(lineNames.get(Number(item.acquisition_line_id)) || `Line ${item.acquisition_line_id}`)}</span><span>Merchandise ${formatCents(item.direct_merchandise_cents)} + shared ${formatCents(item.shared_component_cents)}</span><strong>${formatCents(item.landed_cost_cents)}</strong></li>`).join("") : "";
   const warnings = (intel.warnings || []).map((warning) => `<li><code>${escapeHtml(warning.code)}</code><span>${escapeHtml(warning.message)}${warning.code === "RECEIPT_ALLOCATION_UNRESOLVED" && intel.manual_fallback_selected ? " · Informational after your manual-facts decision; HF1 accounting still controls confirmation." : ""}</span></li>`).join("");
+  const policyRequired = intel.allocation_policy?.status === "POLICY_REQUIRED";
+  const policyComponents = policyRequired ? (intel.allocation_policy.preserved_components || []).map((item) => `<li><span>${escapeHtml(item.label || titleCase(item.kind))}</span><strong>${formatCents(item.signed_cents)}</strong><small>${escapeHtml(titleCase(item.math_role || "Unresolved"))}</small></li>`).join("") : "";
   const unavailableAllocation = !proposal && activeAcquisitionLines().length > 1;
-  const allocationFallback = unavailableAllocation && intel.manual_fallback_selected
+  const allocationFallback = policyRequired
+    ? `<div class="receipt-allocation unresolved receipt-policy-required" role="alert"><strong>Final landed-cost allocation: Policy required</strong><p>Receipt extraction, product matching, arithmetic, and business-purpose classification are complete. DEX will not assume how shared purchase components should be divided between inventory and noninventory.</p>${policyComponents ? `<ul>${policyComponents}</ul>` : ""}<small>Pending policy: sales tax, transaction/card fees, shipping/freight, purchase-level discounts or credits, and cent-rounding/remainder handling.</small></div>`
+    : unavailableAllocation && intel.manual_fallback_selected
     ? `<div class="receipt-allocation manual"><strong>Manual line allocation selected.</strong><p>Confirm each product-line landed cost and complete both reconciliation equations. Receipt extraction remains failed/unavailable and does not supply authority.</p></div>`
     : unavailableAllocation && intel.manual_fallback_available
       ? receiptManualFallbackPanel()
       : unavailableAllocation
         ? `<div class="receipt-allocation unresolved"><strong>Automatic line allocation is not ready.</strong><p>Resolve receipt classifications, product matches, quantities, conflicts, and final USD first.</p><button type="button" class="button secondary" data-action="generate-receipt-allocation">Try exact allocation</button></div>`
         : "";
-  return `<section class="receipt-review" data-viewport-key="receipt-intelligence-review"><div class="section-header"><div><span>Receipt Intelligence</span><h3>Review extracted suggestions</h3><p>Suggestions and allocation proposals are not authoritative. Your final acquisition confirmation is still required.</p></div><span class="badge ${intel.status === "READY_TO_REVIEW" ? "green" : "amber"}">${escapeHtml(titleCase(intel.status))}</span></div>
+  return `<section class="receipt-review" data-viewport-key="receipt-intelligence-review"><div class="section-header"><div><span>Receipt Intelligence</span><h3>Review what DEX understood</h3><p>DEX performs deterministic receipt math and asks only unresolved business questions. Final acquisition confirmation remains the authority boundary.</p></div><span class="badge ${intel.status === "READY_TO_REVIEW" ? "green" : "amber"}">${escapeHtml(titleCase(intel.status))}</span></div>
+    ${receiptMathPanel(intel.receipt_math)}
     <details><summary>Source and extraction status · ${(intel.jobs || []).filter((job) => job.status === "COMPLETED").length} ready</summary><ul class="receipt-job-list">${jobs}</ul></details>
     ${historical}
+    ${receiptSemanticReview(intel.semantic_review)}
     ${candidates ? `<details><summary>Candidate purchase facts · ${Object.values(intel.candidate_groups || {}).flat().length} suggestion(s)</summary><div class="receipt-candidates">${candidates}</div></details>` : ""}
     ${receiptLines ? `<details><summary>Receipt product lines and classifications · ${(intel.receipt_lines || []).length} line(s)</summary><div class="receipt-review-lines">${receiptLines}</div></details>` : ""}
-    ${proposal ? `<details><summary>Suggested landed-cost allocation · ${formatCents(proposal.total_allocated_cents)} · exact</summary><div class="receipt-allocation"><div><span>Method</span><strong>Direct line prices + shared costs proportional by merchandise value</strong><small>${escapeHtml(proposal.calculation_version)} · remainder cents use immutable acquisition-line IDs</small></div><ul>${allocations}</ul><p>Total allocated ${formatCents(proposal.total_allocated_cents)} · Difference ${formatCents(proposal.difference_cents)} · Non-authoritative until acquisition confirmation.</p></div></details>` : allocationFallback}
+    ${proposal ? `<details open><summary>Suggested landed-cost allocation · ${formatCents(proposal.total_allocated_cents)} · exact</summary><div class="receipt-allocation"><div><span>Method</span><strong>Receipt-value proportional</strong><small>${escapeHtml(proposal.explanation || "Net transaction components are allocated proportionally by merchandise value.")} ${escapeHtml(proposal.calculation_version)} · deterministic remainder cents</small></div><ul>${allocations}</ul>${proposal.input_facts?.excluded_noninventory_cents ? `<p>Explicitly classified noninventory: ${formatCents(proposal.input_facts.excluded_noninventory_cents)} · ${escapeHtml(titleCase(proposal.input_facts.noninventory_treatment_code))}</p>` : ""}<p>Total inventory basis ${formatCents(proposal.total_allocated_cents)} · Difference ${formatCents(proposal.difference_cents)} · Non-authoritative until acquisition confirmation.</p></div></details>` : allocationFallback}
     ${warnings ? `<ul class="attention-reasons receipt-warnings">${warnings}</ul>` : ""}
     <p class="receipt-privacy-note">${icon("shield-check")}Extraction is local and provider-neutral. DEX stores normalized candidates and provenance—not raw OCR text—and sends nothing to an external service.</p>
   </section>`;
@@ -1251,6 +1300,7 @@ function bindAcquisitionWizardForms() {
   document.querySelectorAll(".catalog-search-form").forEach((form) => form.addEventListener("submit", searchCatalogForm));
   document.querySelector("#unknown-product-form")?.addEventListener("submit", identifyUnknownProductForm);
   document.querySelectorAll(".receipt-classification-form").forEach((form) => form.addEventListener("submit", saveReceiptClassification));
+  document.querySelectorAll(".receipt-semantic-form").forEach((form) => form.addEventListener("submit", saveReceiptSemanticDecision));
 }
 
 async function receiptMutation(path, options = {}) {
@@ -1311,6 +1361,40 @@ async function saveReceiptClassification(event) {
   event.preventDefault();
   const form = event.currentTarget;
   return receiptMutation(`/api/receipt-lines/${form.dataset.lineId}/classification`, { prefix: "RECEIPT-CLASSIFY", fields: { classification: form.elements.classification.value }, success: "Receipt-line classification saved." });
+}
+
+async function chooseReceiptClassification(lineId, classification) {
+  return receiptMutation(`/api/receipt-lines/${lineId}/classification`, {
+    prefix: "RECEIPT-BUSINESS-CLASSIFICATION",
+    fields: { classification },
+    success: "Business classification saved. DEX recalculated the acquisition.",
+  });
+}
+
+async function saveReceiptSemanticDecision(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const selected = form.elements.semantic_class.value;
+  const current = form.dataset.currentClass;
+  const action = selected === "UNKNOWN" ? "MARK_UNRESOLVED" : selected === current ? "CONFIRM" : "CHANGE";
+  return receiptMutation(`/api/receipt-semantic-lines/${encodeURIComponent(form.dataset.semanticUuid)}/decision`, {
+    prefix: "RECEIPT-SEMANTIC",
+    fields: {
+      action,
+      semantic_class: selected,
+      reason_code: form.elements.reason_code.value,
+      notes: form.elements.notes.value,
+    },
+    success: action === "CONFIRM" ? "Receipt meaning confirmed; original evidence retained." : "Receipt meaning updated; correction history retained.",
+  });
+}
+
+async function markReceiptSemanticUnresolved(semanticUuid) {
+  return receiptMutation(`/api/receipt-semantic-lines/${encodeURIComponent(semanticUuid)}/decision`, {
+    prefix: "RECEIPT-SEMANTIC-UNRESOLVED",
+    fields: { action: "MARK_UNRESOLVED", reason_code: "OPERATOR_UNRESOLVED", notes: "Left unresolved during semantic review" },
+    success: "Receipt meaning remains unresolved; no product match authority was created.",
+  });
 }
 
 async function generateReceiptAllocation() {
@@ -2149,6 +2233,7 @@ async function uploadSourceDocuments(fileList, captureMethod) {
   const viewport = captureLogicalViewport();
   let attached = 0;
   let failed = 0;
+  let extractionAttempts = 0;
   try {
     for (const file of files) {
       const data = await fileToDataUrl(file);
@@ -2165,11 +2250,33 @@ async function uploadSourceDocuments(fileList, captureMethod) {
         return response.acquisition_payload;
       });
       if (response.upload_failed) failed += 1;
-      else if (!response.duplicate) attached += 1;
+      else if (!response.duplicate) {
+        attached += 1;
+        if (response.document?.storage_status === "STORED" && response.document?.document_role === "RECEIPT") {
+          await enqueueAcquisitionMutation(async (current) => {
+            const extraction = await api(`/api/acquisition-documents/${response.document.id}/extractions`, {
+              method: "POST",
+              body: JSON.stringify({
+                request_id: requestId("RECEIPT-ZERO-ENTRY"),
+                expected_revision: current.acquisition.revision,
+                auto_apply: true,
+              }),
+            });
+            extractionAttempts += 1;
+            return extraction.acquisition_payload;
+          });
+        }
+      }
       else toast(`${file.name} already exists on this acquisition.`);
     }
-    if (attached) toast(`${attached} source document(s) attached privately.`);
+    if (attached) toast(`${attached} source document(s) attached privately${extractionAttempts ? " and analyzed locally" : ""}.`);
     if (failed) toast(`${failed} upload(s) need attention. Manual entry remains available.`, "error");
+    if (extractionAttempts) {
+      await enqueueAcquisitionMutation((current) => api(`/api/acquisitions/${current.acquisition.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ request_id: requestId("RECEIPT-REVIEW-STEP"), expected_revision: current.acquisition.revision, wizard_step: "REVIEW" }),
+      }));
+    }
     await renderAcquisitionWizard(state.activeAcquisition.acquisition.id, { data: state.activeAcquisition, viewport });
   } catch (error) { toast(error.message, "error"); }
 }
@@ -3261,6 +3368,8 @@ document.addEventListener("click", async (event) => {
     if (action === "use-receipt-candidate") await useReceiptCandidate(actionEl.dataset.id);
     if (action === "reject-receipt-candidate") await rejectReceiptCandidate(actionEl.dataset.id);
     if (action === "accept-receipt-match") await acceptReceiptMatch(actionEl.dataset.id);
+    if (action === "receipt-classify-choice") await chooseReceiptClassification(actionEl.dataset.id, actionEl.dataset.classification);
+    if (action === "mark-semantic-unresolved") await markReceiptSemanticUnresolved(actionEl.dataset.semanticUuid);
     if (action === "generate-receipt-allocation") await generateReceiptAllocation();
     if (action === "retry-source-document") {
       const input = document.querySelector("#source-document-retry");
@@ -3373,6 +3482,14 @@ window.addEventListener("beforeunload", stopCamera);
 
 async function boot() {
   refreshIcons();
+  try {
+    const health = await api("/api/health");
+    const runtimeVersion = document.querySelector("[data-runtime-version]");
+    if (runtimeVersion) runtimeVersion.textContent = health.version || "Version unavailable";
+  } catch (error) {
+    const runtimeVersion = document.querySelector("[data-runtime-version]");
+    if (runtimeVersion) runtimeVersion.textContent = "Version unavailable";
+  }
   try { await loadDashboard(); } catch (error) { /* Main view reports connection failures. */ }
   const requested = location.hash.slice(1);
   setView(titles[requested] ? requested : "inventory");
