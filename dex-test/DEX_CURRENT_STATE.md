@@ -1,8 +1,10 @@
 # Dex Current State
 
-Baseline date: 2026-08-15  
-Known-good restore baseline: `v2.1-test` Phase 7C  
-Active development lane: `v2.2-test` Inbound 2.0; Phase 7 SAM Recognition + Human Review implemented pending operator QA
+Baseline date: 2026-08-21  
+Known-good restore baseline: `v2.2-test RC3 HF3 ZERO ENTRY`  
+Active development lane: `v2.3-test` Inventory Intelligence Phase 1; local test workspace only, not deployed
+
+HF3 remains frozen and is the immediate rollback checkpoint. Phase 1 adds a non-authoritative semantic layer before product matching, with migration 0016 and an operator review surface. It does not change receipt allocation, mixed-purchase `POLICY_REQUIRED`, SAM, inventory authority, economics formulas, or production deployment configuration.
 
 This document is the handoff baseline for future Dex development. It describes the observed implementation; plans and patch notes may describe broader intent.
 
@@ -16,6 +18,7 @@ Dex is a private, single-user TCG inventory system organized as a compact monoli
 - `dex_rip.py`: Phase 4 explicit rip intake, partial-unit cost, allocation previews, finalization, and append-only card/bulk basis events.
 - `dex_sealed.py`: Phase 5 exact sealed-unit ledger, deterministic unit basis, rip/sale claims, sealed-order economics, quantity adjustment, and atomic sale Undo.
 - `dex_receipts.py`: provider-neutral private receipt extraction, normalized non-authoritative candidates, receipt-line matching/classification, field provenance, and versioned exact-cent allocation proposals.
+- `dex_receipt_semantics.py`: deterministic source-line semantics, confidence/provenance, merchandise-only matching eligibility, and append-only confirmation/correction history.
 - `dex_batch_economics.py`: Phase 6 query-only authoritative batch/group calculations, stable sale attribution, valuation coverage/freshness, reconciliation, and export rows.
 - `dex_corrections.py`: Phase 7A append-only correction/disposition ledger service, current corrected values, operational-loss treatment, durable tombstones, and linked inverse reversals.
 - `dex_post_sale.py`: Phase 7B immutable sale-adjustment ledger, effective financial facts, exact return/restoration state transitions, de-duplication, and linked inverses.

@@ -29,6 +29,12 @@ from dex_receipt_ocr import (
     provider_health as image_ocr_health,
 )
 from dex_receipt_parser import PARSER_VERSION, parse_receipt_pages
+from dex_receipt_semantics import (
+    current_semantic_lines,
+    persist_initial_semantics,
+    semantic_allows_receipt_line,
+    semantic_review_payload,
+)
 
 
 EXTRACTION_VERSION = "receipt-local-zero-entry-v1"
@@ -283,6 +289,7 @@ def _job_payload(db: sqlite3.Connection, job_id: int) -> dict:
     job["receipt_lines"] = [receipt_line_payload(db, item) for item in db.execute(
         "SELECT * FROM receipt_lines WHERE job_id=? ORDER BY line_sequence,id", (job_id,)
     ).fetchall()]
+    job["semantic_lines"] = current_semantic_lines(db, job_id=job_id)
     job["raw_text_available"] = False
     analysis_row = db.execute(
         """SELECT payload FROM receipt_extraction_events
@@ -440,8 +447,10 @@ def _persist_extraction(db: sqlite3.Connection, job_id: int, acquisition_id: int
              fact["value_type"], fact["confidence"], fact["confidence_band"], fact.get("source_page"),
              fact.get("source_location", "")[:160], now, now),
         )
-    for sequence, line in enumerate(extracted.get("lines", []), 1):
-        db.execute(
+    receipt_line_ids_by_source_index: dict[int, int] = {}
+    persisted_lines = extracted.get("semantic_candidate_lines", extracted.get("lines", []))
+    for sequence, line in enumerate(persisted_lines, 1):
+        cursor = db.execute(
             """INSERT INTO receipt_lines
                (line_uuid,job_id,acquisition_id,document_id,line_sequence,description,quantity,unit_price_cents,
                 line_total_cents,currency,extracted_identifier,manufacturer_product_code,confidence,confidence_band,
@@ -452,6 +461,17 @@ def _persist_extraction(db: sqlite3.Connection, job_id: int, acquisition_id: int
              line.get("extracted_identifier", ""), line.get("manufacturer_product_code", ""), line["confidence"],
              line["confidence_band"], line.get("source_page"), line.get("source_location", "")[:160], now, now),
         )
+        source_index = line.get("source_line_index")
+        if source_index is not None:
+            receipt_line_ids_by_source_index[int(source_index)] = int(cursor.lastrowid)
+    persist_initial_semantics(
+        db,
+        job_id=job_id,
+        acquisition_id=acquisition_id,
+        document_id=document_id,
+        semantic_lines=list(extracted.get("semantic_lines", [])),
+        receipt_line_ids_by_source_index=receipt_line_ids_by_source_index,
+    )
 
 
 def _catalog_match_for_receipt(db: sqlite3.Connection, receipt: Mapping) -> tuple[sqlite3.Row, str, float] | None:
@@ -491,6 +511,8 @@ def _prepare_catalog_lines(db: sqlite3.Connection, acquisition_id: int, job_id: 
     changed = False
     for receipt_row in receipts:
         receipt = dict(receipt_row)
+        if not semantic_allows_receipt_line(db, int(receipt["id"])):
+            continue
         match = _catalog_match_for_receipt(db, receipt)
         if not match:
             continue
@@ -568,6 +590,8 @@ def _match_receipt_lines(db: sqlite3.Connection, acquisition_id: int, job_id: in
     receipt_lines = db.execute("SELECT * FROM receipt_lines WHERE job_id=? ORDER BY id", (job_id,)).fetchall()
     now = utcnow()
     for receipt in receipt_lines:
+        if not semantic_allows_receipt_line(db, int(receipt["id"])):
+            continue
         if db.execute(
             "SELECT 1 FROM receipt_line_matches WHERE receipt_line_id=? AND status<>'REJECTED' LIMIT 1",
             (receipt["id"],),
@@ -619,6 +643,33 @@ def _match_receipt_lines(db: sqlite3.Connection, acquisition_id: int, job_id: in
         _event(db, acquisition_id, f"{request_prefix}:{receipt['id']}", "RECEIPT_LINE_MATCH_PROPOSED",
                job_id=job_id, receipt_line_id=int(receipt["id"]),
                payload={"match_id": int(cursor.lastrowid), "acquisition_line_id": int(best[0]["id"]), "method": best[1], "confidence": best[2], "status": status})
+
+
+def reconcile_semantic_merchandise_line(
+    db: sqlite3.Connection, semantic_result: Mapping, request_prefix: str
+) -> None:
+    """Reconcile matching eligibility after an explicit semantic decision."""
+
+    receipt_line_id = semantic_result.get("receipt_line_id")
+    if not receipt_line_id:
+        return
+    acquisition_id = int(semantic_result["acquisition_id"])
+    job_id = int(semantic_result["job_id"])
+    if not semantic_allows_receipt_line(db, int(receipt_line_id)):
+        active_proposal = db.execute(
+            "SELECT 1 FROM receipt_allocation_proposals WHERE acquisition_id=? "
+            "AND status IN ('PROPOSED','APPLIED') LIMIT 1",
+            (acquisition_id,),
+        ).fetchone()
+        if active_proposal:
+            _supersede_allocation_proposals(db, acquisition_id)
+            db.execute(
+                "UPDATE acquisitions SET revision=revision+1,updated_at=? WHERE id=?",
+                (utcnow(), acquisition_id),
+            )
+        return
+    _prepare_catalog_lines(db, acquisition_id, job_id, f"{request_prefix}:catalog-lines")
+    _match_receipt_lines(db, acquisition_id, job_id, f"{request_prefix}:matching")
 
 
 def _candidate_groups(db: sqlite3.Connection, acquisition_id: int) -> dict[str, list[dict]]:
@@ -905,13 +956,17 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
     final_paid = acquisition.get("final_usd_paid_cents")
     if final_paid is None:
         raise ValueError("Final USD remains Unknown; allocation cannot be proposed")
-    receipt_rows = db.execute(
+    parsed_receipt_rows = db.execute(
         """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
             JOIN acquisition_documents d ON d.id=j.document_id
             WHERE r.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
               AND d.storage_status='STORED'
               AND r.classification NOT IN ('DUPLICATE_EXTRACTION','SHIPPING_FEE') ORDER BY r.id""", (acquisition_id,)
     ).fetchall()
+    receipt_rows = [
+        row for row in parsed_receipt_rows
+        if semantic_allows_receipt_line(db, int(row["id"]))
+    ]
     if not receipt_rows:
         raise ValueError("No merchandise receipt lines are available for allocation")
     if any(row["classification"] == "UNRESOLVED" for row in receipt_rows):
@@ -1095,12 +1150,16 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
                 proposed_fields.append({"field_name": field, "candidate_id": int(item["id"]), "value": item["value"], "confidence_band": item["confidence_band"], "status": provenance["status"]})
             if field in CRITICAL_FIELDS and item["confidence_band"] == "LOW":
                 low_confidence_critical.append(field)
-    receipt_lines = [receipt_line_payload(db, row) for row in db.execute(
+    parsed_receipt_lines = [receipt_line_payload(db, row) for row in db.execute(
         """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
             JOIN acquisition_documents d ON d.id=j.document_id
             WHERE r.acquisition_id=? AND j.disposition<>'SUPERSEDED' AND d.storage_status='STORED'
             ORDER BY r.id""", (acquisition_id,)
     ).fetchall()]
+    receipt_lines = [
+        item for item in parsed_receipt_lines
+        if semantic_allows_receipt_line(db, int(item["id"]))
+    ]
     unresolved = [item for item in receipt_lines if item["classification"] == "UNRESOLVED"]
     fuzzy = [item for item in receipt_lines if item.get("best_match") and item["best_match"]["match_method"] == "FUZZY_TEXT"]
     quantity_conflicts = []
@@ -1202,6 +1261,7 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
         "retry_plausible": any(job.get("retry_plausible") for job in jobs),
         "raw_ocr_available": False, "external_transmission": False,
         "receipt_math": receipt_math,
+        "semantic_review": semantic_review_payload(db, acquisition_id),
         "performance": performance,
         "allocation_policy": allocation_policy,
         "operator_questions": [

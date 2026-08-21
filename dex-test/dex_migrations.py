@@ -1317,6 +1317,101 @@ def _v22_rc3_hf1_mixed_purchase_reconciliation(connection: sqlite3.Connection) -
             connection.execute(f"ALTER TABLE acquisitions ADD COLUMN {name} {definition}")
 
 
+def _v23_inventory_intelligence_phase1_receipt_semantics(
+    connection: sqlite3.Connection,
+) -> None:
+    """Add non-authoritative, append-only receipt semantic evidence.
+
+    Existing HF3 receipt facts are intentionally not backfilled. Historical
+    extraction jobs retain their established behavior until explicitly
+    reprocessed by the new semantic engine.
+    """
+
+    connection.execute(
+        """
+        CREATE TABLE receipt_semantic_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            semantic_uuid TEXT NOT NULL UNIQUE,
+            job_id INTEGER NOT NULL REFERENCES receipt_extraction_jobs(id),
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            document_id INTEGER NOT NULL REFERENCES acquisition_documents(id),
+            receipt_line_id INTEGER REFERENCES receipt_lines(id),
+            source_line_index INTEGER NOT NULL CHECK (source_line_index > 0),
+            source_page INTEGER,
+            source_location TEXT NOT NULL DEFAULT '',
+            normalized_text TEXT NOT NULL,
+            source_line_sha256 TEXT NOT NULL,
+            signed_amount_cents INTEGER,
+            semantic_class TEXT NOT NULL CHECK (semantic_class IN (
+                'MERCHANDISE','DISCOUNT_CREDIT','FEE_SURCHARGE','TAX','SHIPPING',
+                'SUBTOTAL','TOTAL','TENDER_PAYMENT_METHOD','PAYMENT_SUMMARY',
+                'INFORMATIONAL_FOOTER','STRUCTURAL','UNKNOWN'
+            )),
+            numeric_confidence REAL CHECK (
+                numeric_confidence IS NULL OR
+                (numeric_confidence >= 0 AND numeric_confidence <= 1)
+            ),
+            confidence_state TEXT NOT NULL CHECK (confidence_state IN (
+                'HIGH_CONFIDENCE_SUGGESTION','UNRESOLVED','CONFLICTING',
+                'OPERATOR_CONFIRMED'
+            )),
+            parser_version TEXT NOT NULL,
+            rules_version TEXT NOT NULL,
+            engine_version TEXT NOT NULL,
+            operator_confirmation_required INTEGER NOT NULL DEFAULT 1
+                CHECK (operator_confirmation_required IN (0,1)),
+            semantic_status TEXT NOT NULL CHECK (semantic_status IN (
+                'PROPOSED','CONFIRMED','UNRESOLVED','CONFLICTING','SUPERSEDED'
+            )),
+            recorded_at TEXT NOT NULL,
+            supersedes_semantic_line_id INTEGER REFERENCES receipt_semantic_lines(id),
+            evidence TEXT NOT NULL DEFAULT '{}',
+            UNIQUE(job_id, source_line_index, supersedes_semantic_line_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE receipt_semantic_events (
+            event_id TEXT PRIMARY KEY,
+            request_id TEXT NOT NULL UNIQUE,
+            semantic_line_id INTEGER NOT NULL REFERENCES receipt_semantic_lines(id),
+            successor_semantic_line_id INTEGER REFERENCES receipt_semantic_lines(id),
+            job_id INTEGER NOT NULL REFERENCES receipt_extraction_jobs(id),
+            acquisition_id INTEGER NOT NULL REFERENCES acquisitions(id),
+            event_type TEXT NOT NULL CHECK (event_type IN (
+                'CLASSIFIED','OPERATOR_CONFIRMED','OPERATOR_CORRECTED',
+                'MARKED_UNRESOLVED'
+            )),
+            from_semantic_class TEXT,
+            to_semantic_class TEXT NOT NULL,
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            payload TEXT NOT NULL DEFAULT '{}'
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX idx_receipt_semantic_acquisition "
+        "ON receipt_semantic_lines(acquisition_id, job_id, source_line_index, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_receipt_semantic_receipt_line "
+        "ON receipt_semantic_lines(receipt_line_id, semantic_status, id)"
+    )
+    connection.execute(
+        "CREATE UNIQUE INDEX idx_receipt_semantic_one_successor "
+        "ON receipt_semantic_lines(supersedes_semantic_line_id) "
+        "WHERE supersedes_semantic_line_id IS NOT NULL"
+    )
+    connection.execute(
+        "CREATE INDEX idx_receipt_semantic_events_acquisition "
+        "ON receipt_semantic_events(acquisition_id, recorded_at, event_id)"
+    )
+
+
 DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         "0001_phase3_acquisition_facts",
@@ -1392,6 +1487,11 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         "0015_v22_rc3_hf1_mixed_purchase_reconciliation",
         "add an explicit nullable noninventory partition for mixed acquisitions",
         _v22_rc3_hf1_mixed_purchase_reconciliation,
+    ),
+    Migration(
+        "0016_v23_inventory_intelligence_phase1_receipt_semantics",
+        "add non-authoritative receipt semantic evidence, confidence, and correction history",
+        _v23_inventory_intelligence_phase1_receipt_semantics,
     ),
 )
 

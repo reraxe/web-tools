@@ -247,11 +247,14 @@ Future rules can include:
 
 ### v2.3-test
 
-- What's New hub.
-- Roadmap and patch notes inside Dex.
+- Inventory Intelligence Phase 1: classify every normalized receipt source line before product matching using versioned, explainable semantic suggestions.
+- Preserve source text, amount, location, confidence, rules/parser versions, timestamps, and append-only operator correction lineage.
+- Only semantic `MERCHANDISE` lines may enter product matching. Semantic class does not decide business purpose, inventory authority, or landed-cost policy.
+- HF3 allocation behavior, mixed-purchase `POLICY_REQUIRED`, economics, and SAM remain unchanged.
 
 ### v2.4-test
 
+- Deferred What's New hub, roadmap, and patch notes inside Dex.
 - Janna starts as manual Market Watch posts.
 - Market Watch notes stored in Dex.
 

@@ -1,13 +1,13 @@
-# Operator Deployment Instructions — RC3 HF3 Zero-Entry
+# Operator Deployment Instructions — Separate Approval Required
 
-Deployment has not been performed.
+Suggested immutable image tag: `192.168.2.92:5000/apps/dex:v2.3-test-inventory-intelligence-phase1-remediation1`.
 
-1. Verify the current HF2 storage backup and create a fresh timestamped backup.
-2. Open `DEX_v2.2-test_RC3_HF3_ZERO_ENTRY_DEPLOY`.
-3. Select everything **inside** it and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
-4. Build the unique image tag `192.168.2.92:5000/apps/dex:v2.2-test-rc3-hf3` through the normal Jenkins workflow.
+1. Open `DEX_v2.3-test_INVENTORY_INTELLIGENCE_PHASE1_REMEDIATION1_DEPLOY`.
+2. Select everything inside it and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
+3. Confirm the immutable image tag above.
+4. Use the normal Jenkins **Build Now** action.
 5. Confirm the build and registry push succeed.
-6. In Portainer, update only the DEX image tag and update the stack.
-7. Hard-refresh DEX and verify `/api/health`, runtime `v2.2-test`, migrations through 0015, existing inventory, local receipt-image extraction, all-inventory confirmation, and the mixed-purchase `POLICY_REQUIRED` boundary.
+6. Update the Portainer stack to the new immutable image tag.
+7. Update the stack, hard refresh DEX, and verify `/api/health` and the visible `v2.3-test` identity.
 
-If startup fails, return the application image to `v2.2-test-rc3-hf2`. HF3 adds no schema migration, so application-only rollback is the preferred first action. Do not delete or edit production storage.
+No deployment was performed while creating this candidate.

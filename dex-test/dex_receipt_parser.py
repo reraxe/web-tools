@@ -7,6 +7,8 @@ import re
 import time
 from datetime import datetime
 
+from dex_receipt_semantics import classify_receipt_pages
+
 
 PARSER_VERSION = "receipt-structured-math-v1"
 
@@ -54,11 +56,14 @@ def _component_kind(label: str) -> str | None:
         return "SUBTOTAL"
     if normalized in ("total", "final paid", "amount paid", "amount due", "grand total", "charged"):
         return "FINAL_PAID"
-    if "sales tax" in normalized or normalized == "tax":
+    if re.search(r"\b(?:sales|state|county|local)?\s*tax\b", normalized):
         return "TAX"
     if "fee" in normalized or "surcharge" in normalized or "handling" in normalized:
         return "FEE"
-    if "discount" in normalized or "credit" in normalized or "coupon" in normalized:
+    if (
+        "discount" in normalized or "credit" in normalized or "coupon" in normalized
+        or re.search(r"\b\d+(?:\s+\d+)?\s+off\b", normalized)
+    ):
         return "DISCOUNT"
     if "shipping" in normalized or "delivery" in normalized:
         return "SHIPPING"
@@ -245,10 +250,20 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
                 sequence += 1
                 located.append((sequence, page, line_number, line))
     if not located:
-        return {"candidates": [], "lines": [], "receipt_math": {"status": "INCOMPLETE"}, "metrics": {"structured_parsing_ms": 0.0}}
+        return {
+            "candidates": [], "lines": [], "semantic_candidate_lines": [], "semantic_lines": [],
+            "receipt_math": {"status": "INCOMPLETE"},
+            "metrics": {"structured_parsing_ms": 0.0},
+        }
+
+    semantic_lines = classify_receipt_pages(pages, parser_version=PARSER_VERSION)
+    semantic_by_source_index = {
+        int(item["source_line_index"]): item for item in semantic_lines
+    }
 
     candidates: dict[str, dict] = {}
     receipt_lines: list[dict] = []
+    merchandise_lines: list[dict] = []
     components: list[dict] = []
     subtotal = None
     final_paid = None
@@ -257,6 +272,7 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
 
     for seq, page, line_number, line in located:
         location = f"line {line_number}"
+        semantic_class = semantic_by_source_index.get(seq, {}).get("semantic_class")
         amount = _amount_at_end(line)
         if amount:
             label, cents = amount
@@ -289,11 +305,11 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
         order_match = re.search(r"(?:order|receipt|invoice)(?:\s*(?:number|no\.?|#))?\s*[#:]*\s*([A-Za-z0-9][A-Za-z0-9._/-]{2,})", line, re.I)
         if order_match:
             candidates["order_reference"] = _candidate("order_reference", order_match.group(1), "TEXT", 0.91, page, location)
-        if re.search(r"\b(?:credit|debit)(?:\s+card)?\b", line, re.I):
+        if semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\b(?:credit|debit)(?:\s+card)?\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.9, page, location)
-        elif re.search(r"\bpaypal\b", line, re.I):
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bpaypal\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "PAYPAL", "TEXT", 0.94, page, location)
-        elif re.search(r"\bcash\b", line, re.I):
+        elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bcash\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "CASH", "TEXT", 0.9, page, location)
         currency_match = re.search(r"(?:currency|charged\s+in)\s*[:#]\s*([A-Z]{3})\b", line, re.I)
         if currency_match:
@@ -310,9 +326,13 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
         if seq in structural_sequences:
             continue
         parsed = _parse_item(line, page, f"line {line_number}")
+        semantic = semantic_by_source_index.get(seq, {})
         if parsed and parsed["line_total_cents"] is not None and parsed["line_total_cents"] >= 0:
             parsed["_sequence"] = seq
+            parsed["source_line_index"] = seq
             receipt_lines.append(parsed)
+            if semantic.get("semantic_class") == "MERCHANDISE":
+                merchandise_lines.append(parsed)
 
     # Line-level discounts remain receipt evidence, not authoritative inventory
     # allocation.  Link only by source adjacency and preserve that provenance so
@@ -320,7 +340,7 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
     for component in components:
         if component.get("scope") != "LINE_ITEM":
             continue
-        preceding = [item for item in receipt_lines if int(item["_sequence"]) < int(component["sequence"])]
+        preceding = [item for item in merchandise_lines if int(item["_sequence"]) < int(component["sequence"])]
         if preceding:
             related = max(preceding, key=lambda item: int(item["_sequence"]))
             component["applies_to_source_sequence"] = int(related["_sequence"])
@@ -344,7 +364,7 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
         candidates["merchant_name"] = _candidate("merchant_name", merchant[:180], "TEXT", 0.96 if explicit_merchant else 0.9, first[1], f"line {first[2]}")
     candidates.setdefault("source_scope", _candidate("source_scope", "DOMESTIC", "SCOPE", 0.86, 1, "USD receipt context"))
 
-    receipt_math = _analyze_math(receipt_lines, components, subtotal, final_paid)
+    receipt_math = _analyze_math(merchandise_lines, components, subtotal, final_paid)
     if subtotal is not None:
         candidates["purchase_subtotal_cents"] = _candidate("purchase_subtotal_cents", subtotal, "CENTS", 0.96, 1, "printed subtotal")
     if final_paid is not None and currency not in ("", "USD"):
@@ -370,7 +390,9 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
                     candidates[field] = _candidate(field, value, "CENTS", 0.95, 1, f"receipt math: {kind.lower()} outside subtotal")
 
     return {
-        "candidates": list(candidates.values()), "lines": receipt_lines,
+        "candidates": list(candidates.values()), "lines": merchandise_lines,
+        "semantic_candidate_lines": receipt_lines,
+        "semantic_lines": semantic_lines,
         "receipt_math": receipt_math,
         "metrics": {"structured_parsing_ms": round((time.perf_counter() - started) * 1000, 2)},
         "parser_version": PARSER_VERSION,

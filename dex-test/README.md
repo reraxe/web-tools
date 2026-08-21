@@ -2,9 +2,11 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current development release: **Dex v2.2-test**
+Current development release: **Dex v2.3-test — Inventory Intelligence Phase 1**
 
-Known-good restore baseline: **Dex v2.1-test Phase 7C**. The complete Acquisition and Rip Batch Economics checkpoint remains preserved while v2.2-test builds Inbound 2.0 in separately approved phases.
+Frozen accepted baseline: **Dex v2.2-test RC3 HF3 ZERO ENTRY**. The v2.3-test Phase 1 workspace is isolated from that package and adds only non-authoritative receipt semantics, audit history, and a merchandise-only product-matching gate. No v2.3 deployment package has been produced.
+
+Known-good restore baseline: **Dex v2.2-test RC3 HF3 ZERO ENTRY**. Its source/package hashes and behavior remain unchanged.
 
 ## Release policy
 
@@ -32,6 +34,7 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 - `dex_rip.py`: Phase 4 rip sessions, exact allocation previews, finalization, and append-only basis corrections.
 - `dex_sealed.py`: Phase 5 sealed-unit identity, exact landed basis, sealed-only outbound economics, quantity adjustments, and atomic sale Undo.
 - `dex_receipts.py`: Inbound 2.0 Phase 5 provider-neutral receipt extraction, candidate/provenance review, receipt-line matching, and deterministic allocation suggestions.
+- `dex_receipt_semantics.py`: v2.3-test deterministic, non-authoritative receipt-line classification, matching eligibility, confidence/provenance payloads, and append-only operator decisions.
 - `dex_batch_economics.py`: Phase 6 read-only authoritative batch/group rollups, stable order attribution, valuation coverage/freshness, reconciliation, and export rows.
 - `dex_corrections.py`: Phase 7A append-only acquisition/basis corrections, reason-aware card/sealed dispositions, operational-loss entries, durable tombstones, and linked inverse reversals.
 - `dex_post_sale.py`: Phase 7B immutable refunds, returns, chargebacks, fee/postage credits, sale corrections, effective financial facts, and exact inventory restoration.
@@ -62,6 +65,10 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 Existing batches also show a read-only **Estimated Economics** panel in v2.1-test Phase 2. The panel is explicitly estimate-only, reports valuation coverage and freshness, and never assigns permanent cost basis or converts legacy inventory.
 
 Inbound 2.0 creates an immediate immutable Draft Acquisition ID and autosaves non-authoritative facts and wizard position. Its three screens capture product choice, combined product/purchase details, and a human review. Pack and sealed lines can scan UPC-A, EAN-13, or GTIN-14 identifiers; unknown codes are never guessed. Phase 4 allows multiple private receipt/source artifacts from camera or file upload. DEX stores artifacts outside SQLite, records SHA-256 and metadata, and serves them through application routes rather than public provider links.
+
+RC3 Hotfix 1 keeps purchase-component reconciliation separate from the inventory-basis partition. A mixed purchase confirms only when `inventory landed cost + explicit excluded noninventory = final USD paid` and every nonzero component adjustment has its own reason and explanation. The excluded amount is acquisition-basis metadata only; DEX makes no tax, owner-draw, expense-category, or general-ledger conclusion.
+
+RC3 Hotfix 2 records an explicit manual-receipt fallback in the existing append-only receipt event ledger. The fallback creates no accounting authority: every product-line allocation, HF1 partition, treatment, explanation, and confirmation remains required. Unsupported image extraction is not labeled successful or retryable, the source image remains viewable evidence, and removed receipts retain history without leaving an active retry warning.
 
 Phase 5 can privately extract a text layer from PDFs and propose merchant/date/order, transaction components, final paid, and receipt lines. High-confidence values may populate empty draft fields visibly; manual, accepted, confirmed, and authoritative facts are never silently overwritten. Images remain attachable and viewable, but image OCR is provider-ready rather than operational. The Review screen keeps candidate details collapsible, preserves Unknown values, exposes conflicts/classifications/matches, and can propose exact-cent multi-line landed cost using direct receipt merchandise plus shared components proportional to merchandise value. Final acquisition confirmation remains the sole authority gate. Extraction creates no batch, card, sealed unit, rip, sale, SAM fact, or portfolio result.
 

@@ -130,10 +130,12 @@ from dex_receipts import (
     get_receipt_extractor,
     match_disposition as receipt_match_disposition,
     queue_extraction as queue_receipt_extraction,
+    reconcile_semantic_merchandise_line,
     receipt_intelligence_payload,
     retry_extraction as retry_receipt_extraction,
     select_manual_fallback as select_receipt_manual_fallback,
 )
+from dex_receipt_semantics import decide_semantic_line, semantic_review_payload
 from dex_sealed import (
     acquisition_has_used_units,
     adjust_sealed_unit,
@@ -191,7 +193,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.2-test"
+APP_VERSION = "v2.3-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -1765,6 +1767,11 @@ class DexHandler(BaseHTTPRequestHandler):
                 with connect() as db:
                     result = receipt_intelligence_payload(db, acquisition_id)
                 self.send_json(result)
+            elif re.fullmatch(r"/api/acquisitions/\d+/receipt-semantics", path):
+                acquisition_id = int(path.split("/")[3])
+                with connect() as db:
+                    result = semantic_review_payload(db, acquisition_id)
+                self.send_json(result)
             elif re.fullmatch(r"/api/receipt-extractions/RCPT-JOB-[0-9a-f-]+", path):
                 job_uuid = path.rsplit("/", 1)[-1]
                 with connect() as db:
@@ -2252,6 +2259,17 @@ class DexHandler(BaseHTTPRequestHandler):
                     db.execute("BEGIN IMMEDIATE")
                     result = classify_receipt_line(db, receipt_line_id, payload)
                     acquisition_id = int(db.execute("SELECT acquisition_id FROM receipt_lines WHERE id=?", (receipt_line_id,)).fetchone()[0])
+                    result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/receipt-semantic-lines/RCPT-SEM-[0-9a-f-]+/decision", path):
+                semantic_uuid = path.split("/")[3]
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = decide_semantic_line(db, semantic_uuid, payload)
+                    reconcile_semantic_merchandise_line(
+                        db, result, str(payload.get("request_id") or "RECEIPT-SEMANTIC")
+                    )
+                    acquisition_id = int(result["acquisition_id"])
                     result["acquisition_payload"] = inbound_acquisition_payload(db, acquisition_id)
                 self.send_json(result)
             elif re.fullmatch(r"/api/receipt-line-matches/\d+/disposition", path):

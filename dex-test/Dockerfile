@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="Dex" \
       org.opencontainers.image.description="Digital Encyclopedia Xchange TCG inventory" \
-      org.opencontainers.image.version="v2.2-test-rc3-hf3"
+      org.opencontainers.image.version="v2.3-test-inventory-intelligence-phase1-remediation1"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -35,7 +35,7 @@ COPY dex_inbound.py ./
 COPY dex_catalog.py ./
 COPY dex_documents.py ./
 COPY dex_receipts.py ./
-COPY dex_receipt_ocr.py dex_receipt_parser.py ./
+COPY dex_receipt_ocr.py dex_receipt_parser.py dex_receipt_semantics.py ./
 COPY dex_intake_bridge.py ./
 COPY dex_sam.py ./
 COPY dex_sam_challenger.py ./
@@ -50,6 +50,7 @@ RUN python -c "import dex_catalog"
 RUN python -c "import dex_documents"
 RUN python -c "import dex_receipts"
 RUN python -c "import dex_receipt_ocr, dex_receipt_parser; assert dex_receipt_ocr.provider_health()['private_local_processing']"
+RUN python -c "import dex_receipt_semantics"
 RUN python -c "import dex_intake_bridge"
 RUN python -c "import dex_sam"
 RUN python -c "import dex_sam_challenger"
