@@ -1,0 +1,28 @@
+Do not upload or package:
+
+*.db
+*.sqlite
+*.sqlite3
+data/
+storage*/
+scanner-inbox/
+inbound scanner folders/
+source-database/
+reference image libraries/
+physical scans or card images/
+receipt or source-document files/
+ground_truth.csv or benchmark corpora/
+staged-blind/ or validation results/
+OCR scratch files/
+logs/
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.env or environment override files
+passwords, tokens, API secrets, credentials, or private keys
+user-specific or private machine paths/configuration
+temporary or disposable QA data
+generated runtime output
+.git/ or other Git metadata
+the outer DEX_v2.3-test_INVENTORY_INTELLIGENCE_PHASE1_REMEDIATION3_DEPLOY folder

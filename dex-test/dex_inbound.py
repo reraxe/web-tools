@@ -80,6 +80,29 @@ MATERIAL_DISCREPANCY_PERCENT = 2.0
 EXTREME_DISCREPANCY_PERCENT = 50.0
 INBOUND_CALCULATION_VERSION = "inbound-acquisition-v2"
 DECISION_LEVELS = ("AUTOMATIC", "AUTOMATIC_VISIBLE", "NEEDS_ATTENTION")
+SINGLE_PRODUCT_RECEIPT_BLOCKING_WARNINGS = {
+    "RECEIPT_FIELD_CONFLICT",
+    "LOW_CONFIDENCE_CRITICAL_VALUE",
+    "UNRESOLVED_RECEIPT_LINES",
+    "AMBIGUOUS_PRODUCT_MATCH",
+    "RECEIPT_QUANTITY_MISMATCH",
+    "RECEIPT_MATH_AMBIGUOUS",
+    "RECEIPT_MATH_UNRECONCILED",
+    "MIXED_PURCHASE_ALLOCATION_POLICY_REQUIRED",
+    "RECEIPT_ALLOCATION_UNRESOLVED",
+}
+FINANCIAL_RECEIPT_SEMANTIC_CLASSES = {
+    "MERCHANDISE",
+    "SUBTOTAL",
+    "TAX",
+    "SHIPPING",
+    "SHIPPING_FEE",
+    "FEE_SURCHARGE",
+    "DISCOUNT_CREDIT",
+    "TOTAL",
+    "PAYMENT_SUMMARY",
+    "TENDER_PAYMENT_METHOD",
+}
 WIZARD_STEPS = (
     "ACQUIRE",
     "PRODUCTS",
@@ -453,6 +476,7 @@ def _attention_payload(
     active_lines: list[Mapping[str, object]],
     reconciliation: Mapping[str, object],
     warnings: list[dict[str, str]],
+    single_product_allocation: Mapping[str, object] | None = None,
 ) -> dict:
     warning_codes = list(dict.fromkeys(item["code"] for item in warnings))
     ready = row.get("state") == "READY_FOR_INTAKE"
@@ -461,6 +485,7 @@ def _attention_payload(
     automatic_single_line_pending = bool(
         len(active_lines) == 1
         and active_lines[0].get("allocation_status") != "CONFIRMED"
+        and bool((single_product_allocation or {}).get("eligible"))
         and reconciliation.get("inventory_basis_target_cents") is not None
         and int(reconciliation.get("inventory_basis_target_cents")) >= 0
     )
@@ -553,6 +578,114 @@ def _receipt_warnings_for_confirmation(
     return warnings
 
 
+def _single_product_allocation_eligibility(
+    receipt_intelligence: Mapping[str, object],
+    active_lines: list[Mapping[str, object]],
+    inventory_target: int | None,
+) -> dict:
+    """Decide whether DEX may offer its automatic single-line allocation.
+
+    Manual acquisitions retain the existing single-line behavior. Once active
+    receipt intelligence exists, automatic allocation is available only after
+    the receipt's financial semantics and arithmetic are safe under the current
+    policy. This creates no new accounting policy or authority.
+    """
+
+    if len(active_lines) != 1:
+        return {
+            "status": "NOT_APPLICABLE",
+            "eligible": False,
+            "reason_codes": ["SINGLE_PRODUCT_REQUIRED"],
+            "message": "Automatic single-product allocation applies only to one active product line.",
+            "authority_source": "NOT_APPLICABLE",
+        }
+    if inventory_target is None:
+        return {
+            "status": "BLOCKED",
+            "eligible": False,
+            "reason_codes": ["COST_UNKNOWN"],
+            "message": "Automatic allocation is not ready. Confirm the final USD amount first.",
+            "authority_source": "PURCHASE_FACTS",
+        }
+    if int(inventory_target) < 0:
+        return {
+            "status": "BLOCKED",
+            "eligible": False,
+            "reason_codes": ["NONINVENTORY_EXCEEDS_FINAL"],
+            "message": "Automatic allocation is not ready. Correct the inventory-basis partition first.",
+            "authority_source": "PURCHASE_FACTS",
+        }
+
+    jobs = list(receipt_intelligence.get("jobs", []))
+    receipt_math = receipt_intelligence.get("receipt_math")
+    semantic_review = receipt_intelligence.get("semantic_review") or {}
+    semantic_lines = list(semantic_review.get("lines", []))
+    receipt_intelligence_active = bool(jobs or receipt_math or semantic_lines)
+    if not receipt_intelligence_active:
+        return {
+            "status": "ELIGIBLE",
+            "eligible": True,
+            "reason_codes": [],
+            "message": "Automatic single-product allocation is ready from confirmed manual purchase facts.",
+            "authority_source": "MANUAL_PURCHASE_FACTS",
+        }
+
+    completed_jobs = [job for job in jobs if job.get("status") == "COMPLETED"]
+    if receipt_intelligence.get("manual_fallback_selected") and not completed_jobs:
+        return {
+            "status": "ELIGIBLE",
+            "eligible": True,
+            "reason_codes": [],
+            "message": "Automatic single-product allocation is ready from explicitly selected manual purchase facts.",
+            "authority_source": "AUDITED_MANUAL_FALLBACK",
+        }
+
+    blockers: list[str] = []
+    if not completed_jobs:
+        blockers.append("RECEIPT_INTELLIGENCE_NOT_READY")
+    allocation_policy = receipt_intelligence.get("allocation_policy") or {}
+    if allocation_policy.get("status") == "POLICY_REQUIRED":
+        blockers.append("MIXED_PURCHASE_ALLOCATION_POLICY_REQUIRED")
+    math_status = receipt_math.get("status") if isinstance(receipt_math, Mapping) else None
+    if math_status != "RECONCILED_EXACT":
+        blockers.append(
+            "RECEIPT_MATH_UNRECONCILED"
+            if math_status == "UNRECONCILED"
+            else "RECEIPT_MATH_AMBIGUOUS"
+            if math_status == "AMBIGUOUS"
+            else "RECEIPT_MATH_INCOMPLETE"
+        )
+    for warning in receipt_intelligence.get("warnings", []):
+        code = str(warning.get("code") or "")
+        if code in SINGLE_PRODUCT_RECEIPT_BLOCKING_WARNINGS:
+            blockers.append(code)
+    for line in semantic_lines:
+        amount_bearing = line.get("signed_amount_cents") is not None
+        financial_class = str(line.get("semantic_class") or "") in FINANCIAL_RECEIPT_SEMANTIC_CLASSES
+        unresolved = bool(line.get("operator_confirmation_required")) or line.get("confidence_state") == "UNRESOLVED"
+        conflicting = line.get("confidence_state") == "CONFLICTING" or line.get("semantic_status") == "CONFLICTING"
+        if amount_bearing and unresolved:
+            blockers.append("UNRESOLVED_AMOUNT_BEARING_RECEIPT_LINE")
+        if conflicting and (amount_bearing or financial_class):
+            blockers.append("CONFLICTING_FINANCIAL_SEMANTIC")
+    blockers = list(dict.fromkeys(blockers))
+    if blockers:
+        return {
+            "status": "BLOCKED",
+            "eligible": False,
+            "reason_codes": blockers,
+            "message": "Automatic allocation is not ready. Resolve receipt financial discrepancies first.",
+            "authority_source": "RECEIPT_INTELLIGENCE",
+        }
+    return {
+        "status": "ELIGIBLE",
+        "eligible": True,
+        "reason_codes": [],
+        "message": "Automatic single-product allocation is ready from reconciled receipt evidence.",
+        "authority_source": "RECONCILED_RECEIPT",
+    }
+
+
 def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
     from dex_documents import document_summary
     from dex_receipts import receipt_intelligence_payload
@@ -630,6 +763,9 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
                 line["allocation_method"] = "RECEIPT_VALUE_PROPORTIONAL"
                 line["allocation_status"] = "CONFIRMED"
     reconciliation = reconciliation_payload(row, reconciliation_lines)
+    single_product_allocation = _single_product_allocation_eligibility(
+        receipt_intelligence, active_lines, inventory_target
+    )
     warnings: list[dict[str, str]] = []
     if not row.get("source_scope"):
         warnings.append({"code": "SOURCE_REQUIRED", "message": "Choose Domestic or International purchase source."})
@@ -657,12 +793,13 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             warnings.append({"code": "PHYSICAL_QUANTITY_UNCONFIRMED", "message": f"{label} needs a known physical quantity."})
         if line.get("product_class") == "SINGLE_CARDS" and line.get("singles_cost_mode") not in ("KNOWN_LINE_COSTS", "LUMP_SUM"):
             warnings.append({"code": "SINGLES_COST_MODE_UNKNOWN", "message": f"{label} needs a singles cost method."})
-        automatic_single_line = len(active_lines) == 1 and row.get("final_usd_paid_cents") is not None
+        automatic_single_line = bool(single_product_allocation.get("eligible"))
         if line.get("allocation_status") != "CONFIRMED" and not automatic_single_line and not receipt_allocation_safe:
             warnings.append({"code": "LINE_COST_UNCONFIRMED", "message": f"{label} landed cost is not confirmed."})
     automatic_single_line_pending = bool(
         len(active_lines) == 1
         and active_lines[0].get("allocation_status") != "CONFIRMED"
+        and bool(single_product_allocation.get("eligible"))
         and reconciliation["inventory_basis_target_cents"] is not None
         and reconciliation["inventory_basis_target_cents"] >= 0
     )
@@ -690,8 +827,18 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
         receipt_intelligence, reconciliation, active_lines
     )
     warnings.extend(receipt_warnings)
+    if (
+        len(active_lines) == 1
+        and active_lines[0].get("allocation_status") != "CONFIRMED"
+        and not single_product_allocation.get("eligible")
+        and single_product_allocation.get("authority_source") == "RECEIPT_INTELLIGENCE"
+    ):
+        warnings.append({
+            "code": "SINGLE_PRODUCT_ALLOCATION_BLOCKED",
+            "message": single_product_allocation["message"],
+        })
     automatic_preview = None
-    if len(active_lines) == 1 and reconciliation["inventory_basis_target_cents"] is not None and reconciliation["inventory_basis_target_cents"] >= 0:
+    if single_product_allocation.get("eligible"):
         line = active_lines[0]
         cents = int(reconciliation["inventory_basis_target_cents"])
         quantity = line.get("quantity")
@@ -716,7 +863,9 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             "calculation_version": INBOUND_CALCULATION_VERSION,
             "decision_level": "AUTOMATIC_VISIBLE",
         }
-    attention = _attention_payload(row, active_lines, reconciliation, warnings)
+    attention = _attention_payload(
+        row, active_lines, reconciliation, warnings, single_product_allocation
+    )
     source_documents = document_summary(db, acquisition_id)
     removal = acquisition_removal_eligibility(db, acquisition_id)
     from dex_intake_bridge import intake_status
@@ -736,6 +885,7 @@ def acquisition_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
             ),
         },
         "automatic_single_line_allocation_preview": automatic_preview,
+        "single_product_allocation_eligibility": single_product_allocation,
         "attention": attention,
         "source_documents": source_documents,
         "receipt_intelligence": receipt_intelligence,
@@ -1292,9 +1442,14 @@ def confirm_acquisition(db: sqlite3.Connection, acquisition_id: int, payload: Ma
     inventory_target = _inventory_basis_target(dict(row))
     if inventory_target is None or inventory_target < 0:
         raise ValueError("Excluded noninventory cannot exceed final USD paid")
+    single_product_allocation = _single_product_allocation_eligibility(
+        receipt_intelligence, active_lines, inventory_target
+    )
     receipt_proposal = allocation_for_confirmation(db, acquisition_id, inventory_target) if len(active_lines) > 1 else None
     automatic_line: dict | None = None
     if len(active_lines) == 1 and active_lines[0]["allocation_status"] != "CONFIRMED":
+        if not single_product_allocation.get("eligible"):
+            raise ValueError(str(single_product_allocation["message"]))
         line = active_lines[0]
         line["assigned_landed_cost_cents"] = inventory_target
         line["allocation_method"] = "SINGLE_LINE_100_PERCENT"

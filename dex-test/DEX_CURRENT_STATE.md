@@ -2,11 +2,11 @@
 
 Baseline date: 2026-08-21  
 Known-good restore baseline: `v2.2-test RC3 HF3 ZERO ENTRY`  
-Active development lane: `v2.3-test` Inventory Intelligence Phase 1 Remediation 2; isolated local candidate only, not packaged or deployed
+Active development lane: `v2.3-test` Inventory Intelligence Phase 1 Remediation 3; isolated local candidate only, not packaged or deployed
 
 HF3 remains frozen and is the immediate rollback checkpoint. Phase 1 adds a non-authoritative semantic layer before product matching, with migration 0016 and an operator review surface. It does not change receipt allocation, mixed-purchase `POLICY_REQUIRED`, SAM, inventory authority, economics formulas, or production deployment configuration.
 
-The accepted Remediation 1 package remains unchanged and is the immediate v2.3 predecessor. Remediation 2 adds the synthetic Fantasy Bay regression family and documents `DEPLOYMENT-INTEGRITY-001`. Every future operator deployment must verify the exact committed GitHub build context against the accepted DEPLOY SHA-256 ledger before Jenkins runs, then reconcile backend version, visible UI version, immutable image identity, and deployed runtime hashes after deployment.
+The accepted Remediation 2 candidate remains unchanged and is the immediate v2.3 predecessor. Remediation 3 closes the Fantasy Bay allocation-safety defect: a single merchandise line no longer makes 100% allocation eligible when receipt financial semantics, receipt arithmetic, or mixed-purchase policy remain unresolved. The backend is authoritative; the UI only displays its eligibility result. Every future operator deployment must still verify the exact committed GitHub build context against the accepted DEPLOY SHA-256 ledger before Jenkins runs, then reconcile backend version, visible UI version, immutable image identity, and deployed runtime hashes after deployment.
 
 This document is the handoff baseline for future Dex development. It describes the observed implementation; plans and patch notes may describe broader intent.
 
