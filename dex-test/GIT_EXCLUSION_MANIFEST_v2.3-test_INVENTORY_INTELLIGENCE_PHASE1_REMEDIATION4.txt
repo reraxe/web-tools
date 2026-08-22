@@ -1,0 +1,15 @@
+DO NOT UPLOAD OR COMMIT:
+
+- SQLite databases or database sidecars: *.db, *.sqlite, *.sqlite3, *-wal, *-shm
+- Real inventory data or exports
+- Card/reference/source-image libraries
+- Receipt/source-document files or extraction artifacts containing operator data
+- Scanner inbox, processed, failed, or staging folders
+- Pass 4, Variant Gauntlet, Geometry Gauntlet, physical scans, or ground_truth.csv
+- Logs, coverage output, caches, __pycache__, *.pyc, and disposable QA output
+- Environment files: .env, .env.*, local overrides
+- Passwords, tokens, API secrets, credentials, private keys, or certificates
+- Machine-specific absolute paths or local configuration
+- Nested FULL_CHECKPOINT or DEPLOY package folders
+
+Only upload the exact root-shaped DEPLOY contents listed by the matching upload manifest.

@@ -30,6 +30,7 @@ from dex_receipt_ocr import (
 )
 from dex_receipt_parser import PARSER_VERSION, parse_receipt_pages
 from dex_receipt_semantics import (
+    active_extraction_job_ids,
     current_semantic_lines,
     persist_initial_semantics,
     semantic_allows_receipt_line,
@@ -278,6 +279,42 @@ def _require_revision(acquisition: Mapping, payload: Mapping) -> None:
         raise ValueError("Confirmed acquisition facts cannot be changed by receipt extraction")
 
 
+def _supersede_prior_job_suggestions(
+    db: sqlite3.Connection, acquisition_id: int, document_id: int, current_job_id: int
+) -> None:
+    """Retire mutable suggestions from earlier successful interpretations.
+
+    Source rows and events remain intact.  Only their existing lifecycle fields
+    change so later confirmation cannot accidentally accept provenance from an
+    inactive extraction generation.
+    """
+
+    now = utcnow()
+    prior_candidate_ids = [
+        int(row["id"])
+        for row in db.execute(
+            """SELECT c.id FROM receipt_candidate_facts c
+                 JOIN receipt_extraction_jobs j ON j.id=c.job_id
+                WHERE c.acquisition_id=? AND j.document_id=? AND j.id<>?
+                  AND c.disposition='PENDING'""",
+            (acquisition_id, document_id, current_job_id),
+        ).fetchall()
+    ]
+    if not prior_candidate_ids:
+        return
+    placeholders = ",".join("?" for _ in prior_candidate_ids)
+    db.execute(
+        f"UPDATE receipt_candidate_facts SET disposition='SUPERSEDED',updated_at=? "
+        f"WHERE id IN ({placeholders})",
+        (now, *prior_candidate_ids),
+    )
+    db.execute(
+        f"UPDATE acquisition_field_provenance SET status='SUPERSEDED',updated_at=? "
+        f"WHERE candidate_id IN ({placeholders}) AND status='PROPOSED'",
+        (now, *prior_candidate_ids),
+    )
+
+
 def _job_payload(db: sqlite3.Connection, job_id: int) -> dict:
     row = db.execute("SELECT * FROM receipt_extraction_jobs WHERE id=?", (job_id,)).fetchone()
     if row is None:
@@ -379,6 +416,7 @@ def queue_extraction(db: sqlite3.Connection, document_id: int, payload: Mapping,
         status = "COMPLETED" if extracted["candidates"] or extracted["lines"] else "NO_FACTS"
         db.execute("UPDATE receipt_extraction_jobs SET status=?,completed_at=?,updated_at=? WHERE id=?", (status, utcnow(), utcnow(), job_id))
         if status == "COMPLETED":
+            _supersede_prior_job_suggestions(db, acquisition_id, document_id, job_id)
             _supersede_allocation_proposals(db, acquisition_id)
         _event(db, acquisition_id, f"{request_id}:completed", "EXTRACTION_COMPLETED", job_id=job_id,
                payload={"candidate_count": len(extracted["candidates"]), "receipt_line_count": len(extracted["lines"]), "status": status})
@@ -673,12 +711,17 @@ def reconcile_semantic_merchandise_line(
 
 
 def _candidate_groups(db: sqlite3.Connection, acquisition_id: int) -> dict[str, list[dict]]:
+    active_jobs = active_extraction_job_ids(db, acquisition_id=acquisition_id)
+    if not active_jobs:
+        return {}
+    placeholders = ",".join("?" for _ in active_jobs)
     rows = db.execute(
         """SELECT c.* FROM receipt_candidate_facts c JOIN receipt_extraction_jobs j ON j.id=c.job_id
             JOIN acquisition_documents d ON d.id=j.document_id
-            WHERE c.acquisition_id=? AND j.status='COMPLETED' AND c.disposition<>'REJECTED' AND j.disposition<>'REJECTED'
+            WHERE c.acquisition_id=? AND j.id IN (""" + placeholders + """)
+              AND j.status='COMPLETED' AND c.disposition<>'REJECTED' AND j.disposition<>'REJECTED'
               AND d.storage_status='STORED'
-            ORDER BY c.created_at,c.id""", (acquisition_id,)
+            ORDER BY c.created_at,c.id""", (acquisition_id, *active_jobs)
     ).fetchall()
     groups: dict[str, list[dict]] = {}
     for row in rows:
@@ -728,8 +771,30 @@ def apply_proposed_facts(db: sqlite3.Connection, acquisition_id: int, payload: M
             continue
         current = acquisition.get(field)
         if not _field_empty(field, current) and str(current) != str(value):
-            conflicts.append(field)
-            continue
+            replaceable = None
+            if field == "merchant_name":
+                replaceable = db.execute(
+                    """SELECT p.id AS provenance_id,c.id AS candidate_id
+                         FROM acquisition_field_provenance p
+                         JOIN receipt_candidate_facts c ON c.id=p.candidate_id
+                        WHERE p.acquisition_id=? AND p.field_name='merchant_name'
+                          AND p.status IN ('PROPOSED','SUPERSEDED') AND p.proposed_value=?
+                        ORDER BY p.id DESC LIMIT 1""",
+                    (acquisition_id, str(current)),
+                ).fetchone()
+            if replaceable and candidate["confidence_band"] == "HIGH":
+                updates[field] = value
+                db.execute(
+                    "UPDATE acquisition_field_provenance SET status='SUPERSEDED',updated_at=? WHERE id=?",
+                    (now, int(replaceable["provenance_id"])),
+                )
+                db.execute(
+                    "UPDATE receipt_candidate_facts SET disposition='SUPERSEDED',updated_at=? WHERE id=?",
+                    (now, int(replaceable["candidate_id"])),
+                )
+            else:
+                conflicts.append(field)
+                continue
         if _field_empty(field, current):
             updates[field] = value
         db.execute(
@@ -816,6 +881,10 @@ def classify_receipt_line(db: sqlite3.Connection, receipt_line_id: int, payload:
     line = db.execute("SELECT * FROM receipt_lines WHERE id=?", (receipt_line_id,)).fetchone()
     if line is None:
         raise ValueError("Receipt line not found")
+    if int(line["job_id"]) not in active_extraction_job_ids(
+        db, acquisition_id=int(line["acquisition_id"]), document_id=int(line["document_id"])
+    ):
+        raise ValueError("Receipt line is historical; review the current extraction")
     acquisition = _acquisition(db, int(line["acquisition_id"]))
     prior = db.execute("SELECT 1 FROM receipt_extraction_events WHERE request_id=?", (request_id,)).fetchone()
     if prior:
@@ -867,6 +936,13 @@ def candidate_disposition(db: sqlite3.Connection, candidate_id: int, payload: Ma
     candidate = db.execute("SELECT * FROM receipt_candidate_facts WHERE id=?", (candidate_id,)).fetchone()
     if candidate is None:
         raise ValueError("Candidate not found")
+    job = db.execute(
+        "SELECT document_id FROM receipt_extraction_jobs WHERE id=?", (int(candidate["job_id"]),)
+    ).fetchone()
+    if not job or int(candidate["job_id"]) not in active_extraction_job_ids(
+        db, acquisition_id=int(candidate["acquisition_id"]), document_id=int(job["document_id"])
+    ):
+        raise ValueError("Receipt candidate is historical; review the current extraction")
     acquisition = _acquisition(db, int(candidate["acquisition_id"]))
     prior = db.execute("SELECT 1 FROM receipt_extraction_events WHERE request_id=?", (request_id,)).fetchone()
     if prior:
@@ -903,12 +979,16 @@ def match_disposition(db: sqlite3.Connection, match_id: int, payload: Mapping) -
     if not request_id or disposition not in ("ACCEPTED", "REJECTED"):
         raise ValueError("request_id and ACCEPTED or REJECTED disposition are required")
     match = db.execute(
-        """SELECT m.*,r.acquisition_id,r.job_id FROM receipt_line_matches m
+        """SELECT m.*,r.acquisition_id,r.job_id,r.document_id FROM receipt_line_matches m
              JOIN receipt_lines r ON r.id=m.receipt_line_id WHERE m.id=?""", (match_id,)
     ).fetchone()
     if match is None:
         raise ValueError("Receipt-line match not found")
     acquisition_id = int(match["acquisition_id"])
+    if int(match["job_id"]) not in active_extraction_job_ids(
+        db, acquisition_id=acquisition_id, document_id=int(match["document_id"])
+    ):
+        raise ValueError("Receipt-line match is historical; review the current extraction")
     prior = db.execute("SELECT 1 FROM receipt_extraction_events WHERE request_id=?", (request_id,)).fetchone()
     if prior:
         return receipt_intelligence_payload(db, acquisition_id) | {"idempotent_replay": True}
@@ -956,12 +1036,18 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
     final_paid = acquisition.get("final_usd_paid_cents")
     if final_paid is None:
         raise ValueError("Final USD remains Unknown; allocation cannot be proposed")
+    active_jobs = active_extraction_job_ids(db, acquisition_id=acquisition_id)
+    if not active_jobs:
+        raise ValueError("No current receipt extraction is available for allocation")
+    active_placeholders = ",".join("?" for _ in active_jobs)
     parsed_receipt_rows = db.execute(
         """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
             JOIN acquisition_documents d ON d.id=j.document_id
-            WHERE r.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
+            WHERE r.acquisition_id=? AND j.id IN (""" + active_placeholders + """)
+              AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
               AND d.storage_status='STORED'
-              AND r.classification NOT IN ('DUPLICATE_EXTRACTION','SHIPPING_FEE') ORDER BY r.id""", (acquisition_id,)
+              AND r.classification NOT IN ('DUPLICATE_EXTRACTION','SHIPPING_FEE') ORDER BY r.id""",
+        (acquisition_id, *active_jobs),
     ).fetchall()
     receipt_rows = [
         row for row in parsed_receipt_rows
@@ -996,9 +1082,10 @@ def generate_allocation_proposal(db: sqlite3.Connection, acquisition_id: int, pa
             JOIN receipt_extraction_jobs j ON j.id=e.job_id
             JOIN acquisition_documents d ON d.id=j.document_id
             WHERE e.acquisition_id=? AND e.event_type='RECEIPT_MATH_ANALYZED'
+              AND j.id IN (""" + active_placeholders + """)
               AND j.status='COMPLETED' AND j.disposition<>'REJECTED' AND d.storage_status='STORED'
             ORDER BY e.recorded_at DESC,e.event_id DESC LIMIT 1""",
-        (acquisition_id,),
+        (acquisition_id, *active_jobs),
     ).fetchone()
     receipt_math = json.loads(math_row["payload"] or "{}").get("receipt_math", {}) if math_row else {}
     weights = sorted(direct.items())
@@ -1081,13 +1168,13 @@ def _proposal_payload(row: Mapping | None) -> dict | None:
 
 
 def allocation_for_confirmation(db: sqlite3.Connection, acquisition_id: int, final_paid: int) -> dict | None:
-    active_receipt = db.execute(
-        """SELECT 1 FROM receipt_extraction_jobs j
-             JOIN acquisition_documents d ON d.id=j.document_id
-            WHERE j.acquisition_id=? AND j.status='COMPLETED' AND j.disposition<>'REJECTED'
-              AND d.storage_status='STORED' LIMIT 1""",
-        (acquisition_id,),
-    ).fetchone()
+    active_jobs = active_extraction_job_ids(db, acquisition_id=acquisition_id)
+    active_receipt = bool(active_jobs) and bool(db.execute(
+        "SELECT 1 FROM receipt_extraction_jobs WHERE id IN ("
+        + ",".join("?" for _ in active_jobs)
+        + ") AND status='COMPLETED' LIMIT 1",
+        active_jobs,
+    ).fetchone())
     if not active_receipt:
         return None
     row = db.execute(
@@ -1119,15 +1206,21 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
     all_jobs = [_job_payload(db, int(row["id"])) for row in db.execute(
         "SELECT id FROM receipt_extraction_jobs WHERE acquisition_id=? ORDER BY created_at,id", (acquisition_id,)
     ).fetchall()]
-    active_document_ids = {
-        int(row["id"])
-        for row in db.execute(
-            "SELECT id FROM acquisition_documents WHERE acquisition_id=? AND storage_status='STORED'",
-            (acquisition_id,),
-        ).fetchall()
-    }
-    jobs = [job for job in all_jobs if int(job["document_id"]) in active_document_ids]
-    historical_jobs = [job for job in all_jobs if int(job["document_id"]) not in active_document_ids]
+    active_job_ids = set(active_extraction_job_ids(db, acquisition_id=acquisition_id))
+    jobs = [job for job in all_jobs if int(job["id"]) in active_job_ids]
+    historical_jobs = [job for job in all_jobs if int(job["id"]) not in active_job_ids]
+    for job in jobs:
+        job["active"] = True
+    for job in historical_jobs:
+        document = db.execute(
+            "SELECT storage_status FROM acquisition_documents WHERE id=?", (int(job["document_id"]),)
+        ).fetchone()
+        job["active"] = False
+        job["history_reason"] = (
+            "REMOVED_DOCUMENT"
+            if not document or document["storage_status"] != "STORED"
+            else "SUPERSEDED_EXTRACTION"
+        )
     groups = _candidate_groups(db, acquisition_id)
     acquisition = _acquisition(db, acquisition_id)
     conflicts = []
@@ -1150,12 +1243,14 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
                 proposed_fields.append({"field_name": field, "candidate_id": int(item["id"]), "value": item["value"], "confidence_band": item["confidence_band"], "status": provenance["status"]})
             if field in CRITICAL_FIELDS and item["confidence_band"] == "LOW":
                 low_confidence_critical.append(field)
-    parsed_receipt_lines = [receipt_line_payload(db, row) for row in db.execute(
-        """SELECT r.* FROM receipt_lines r JOIN receipt_extraction_jobs j ON j.id=r.job_id
-            JOIN acquisition_documents d ON d.id=j.document_id
-            WHERE r.acquisition_id=? AND j.disposition<>'SUPERSEDED' AND d.storage_status='STORED'
-            ORDER BY r.id""", (acquisition_id,)
-    ).fetchall()]
+    parsed_receipt_lines = []
+    if active_job_ids:
+        placeholders = ",".join("?" for _ in active_job_ids)
+        parsed_receipt_lines = [receipt_line_payload(db, row) for row in db.execute(
+            "SELECT r.* FROM receipt_lines r WHERE r.acquisition_id=? "
+            f"AND r.job_id IN ({placeholders}) ORDER BY r.id",
+            (acquisition_id, *sorted(active_job_ids)),
+        ).fetchall()]
     receipt_lines = [
         item for item in parsed_receipt_lines
         if semantic_allows_receipt_line(db, int(item["id"]))
@@ -1170,7 +1265,7 @@ def receipt_intelligence_payload(db: sqlite3.Connection, acquisition_id: int) ->
             if line and line["quantity"] and int(line["quantity"]) != int(item["quantity"]):
                 quantity_conflicts.append(item["id"])
     proposal = None
-    if active_document_ids:
+    if active_job_ids:
         proposal = _proposal_payload(db.execute(
             "SELECT * FROM receipt_allocation_proposals WHERE acquisition_id=? AND status IN ('APPLIED','ACCEPTED') ORDER BY created_at DESC,id DESC LIMIT 1", (acquisition_id,)
         ).fetchone())

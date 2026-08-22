@@ -379,11 +379,50 @@ def _current_successor(db: sqlite3.Connection, semantic_line_id: int) -> sqlite3
     ).fetchone()
 
 
-def semantic_line_payload(row: Mapping) -> dict:
+def active_extraction_job_ids(
+    db: sqlite3.Connection,
+    *,
+    acquisition_id: int | None = None,
+    document_id: int | None = None,
+) -> tuple[int, ...]:
+    """Return the one current extraction attempt for each attached document.
+
+    Extraction attempts are append-only.  The current attempt is derived from
+    the newest job for each document that is still attached.  A failed current
+    attempt therefore does not revive an older successful attempt, and removed
+    document history can never regain active authority.
+    """
+
+    clauses = [
+        "d.storage_status='STORED'",
+        "j.id=(SELECT MAX(newer.id) FROM receipt_extraction_jobs newer "
+        "WHERE newer.document_id=j.document_id)",
+        "j.disposition NOT IN ('REJECTED','SUPERSEDED')",
+    ]
+    params: list[object] = []
+    if acquisition_id is not None:
+        clauses.append("j.acquisition_id=?")
+        params.append(int(acquisition_id))
+    if document_id is not None:
+        clauses.append("j.document_id=?")
+        params.append(int(document_id))
+    rows = db.execute(
+        "SELECT j.id FROM receipt_extraction_jobs j "
+        "JOIN acquisition_documents d ON d.id=j.document_id "
+        f"WHERE {' AND '.join(clauses)} ORDER BY j.id",
+        params,
+    ).fetchall()
+    return tuple(int(row["id"]) for row in rows)
+
+
+def semantic_line_payload(row: Mapping, *, active: bool = True) -> dict:
     item = dict(row)
     item["evidence"] = json.loads(item.get("evidence") or "{}")
     item["operator_confirmation_required"] = bool(item["operator_confirmation_required"])
+    item["active"] = bool(active)
     item["product_match_eligible"] = (
+        active
+        and
         item["semantic_class"] in PRODUCT_MATCH_ELIGIBLE_CLASSES
         and item["confidence_state"] not in ("UNRESOLVED", "CONFLICTING")
         and item["semantic_status"] != "SUPERSEDED"
@@ -455,14 +494,24 @@ def current_semantic_lines(
     acquisition_id: int | None = None,
     job_id: int | None = None,
 ) -> list[dict]:
-    clauses = ["NOT EXISTS (SELECT 1 FROM receipt_semantic_lines n WHERE n.supersedes_semantic_line_id=s.id)"]
-    params: list[object] = []
+    active_jobs = active_extraction_job_ids(db, acquisition_id=acquisition_id)
+    if job_id is not None:
+        if int(job_id) not in active_jobs:
+            return []
+        active_jobs = (int(job_id),)
+    if not active_jobs:
+        return []
+    placeholders = ",".join("?" for _ in active_jobs)
+    clauses = [
+        "NOT EXISTS (SELECT 1 FROM receipt_semantic_lines n WHERE n.supersedes_semantic_line_id=s.id)",
+        f"s.job_id IN ({placeholders})",
+        "EXISTS (SELECT 1 FROM receipt_extraction_jobs active_job "
+        "WHERE active_job.id=s.job_id AND active_job.status='COMPLETED')",
+    ]
+    params: list[object] = list(active_jobs)
     if acquisition_id is not None:
         clauses.append("s.acquisition_id=?")
         params.append(int(acquisition_id))
-    if job_id is not None:
-        clauses.append("s.job_id=?")
-        params.append(int(job_id))
     rows = db.execute(
         f"SELECT s.* FROM receipt_semantic_lines s WHERE {' AND '.join(clauses)} "
         "ORDER BY s.job_id,s.source_page,s.source_line_index,s.id",
@@ -471,8 +520,75 @@ def current_semantic_lines(
     return [semantic_line_payload(row) for row in rows]
 
 
+def semantic_history_lines(db: sqlite3.Connection, acquisition_id: int) -> list[dict]:
+    """Return immutable non-current assertions with traceable supersession facts."""
+
+    current = current_semantic_lines(db, acquisition_id=acquisition_id)
+    current_ids = {int(item["id"]) for item in current}
+    active_jobs = set(active_extraction_job_ids(db, acquisition_id=acquisition_id))
+    active_jobs_by_document = {
+        int(row["document_id"]): dict(row)
+        for row in db.execute(
+            "SELECT id,document_id,job_uuid FROM receipt_extraction_jobs WHERE id IN ("
+            + (",".join("?" for _ in active_jobs) if active_jobs else "NULL")
+            + ")",
+            tuple(sorted(active_jobs)),
+        ).fetchall()
+    }
+    rows = db.execute(
+        """SELECT s.*,j.job_uuid,j.status AS job_status,d.storage_status AS document_status
+             FROM receipt_semantic_lines s
+             JOIN receipt_extraction_jobs j ON j.id=s.job_id
+             JOIN acquisition_documents d ON d.id=s.document_id
+            WHERE s.acquisition_id=?
+            ORDER BY s.recorded_at DESC,s.id DESC""",
+        (int(acquisition_id),),
+    ).fetchall()
+    history: list[dict] = []
+    for row in rows:
+        if int(row["id"]) in current_ids:
+            continue
+        item = semantic_line_payload(row, active=False)
+        successor = db.execute(
+            "SELECT semantic_uuid FROM receipt_semantic_lines WHERE supersedes_semantic_line_id=?",
+            (int(row["id"]),),
+        ).fetchone()
+        event = db.execute(
+            """SELECT event_type,reason_code,notes,recorded_at
+                 FROM receipt_semantic_events
+                WHERE semantic_line_id=? AND successor_semantic_line_id IS NOT NULL
+                ORDER BY recorded_at DESC,event_id DESC LIMIT 1""",
+            (int(row["id"]),),
+        ).fetchone()
+        active_job = active_jobs_by_document.get(int(row["document_id"]))
+        if row["document_status"] != "STORED":
+            inactive_reason = "REMOVED_DOCUMENT"
+        elif row["job_status"] != "COMPLETED":
+            inactive_reason = "FAILED_EXTRACTION"
+        elif int(row["job_id"]) not in active_jobs:
+            inactive_reason = "SUPERSEDED_EXTRACTION"
+        else:
+            inactive_reason = "SUPERSEDED_DECISION"
+        item.update({
+            "inactive_reason": inactive_reason,
+            "superseded_by_semantic_uuid": successor["semantic_uuid"] if successor else None,
+            "superseded_by_job_uuid": (
+                active_job["job_uuid"]
+                if active_job and int(active_job["id"]) != int(row["job_id"])
+                else None
+            ),
+            "operator_action": event["event_type"] if event else None,
+            "operator_reason_code": event["reason_code"] if event else "",
+            "operator_notes": event["notes"] if event else "",
+            "superseded_at": event["recorded_at"] if event else None,
+        })
+        history.append(item)
+    return history
+
+
 def semantic_review_payload(db: sqlite3.Connection, acquisition_id: int) -> dict:
     lines = current_semantic_lines(db, acquisition_id=acquisition_id)
+    history = semantic_history_lines(db, acquisition_id)
     counts = {semantic_class: 0 for semantic_class in SEMANTIC_CLASSES}
     for line in lines:
         counts[line["semantic_class"]] += 1
@@ -480,6 +596,10 @@ def semantic_review_payload(db: sqlite3.Connection, acquisition_id: int) -> dict
         "taxonomy_version": RULES_VERSION,
         "engine_version": ENGINE_VERSION,
         "lines": lines,
+        "history": history,
+        "total_stored_assertion_count": len(lines) + len(history),
+        "active_assertion_count": len(lines),
+        "historical_assertion_count": len(history),
         "counts": counts,
         "needs_confirmation_count": sum(1 for line in lines if line["operator_confirmation_required"]),
         "product_match_eligible_count": sum(1 for line in lines if line["product_match_eligible"]),
@@ -491,9 +611,13 @@ def semantic_allows_receipt_line(db: sqlite3.Connection, receipt_line_id: int) -
     """Preserve HF3 behavior for legacy jobs; gate newly classified jobs."""
 
     row = db.execute(
-        "SELECT job_id FROM receipt_lines WHERE id=?", (int(receipt_line_id),)
+        """SELECT r.job_id,j.status FROM receipt_lines r
+             JOIN receipt_extraction_jobs j ON j.id=r.job_id WHERE r.id=?""",
+        (int(receipt_line_id),)
     ).fetchone()
     if not row:
+        return False
+    if row["status"] != "COMPLETED" or int(row["job_id"]) not in active_extraction_job_ids(db):
         return False
     semantic_count = int(db.execute(
         "SELECT COUNT(*) FROM receipt_semantic_lines WHERE job_id=?", (row["job_id"],)
@@ -540,6 +664,15 @@ def decide_semantic_line(db: sqlite3.Connection, semantic_uuid: str, payload: Ma
     ).fetchone()
     if not current:
         raise ValueError("Receipt semantic line not found")
+    job_status = db.execute(
+        "SELECT status FROM receipt_extraction_jobs WHERE id=?", (int(current["job_id"]),)
+    ).fetchone()
+    if not job_status or job_status["status"] != "COMPLETED":
+        raise ValueError("Receipt semantic line is historical; review the current interpretation")
+    if int(current["job_id"]) not in active_extraction_job_ids(
+        db, acquisition_id=int(current["acquisition_id"]), document_id=int(current["document_id"])
+    ):
+        raise ValueError("Receipt semantic line is historical; review the current interpretation")
     if _current_successor(db, int(current["id"])):
         raise ValueError("Receipt semantic line changed; refresh before recording this decision")
 

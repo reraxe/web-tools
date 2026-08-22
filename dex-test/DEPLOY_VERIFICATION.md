@@ -1,25 +1,20 @@
-# DEX v2.3-test Inventory Intelligence Phase 1 Remediation 3 — DEPLOY Verification
+# Remediation 4 DEPLOY Verification
 
-Status: **ACCEPT**. Root-shaped deployment candidate verified. No upload or deployment was performed.
+Result: **ACCEPT**
 
-This directory is the root-shaped GitHub upload payload. `app.py`, `Dockerfile`, `requirements.txt`, every required `dex_*.py` runtime sibling, `static/`, and `tests/` are directly at this root. There is no nested DEPLOY directory.
+This folder is root-shaped: `app.py`, `Dockerfile`, runtime modules, `static/`, migrations, tests, and required documentation are directly at its root. It contains no nested DEPLOY package.
 
-All source/runtime files were copied from the frozen Remediation 3 worktree and match it byte-for-byte. The worktree was frozen at 230 files; SHA-256 of its frozen ledger is `a2ba941d8f3ab362531c76a83ffc0a03f16cec57280f6ea04e059a681a9f110a`.
+Final acceptance was run from this folder:
 
-Acceptance evidence run from this DEPLOY root:
+- 229/229 Python tests passed.
+- 23/23 frontend tests passed; JavaScript syntax passed.
+- Runtime imports passed.
+- Isolated `/api/health` returned HTTP 200 and `v2.3-test`.
+- Migrations 0001–0016 were present and ordered; no 0017; SQLite integrity was `ok`.
+- Fantasy Bay active-state, one-review-item, merchant freshness, superseded-history isolation, Remediation 3 allocation safety, valid single-product allocation, and Mom and Pop `POLICY_REQUIRED` gates passed.
+- Remediation 3 → 4 diff contained seven explained paths and no unexplained drift.
+- Prohibited/private-artifact, secret, machine-path, and package-integrity scans passed.
 
-- Python regression: 224/224 passed.
-- Frontend regression: 22/22 passed; JavaScript syntax passed.
-- Explicit Fantasy Bay, valid reconciled single-product, manual single-product, mixed-purchase `POLICY_REQUIRED`, read-only allocation, and Mom and Pop tests: 6/6 passed.
-- Fantasy Bay retained `OP deck $16.00` as merchandise, left the corrupted `$0.53` unresolved, remained `UNRECONCILED`, exposed no automatic allocation, rejected confirmation, and wrote zero basis/allocation events.
-- The valid reconciled `$16.00 + $0.53 tax = $16.53` case retained the established 100% one-product allocation path.
-- Receipt upload UX exposed only **Take Photo** and **Upload**; selection immediately used the established upload/extraction path; cancellation, repeated selection, de-duplication, camera, View, and Remove passed.
-- Runtime sibling imports passed. `/api/health` returned HTTP 200 with `v2.3-test`.
-- SQLite contained ordered migrations 0001–0016, no 0017, and integrity `ok`.
-- `DEPLOY_SHA256SUMS.txt` verified with zero mismatches. It excludes itself and this verification document to avoid self-reference.
-- Privacy/prohibited-artifact, credential, machine-path, cache, database, and nested-package scans returned zero findings.
-- Remediation 2 → Remediation 3: 9 explained modified files, 6 explained additive files, and 0 removals; no unexplained drift.
+Use `DEPLOY_SHA256SUMS.txt` to verify the upload and deployed runtime. No deployment was performed during packaging.
 
-Suggested immutable image tag: `192.168.2.92:5000/apps/dex:v2.3-test-inventory-intelligence-phase1-remediation3`.
-
-This package is accepted for the operator-controlled deployment workflow. Deployment remains a separate operator action.
+Known metadata note: the frozen Dockerfile's OCI version label still names Remediation 3. This was preserved under the exact-freeze instruction. The operator must use the new immutable Remediation 4 image tag recorded in `OPERATOR_DEPLOY_INSTRUCTIONS.md`; runtime identity remains `v2.3-test`.
