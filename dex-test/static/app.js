@@ -761,10 +761,10 @@ function sourceDocumentPanel() {
     return `<article class="source-document-row ${document.storage_status.toLowerCase()}"><div>${icon(document.detected_mime_type === "application/pdf" ? "file-text" : "image")}<span><strong>${escapeHtml(document.original_filename)}</strong><small>${escapeHtml(statusLabel)}${document.integrity_status === "VERIFIED" ? " · SHA-256 verified" : ""}</small>${failed ? `<em>${escapeHtml(document.error_message || "Document could not be stored")}</em>` : ""}</span></div><div class="source-document-actions">${stored && !tombstoned ? receiptJobControls(document, job) : ""}${stored ? `<button type="button" class="button tertiary" data-action="view-source-document" data-id="${document.id}">${icon("eye")}View</button>` : ""}${failed ? `<button type="button" class="button secondary" data-action="retry-source-document" data-id="${document.id}">${icon("rotate-ccw")}Retry upload</button>` : ""}${!tombstoned ? `<button type="button" class="button tertiary" data-action="remove-source-document" data-id="${document.id}">${icon("x")}Remove</button>` : ""}</div></article>`;
   }).join("");
   const confirmed = acquisition.state === "READY_FOR_INTAKE";
-  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No receipt currently attached"}</strong><small>Private local extraction supports JPG, JPEG, PNG, and text-layer PDF. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document">${icon("upload")}Upload</button></div></div>
-    <input id="source-document-camera" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/heic,image/heif" capture="environment">
-    <input id="source-document-files" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf" multiple>
-    <input id="source-document-retry" class="visually-hidden" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf">
+  return `<section class="source-document-panel" data-viewport-key="source-documents"><div class="source-document-head"><div><span class="eyebrow">Receipt / Source Documents</span><strong>${summary.active_count ? `${summary.active_count} document(s) attached` : "No receipt currently attached"}</strong><small>Private local extraction supports JPG, JPEG, PNG, and text-layer PDF. Suggestions stay non-authoritative until you confirm the acquisition.</small></div><div><button type="button" class="button secondary" data-action="take-source-photo" aria-controls="source-document-camera">${icon("camera")}Take Photo</button><button type="button" class="button secondary" data-action="upload-source-document" aria-controls="source-document-files">${icon("upload")}Upload</button></div></div>
+    <input id="source-document-camera" class="source-document-implementation-input" type="file" accept="image/jpeg,image/png,image/heic,image/heif" capture="environment" hidden>
+    <input id="source-document-files" class="source-document-implementation-input" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf" multiple hidden>
+    <input id="source-document-retry" class="source-document-implementation-input" type="file" accept=".jpg,.jpeg,.png,.heic,.heif,.pdf,image/jpeg,image/png,image/heic,image/heif,application/pdf" hidden>
     ${rows ? `<div class="source-document-list">${rows}</div>` : ""}
     ${summary.failed_count ? `<p class="source-document-warning">${icon("triangle-alert")}A document upload needs attention. Manual acquisition entry remains available.</p>` : ""}
     ${receiptManualFallbackPanel()}
@@ -846,17 +846,28 @@ function upcScannerPanel() {
   return `<section class="upc-intake" data-viewport-key="upc-intake"><div class="upc-intake-copy"><span class="eyebrow">Product Catalog</span><h3>Scan UPC</h3><p>Use a normal keyboard-emulating barcode scanner, or type a UPC-A, EAN-13, or GTIN-14 and press Enter. Each recognized scan adds one physical quantity; UPC identifies the commercial product, never an individual sealed unit.</p></div><form id="upc-scan-form" class="upc-scan-form"><label for="upc-scan-input">UPC / EAN / GTIN</label><div><input id="upc-scan-input" name="raw_identifier" autocomplete="off" inputmode="numeric" placeholder="Scan barcode" required><button class="button primary" ${state.upcScanPending ? "disabled" : ""}>${icon("scan-barcode")}${state.upcScanPending ? "Checking…" : "Apply scan"}</button></div></form>${upcRecognitionStatus()}${unknownProductPanel()}<details class="catalog-manual-fallback" data-disclosure-key="acquisition-${state.activeAcquisition.acquisition.id}-catalog-manual"><summary>Search catalog or continue with manual entry</summary><p>UPC is optional. Search DEX's local catalog to populate a line, or use the editable product cards below.</p>${catalogSearchForm("manual")}</details></section>`;
 }
 
+function singleProductAllocationNotice() {
+  const data = state.activeAcquisition;
+  const finalCost = data.acquisition.final_usd_paid_cents;
+  const eligibility = data.single_product_allocation_eligibility || {};
+  const eligible = eligibility.eligible === true
+    || (!eligibility.status && Boolean(data.automatic_single_line_allocation_preview));
+  if (!eligible) {
+    return `<div class="single-line-allocation-notice blocked" role="alert">${icon("triangle-alert")}<div><strong>Automatic allocation is not ready.</strong><p>${escapeHtml(eligibility.message || "Resolve receipt financial discrepancies first.")}</p><small>DEX will not assign the final-paid amount to this product until the backend confirms allocation eligibility.</small></div></div>`;
+  }
+  return `<div class="single-line-allocation-notice">${icon("equal")}<div><strong>Automatic single-product allocation</strong><p>${finalCost == null ? "When Final USD is entered and confirmed, 100% will be assigned to this product line." : `${formatCents(finalCost)} will be assigned 100% to this product line at confirmation.`}</p><small>Method: Single line — 100% of authoritative landed cost. The audited allocation event is recorded with confirmation.</small></div></div>`;
+}
+
 function wizardProductsScreen() {
   const lines = activeAcquisitionLines();
   const multiple = lines.length > 1;
-  const finalCost = state.activeAcquisition.acquisition.final_usd_paid_cents;
   return `<section class="wizard-screen" data-viewport-key="wizard-products"><div class="wizard-heading"><span>Step 2</span><h2 id="wizard-screen-title" tabindex="-1">Product & Purchase Details</h2><p>Tell DEX what arrived and where/how you bought it. Accounting safeguards remain in the background.</p></div>
     <datalist id="tcg-game-options"><option value="Pokemon"><option value="One Piece"><option value="Riftbound"></datalist><datalist id="catalog-subtype-options"><option value="Booster Pack"><option value="Sleeved Booster"><option value="Blister"><option value="Promo Pack"><option value="Booster Box"><option value="Starter Deck"><option value="Double Pack"><option value="Collection Box"><option value="Illustration Box"><option value="ETB"></datalist>
     ${upcScannerPanel()}
     <div class="product-line-stack">${lines.map(lineDetailsForm).join("")}</div>
     <div class="add-line-panel"><strong>Add another product only if needed</strong><div>${["SINGLE_CARDS", "PACK_PRODUCT", "SEALED_PRODUCT"].map((value) => `<button class="button secondary" data-action="add-acquisition-line" data-product-class="${value}">${icon("plus")}${escapeHtml(productClassLabel(value))}</button>`).join("")}</div></div>
     ${purchaseDetailsForm()}
-    ${multiple ? `<div class="multi-line-accounting-notice">${icon("sparkles")}<div><strong>DEX will reconcile product-line costs on Review</strong><p>Routine accounting stays out of this screen. If authoritative facts are not sufficient to split landed cost safely, Review will request attention and offer manual resolution.</p><small>DEX never guesses an allocation method or invents missing source facts.</small></div></div>` : `<div class="single-line-allocation-notice">${icon("equal")}<div><strong>Automatic single-product allocation</strong><p>${finalCost == null ? "When Final USD is entered and confirmed, 100% will be assigned to this product line." : `${formatCents(finalCost)} will be assigned 100% to this product line at confirmation.`}</p><small>Method: Single line — 100% of authoritative landed cost. The audited allocation event is recorded with confirmation.</small></div></div>`}
+    ${multiple ? `<div class="multi-line-accounting-notice">${icon("sparkles")}<div><strong>DEX will reconcile product-line costs on Review</strong><p>Routine accounting stays out of this screen. If authoritative facts are not sufficient to split landed cost safely, Review will request attention and offer manual resolution.</p><small>DEX never guesses an allocation method or invents missing source facts.</small></div></div>` : singleProductAllocationNotice()}
     <div class="wizard-actions"><button class="button secondary" data-action="wizard-step" data-step="ACQUIRE">${icon("arrow-left")}Back</button><button class="button primary" data-action="wizard-next" data-step="REVIEW">Review Acquisition${icon("arrow-right")}</button></div>
   </section>`;
 }
@@ -1059,8 +1070,14 @@ function receiptIntelligenceReview() {
   const policyRequired = intel.allocation_policy?.status === "POLICY_REQUIRED";
   const policyComponents = policyRequired ? (intel.allocation_policy.preserved_components || []).map((item) => `<li><span>${escapeHtml(item.label || titleCase(item.kind))}</span><strong>${formatCents(item.signed_cents)}</strong><small>${escapeHtml(titleCase(item.math_role || "Unresolved"))}</small></li>`).join("") : "";
   const unavailableAllocation = !proposal && activeAcquisitionLines().length > 1;
+  const singleProductBlocked = !proposal
+    && activeAcquisitionLines().length === 1
+    && state.activeAcquisition.single_product_allocation_eligibility?.eligible === false
+    && state.activeAcquisition.single_product_allocation_eligibility?.authority_source === "RECEIPT_INTELLIGENCE";
   const allocationFallback = policyRequired
     ? `<div class="receipt-allocation unresolved receipt-policy-required" role="alert"><strong>Final landed-cost allocation: Policy required</strong><p>Receipt extraction, product matching, arithmetic, and business-purpose classification are complete. DEX will not assume how shared purchase components should be divided between inventory and noninventory.</p>${policyComponents ? `<ul>${policyComponents}</ul>` : ""}<small>Pending policy: sales tax, transaction/card fees, shipping/freight, purchase-level discounts or credits, and cent-rounding/remainder handling.</small></div>`
+    : singleProductBlocked
+      ? `<div class="receipt-allocation unresolved" role="alert"><strong>Automatic allocation is not ready.</strong><p>${escapeHtml(state.activeAcquisition.single_product_allocation_eligibility.message || "Resolve receipt financial discrepancies first.")}</p><small>No final-paid amount will be assigned automatically while receipt financial evidence remains unresolved.</small></div>`
     : unavailableAllocation && intel.manual_fallback_selected
     ? `<div class="receipt-allocation manual"><strong>Manual line allocation selected.</strong><p>Confirm each product-line landed cost and complete both reconciliation equations. Receipt extraction remains failed/unavailable and does not supply authority.</p></div>`
     : unavailableAllocation && intel.manual_fallback_available
@@ -1269,9 +1286,9 @@ function bindAcquisitionWizardForms() {
       try { await saveAcquisitionForm(form, true); } catch (error) { toast(error.message, "error"); }
     });
   }
-  document.querySelector("#source-document-camera")?.addEventListener("change", (event) => uploadSourceDocuments(event.target.files, "CAMERA"));
-  document.querySelector("#source-document-files")?.addEventListener("change", (event) => uploadSourceDocuments(event.target.files, "FILE_UPLOAD"));
-  document.querySelector("#source-document-retry")?.addEventListener("change", (event) => retrySourceDocumentUpload(event.target.dataset.documentId, event.target.files?.[0]));
+  document.querySelector("#source-document-camera")?.addEventListener("change", (event) => handleSourceDocumentSelection(event, "CAMERA"));
+  document.querySelector("#source-document-files")?.addEventListener("change", (event) => handleSourceDocumentSelection(event, "FILE_UPLOAD"));
+  document.querySelector("#source-document-retry")?.addEventListener("change", (event) => handleSourceDocumentRetrySelection(event));
   document.querySelectorAll(".acquisition-allocation-form").forEach((form) => {
     form.addEventListener("submit", confirmAllocationForm);
     form.querySelectorAll("[name]").forEach((field) => {
@@ -2225,6 +2242,33 @@ function fileToDataUrl(file) {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+function openSourceDocumentPicker(selector, documentId = null) {
+  const input = document.querySelector(selector);
+  if (!input) return false;
+  input.value = "";
+  if (documentId === null) delete input.dataset.documentId;
+  else input.dataset.documentId = String(documentId);
+  input.click();
+  return true;
+}
+
+async function handleSourceDocumentSelection(event, captureMethod) {
+  const input = event.currentTarget || event.target;
+  const files = [...(input?.files || [])];
+  if (input) input.value = "";
+  if (!files.length) return;
+  await uploadSourceDocuments(files, captureMethod);
+}
+
+async function handleSourceDocumentRetrySelection(event) {
+  const input = event.currentTarget || event.target;
+  const documentId = input?.dataset?.documentId;
+  const file = input?.files?.[0];
+  if (input) input.value = "";
+  if (!file) return;
+  await retrySourceDocumentUpload(documentId, file);
 }
 
 async function uploadSourceDocuments(fileList, captureMethod) {
@@ -3359,8 +3403,8 @@ document.addEventListener("click", async (event) => {
     }
     if (action === "apply-catalog-product") await applyCatalogProduct(actionEl.dataset.lineId, actionEl.dataset.productId);
     if (action === "open-identifier-history") await openIdentifierHistory(actionEl.dataset.id);
-    if (action === "take-source-photo") document.querySelector("#source-document-camera")?.click();
-    if (action === "upload-source-document") document.querySelector("#source-document-files")?.click();
+    if (action === "take-source-photo") openSourceDocumentPicker("#source-document-camera");
+    if (action === "upload-source-document") openSourceDocumentPicker("#source-document-files");
     if (action === "view-source-document") window.open(`/api/acquisition-documents/${encodeURIComponent(actionEl.dataset.id)}/content`, "_blank", "noopener,noreferrer");
     if (action === "extract-source-document") await extractSourceDocument(actionEl.dataset.id);
     if (action === "retry-receipt-extraction") await retryReceiptExtraction(actionEl.dataset.jobUuid);
@@ -3372,8 +3416,7 @@ document.addEventListener("click", async (event) => {
     if (action === "mark-semantic-unresolved") await markReceiptSemanticUnresolved(actionEl.dataset.semanticUuid);
     if (action === "generate-receipt-allocation") await generateReceiptAllocation();
     if (action === "retry-source-document") {
-      const input = document.querySelector("#source-document-retry");
-      if (input) { input.dataset.documentId = actionEl.dataset.id; input.value = ""; input.click(); }
+      openSourceDocumentPicker("#source-document-retry", actionEl.dataset.id);
     }
     if (action === "remove-source-document") await removeSourceDocument(actionEl.dataset.id);
     if (action === "wizard-step") await moveWizardTo(actionEl.dataset.step, { saveCurrent: true });
