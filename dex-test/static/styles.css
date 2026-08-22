@@ -442,6 +442,16 @@ tbody tr[data-expand]:hover { background: #f8faf9; }
 .receipt-semantic-source strong, .receipt-semantic-result strong { margin-top: 3px; }
 .receipt-semantic-form { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(160px,.8fr) minmax(160px,.8fr) minmax(220px,1.2fr); align-items: end; gap: 8px; }
 .receipt-semantic-form > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.receipt-semantic-adjust { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 7px; }
+.receipt-semantic-adjust > summary { color: var(--muted); font-weight: 700; cursor: pointer; }
+.receipt-semantic-adjust .receipt-semantic-form { margin-top: 8px; }
+.receipt-semantic-history { margin: 0 12px 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.receipt-semantic-history > summary { font-weight: 700; cursor: pointer; }
+.receipt-semantic-history > p { color: var(--muted); margin: 8px 0; }
+.receipt-semantic-history ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.receipt-semantic-history li { display: grid; grid-template-columns: minmax(220px,1.2fr) minmax(180px,.8fr); gap: 10px; padding: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); }
+.receipt-semantic-history span, .receipt-semantic-history strong, .receipt-semantic-history small { display: block; }
+.receipt-semantic-history span, .receipt-semantic-history small { color: var(--muted); font-size: 9px; line-height: 1.4; }
 .receipt-candidate { padding: 10px 11px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 6px; background: white; }
 .receipt-candidate.conflict { border-color: #d3aa55; background: #fffaf0; }
 .receipt-candidate.rejected { opacity: .6; background: var(--surface-2); }
@@ -1174,7 +1184,7 @@ dialog::backdrop { background: rgba(17, 26, 23, .5); }
   .wizard-progress li:last-child { border-bottom: 0; }
   .add-line-panel, .review-hero { align-items: stretch; flex-direction: column; }
   .review-hero > div:last-child { text-align: left; }
-  .allocation-card, .discrepancy-panel, .reconciliation-block, .review-lines article, .receipt-review-line, .receipt-semantic-line, .receipt-semantic-form { grid-template-columns: 1fr; }
+  .allocation-card, .discrepancy-panel, .reconciliation-block, .review-lines article, .receipt-review-line, .receipt-semantic-line, .receipt-semantic-form, .receipt-semantic-history li { grid-template-columns: 1fr; }
   .receipt-semantic-form { grid-column: auto; }
   .allocation-attention-summary { grid-template-columns: 1fr; }
   .review-purchase-grid { grid-template-columns: 1fr; }

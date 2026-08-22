@@ -1013,7 +1013,8 @@ function receiptMathPanel(math) {
 
 function receiptSemanticReview(review) {
   const lines = review?.lines || [];
-  if (!lines.length) return "";
+  const history = review?.history || [];
+  if (!lines.length && !history.length) return "";
   const classes = [
     "MERCHANDISE", "DISCOUNT_CREDIT", "FEE_SURCHARGE", "TAX", "SHIPPING",
     "SUBTOTAL", "TOTAL", "TENDER_PAYMENT_METHOD", "PAYMENT_SUMMARY",
@@ -1029,24 +1030,43 @@ function receiptSemanticReview(review) {
     const confirmed = line.confidence_state === "OPERATOR_CONFIRMED";
     const statusClass = confirmed ? "green" : ["UNRESOLVED", "CONFLICTING"].includes(line.confidence_state) ? "amber" : "";
     const options = classes.map((value) => `<option value="${value}" ${line.semantic_class === value ? "selected" : ""}>${escapeHtml(titleCase(value))}</option>`).join("");
+    const form = `<form class="receipt-semantic-form" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}" data-current-class="${escapeHtml(line.semantic_class)}">
+      <label>Semantic class<select name="semantic_class" aria-label="Semantic class for source line ${line.source_line_index}">${options}</select></label>
+      <label>Correction reason<select name="reason_code"><option value="OPERATOR_REVIEW">Operator review</option><option value="PARSER_MISCLASSIFIED">Parser misclassified</option><option value="AMBIGUOUS_SOURCE">Ambiguous source line</option><option value="OTHER">Other</option></select></label>
+      <label>Notes<input name="notes" maxlength="1000" placeholder="Optional review note"></label>
+      <div><button class="button secondary">${line.semantic_class === "UNKNOWN" ? "Save review" : confirmed ? "Update classification" : "Confirm / change"}</button>${line.semantic_class !== "UNKNOWN" ? `<button type="button" class="button tertiary" data-action="mark-semantic-unresolved" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}">Mark unresolved</button>` : ""}</div>
+    </form>`;
+    const needsReview = Boolean(line.operator_confirmation_required) || ["UNRESOLVED", "CONFLICTING"].includes(line.confidence_state);
+    const controls = needsReview
+      ? form
+      : `<details class="receipt-semantic-adjust"><summary>Change classification</summary>${form}</details>`;
     return `<article class="receipt-semantic-line ${confirmed ? "confirmed" : ""}" data-viewport-key="receipt-semantic-${escapeHtml(line.semantic_uuid)}">
       <div class="receipt-semantic-source"><span>Source line ${line.source_line_index} · page ${line.source_page || "Unknown"}</span><strong>${escapeHtml(line.normalized_text)}</strong><small>${escapeHtml(line.source_location || "Location unavailable")} · ${amount} · ${escapeHtml(line.parser_version)}</small></div>
       <div class="receipt-semantic-result"><span class="badge ${statusClass}">${escapeHtml(titleCase(line.semantic_class))}</span><strong>${escapeHtml(titleCase(line.confidence_state))}</strong><small>${confidence} · ${line.operator_confirmation_required ? "Operator confirmation requested" : "No confirmation required"} · ${line.product_match_eligible ? "Product-match eligible" : "Excluded from product matching"}</small></div>
-      <form class="receipt-semantic-form" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}" data-current-class="${escapeHtml(line.semantic_class)}">
-        <label>Semantic class<select name="semantic_class" aria-label="Semantic class for source line ${line.source_line_index}">${options}</select></label>
-        <label>Correction reason<select name="reason_code"><option value="OPERATOR_REVIEW">Operator review</option><option value="PARSER_MISCLASSIFIED">Parser misclassified</option><option value="AMBIGUOUS_SOURCE">Ambiguous source line</option><option value="OTHER">Other</option></select></label>
-        <label>Notes<input name="notes" maxlength="1000" placeholder="Optional review note"></label>
-        <div><button class="button secondary">${line.semantic_class === "UNKNOWN" ? "Save review" : confirmed ? "Update classification" : "Confirm / change"}</button>${line.semantic_class !== "UNKNOWN" ? `<button type="button" class="button tertiary" data-action="mark-semantic-unresolved" data-semantic-uuid="${escapeHtml(line.semantic_uuid)}">Mark unresolved</button>` : ""}</div>
-      </form>
+      ${controls}
     </article>`;
   }).join("");
-  return `<details class="receipt-semantic-review" open data-disclosure-key="receipt-semantic-review"><summary>Receipt line meanings · ${lines.length} source line(s) · ${review.needs_confirmation_count || 0} need review</summary><div class="receipt-semantic-intro"><strong>Semantic suggestions only</strong><p>Line meaning is separate from business purpose, inventory identity, and landed-cost authority. Every correction preserves its earlier interpretation.</p></div><div class="receipt-semantic-lines">${rows}</div></details>`;
+  const historyRows = history.map((line) => {
+    const confidence = line.numeric_confidence === null || line.numeric_confidence === undefined
+      ? "Confidence unavailable"
+      : `${Math.round(Number(line.numeric_confidence) * 100)}% parser confidence`;
+    const supersededBy = line.superseded_by_semantic_uuid
+      ? `semantic decision ${line.superseded_by_semantic_uuid}`
+      : line.superseded_by_job_uuid
+        ? `extraction ${line.superseded_by_job_uuid}`
+        : titleCase(line.inactive_reason || "Historical");
+    const action = line.operator_action ? ` · ${titleCase(line.operator_action)}` : "";
+    return `<li><div><span>Source line ${line.source_line_index} · ${escapeHtml(titleCase(line.inactive_reason || "Historical"))}</span><strong>${escapeHtml(line.normalized_text)}</strong><small>${escapeHtml(titleCase(line.semantic_class))} · ${confidence} · ${escapeHtml(line.parser_version)} · ${escapeHtml(line.rules_version || "Rules version unavailable")}</small></div><div><span>${escapeHtml(formatDate(line.recorded_at))}</span><strong>Superseded by ${escapeHtml(supersededBy)}</strong><small>${escapeHtml(action.replace(/^ · /, "")) || "No operator action"}${line.operator_reason_code ? ` · ${escapeHtml(titleCase(line.operator_reason_code))}` : ""}</small></div></li>`;
+  }).join("");
+  const activeCount = review.active_assertion_count ?? lines.length;
+  const historyPanel = historyRows ? `<details class="receipt-semantic-history" data-disclosure-key="receipt-semantic-history"><summary>View interpretation history · ${review.historical_assertion_count ?? history.length} historical / superseded</summary><p>Audit history is immutable and does not participate in matching, receipt math, allocation, or confirmation.</p><ul>${historyRows}</ul></details>` : "";
+  return `<details class="receipt-semantic-review" open data-disclosure-key="receipt-semantic-review"><summary>Current interpretation · ${activeCount} source line(s) · ${review.needs_confirmation_count || 0} need review</summary><div class="receipt-semantic-intro"><strong>Current semantic suggestions only</strong><p>Only the active interpretation participates in review and downstream safeguards. Earlier parser results remain available in audit history.</p></div><div class="receipt-semantic-lines">${rows}</div>${historyPanel}</details>`;
 }
 
 function receiptIntelligenceReview() {
   const intel = receiptIntelligence();
   const historicalJobs = intel.historical_jobs || [];
-  const historical = historicalJobs.length ? `<details class="receipt-history"><summary>Removed-document extraction history · ${historicalJobs.length}</summary><ul class="receipt-job-list">${historicalJobs.map((job) => `<li><div><strong>Removed source · ${escapeHtml(titleCase(job.status))}</strong><small>${escapeHtml(job.provider_name)} · ${escapeHtml(formatDate(job.completed_at || job.failed_at || job.queued_at))}</small></div><span>History retained; no active retry</span></li>`).join("")}</ul></details>` : "";
+  const historical = historicalJobs.length ? `<details class="receipt-history"><summary>Removed-document extraction history / prior attempts · ${historicalJobs.length}</summary><ul class="receipt-job-list">${historicalJobs.map((job) => `<li><div><strong>${escapeHtml(titleCase(job.history_reason || "Historical extraction"))} · ${escapeHtml(titleCase(job.status))}</strong><small>${escapeHtml(job.provider_name)} · ${escapeHtml(formatDate(job.completed_at || job.failed_at || job.queued_at))}</small></div><span>History retained; no active retry or authority</span></li>`).join("")}</ul></details>` : "";
   if (!(intel.jobs || []).length) return `<section class="receipt-review empty"><div class="section-header"><div><span>Receipt Intelligence</span><h3>No active receipt extraction</h3><p>${historicalJobs.length ? "No receipt currently attached. Removed-document history remains below." : "Manual entry remains fully available. Attach a text-based PDF and choose Extract purchase details if you want suggestions."}</p></div></div>${historical}</section>`;
   const jobs = (intel.jobs || []).map((job) => `<li><div><strong>${escapeHtml(job.status === "COMPLETED" ? "Ready to review" : titleCase(job.status))}</strong><small>${escapeHtml(job.provider_name)} · ${escapeHtml(job.provider_version)} · ${escapeHtml(formatDate(job.completed_at || job.failed_at || job.queued_at))}</small></div><span>${job.status === "FAILED" ? escapeHtml(job.error_message || "Retryable local extraction failure") : `${job.receipt_lines?.length || 0} receipt line(s)`}</span></li>`).join("");
   const candidates = Object.entries(intel.candidate_groups || {}).flatMap(([field, items]) => (items || []).map((candidate) => {
