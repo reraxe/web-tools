@@ -16,6 +16,7 @@ class DexApiTest(unittest.TestCase):
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory()
         root = Path(cls.temp.name)
+        (root / "reference-library").mkdir(parents=True)
         os.environ.update(
             {
                 "DEX_DATA_DIR": str(root / "data"),
@@ -23,6 +24,7 @@ class DexApiTest(unittest.TestCase):
                 "DEX_IMAGE_DIR": str(root / "data" / "images"),
                 "DEX_INBOUND_DIR": str(root / "data" / "inbound"),
                 "DEX_SOURCE_DB_DIR": str(root / "source-database"),
+                "DEX_ONE_PIECE_REFERENCE_DIR": str(root / "reference-library"),
                 "DEX_WATCH_INBOUND": "0",
                 "DEX_SEED_DEMO": "0",
             }
@@ -43,7 +45,7 @@ class DexApiTest(unittest.TestCase):
         cls.thread.join(timeout=3)
         cls.temp.cleanup()
 
-    def request(self, path, method="GET", body=None):
+    def request(self, path, method="GET", body=None, timeout=5):
         payload = json.dumps(body).encode() if body is not None else None
         request = urllib.request.Request(
             self.base + path,
@@ -51,7 +53,7 @@ class DexApiTest(unittest.TestCase):
             method=method,
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.status, json.loads(response.read())
 
     def test_complete_inventory_flow(self):
@@ -156,7 +158,7 @@ class DexApiTest(unittest.TestCase):
         status, health = self.request("/api/health")
         self.assertEqual(status, 200)
         self.assertEqual(health["name"], "Dex")
-        self.assertEqual(health["version"], "v2.2-test")
+        self.assertEqual(health["version"], "v2.4-test")
         with urllib.request.urlopen(self.base + "/", timeout=5) as response:
             html = response.read().decode()
         self.assertIn("<title>Dex</title>", html)
@@ -603,7 +605,9 @@ class DexApiTest(unittest.TestCase):
         _, card = self.request(f"/api/cards/{sku}")
         self.assertEqual(card["card_number"], "OP16-067")
         self.assertEqual(card["name"], "Tsuru")
-        self.assertEqual(card["rarity"], "Uncommon")
+        self.assertEqual(card["rarity"], "")
+        self.assertIsNone(card["sam_printing_id"])
+        self.assertEqual(card["sam_printing_certainty"], "UNRESOLVED")
         self.assertEqual(card["color"], "Purple")
         self.assertEqual(card["status"], "IN_STOCK")
         self.assertEqual(card["match_source"], "Image Fingerprint")

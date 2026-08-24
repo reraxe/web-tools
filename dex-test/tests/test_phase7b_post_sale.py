@@ -124,6 +124,15 @@ class Phase7BMigrationTest(unittest.TestCase):
                 "0007_v22_phase2_manual_acquisition_wizard",
                 "0008_v22_phase2_ux_revision",
                 "0009_v22_phase3_product_catalog_upc",
+                "0010_v22_phase4_source_documents",
+                "0011_v22_phase5_receipt_intelligence",
+                "0012_v22_prephase_ux_safety_hotfix",
+                "0013_v22_phase6_downstream_intake_bridge",
+                "0014_v22_phase7_sam_recognition",
+                "0015_v22_rc3_hf1_mixed_purchase_reconciliation",
+                "0016_v23_inventory_intelligence_phase1_receipt_semantics",
+                "0017_v24_sam_phase1_family_printing",
+                "0018_v24_jarvis_economics_sam_phase2",
             ),
         )
         self.assertEqual(tuple(db.execute("SELECT id,order_id,card_id,sale_price FROM sale_items").fetchone()), (9, 1, 1, 5.0))
@@ -369,5 +378,5 @@ class Phase7BUiAndPackagingTest(unittest.TestCase):
             self.assertIn(route, app_source)
         for label in ("Original recorded facts", "Effective Realized Economics", "Partial refund", "Customer return", "Chargeback", "Marketplace fee credit", "Postage refund", "Sale-level correction"):
             self.assertIn(label, javascript)
-        self.assertIn("v2.2-test-inbound-phase3-product-catalog-upc", index)
+        self.assertIn("v2.2-test-inbound-phase6-intake-bridge", index)
         self.assertNotIn("sale.fees_effective_cents + sale.postage_effective_cents", javascript)

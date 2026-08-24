@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import app
 from dex_inbound import (
+    acquisition_payload,
     add_acquisition_line,
     autosave_acquisition,
     autosave_acquisition_line,
@@ -15,6 +16,11 @@ from dex_inbound import (
     create_acquisition,
     foundation_contract,
     mark_reconciliation_required,
+    cancel_acquisition,
+    list_acquisitions,
+    list_recycled_acquisitions,
+    recycle_draft_acquisition,
+    restore_recycled_acquisition,
 )
 from dex_migrations import DEFAULT_MIGRATIONS, apply_migrations
 from tests.test_phase5_sealed import base_schema
@@ -77,7 +83,7 @@ class Phase2MigrationTest(unittest.TestCase):
         )
         db.execute("INSERT INTO batches (id,batch_code,total_cost) VALUES (1,'P7C-UNCHANGED',42.50)")
         before = tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone())
-        self.assertEqual(apply_migrations(db), ("0008_v22_phase2_ux_revision", "0009_v22_phase3_product_catalog_upc"))
+        self.assertEqual(apply_migrations(db), ("0008_v22_phase2_ux_revision", "0009_v22_phase3_product_catalog_upc", "0010_v22_phase4_source_documents", "0011_v22_phase5_receipt_intelligence", "0012_v22_prephase_ux_safety_hotfix", "0013_v22_phase6_downstream_intake_bridge", "0014_v22_phase7_sam_recognition", "0015_v22_rc3_hf1_mixed_purchase_reconciliation", "0016_v23_inventory_intelligence_phase1_receipt_semantics", "0017_v24_sam_phase1_family_printing", "0018_v24_jarvis_economics_sam_phase2"))
         self.assertEqual(db.execute("SELECT wizard_step FROM acquisitions").fetchone()[0], "ACQUIRE")
         self.assertEqual(db.execute("SELECT payment_method FROM acquisitions").fetchone()[0], "")
         self.assertEqual(tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone()), before)
@@ -276,13 +282,13 @@ class Phase2ServiceTest(Phase2Fixture):
         self.assertEqual(ready["lines"][0]["allocation_method"], "SINGLE_LINE_100_PERCENT")
         audit = next(event for event in ready["events"] if event["reason_code"] == "SINGLE_LINE_100_PERCENT")
         self.assertTrue(audit["payload"]["automatic"])
-        self.assertEqual(audit["payload"]["calculation_version"], "inbound-acquisition-v1")
+        self.assertEqual(audit["payload"]["calculation_version"], "inbound-acquisition-v2")
         self.assertEqual(audit["payload"]["source_facts"]["final_usd_paid_cents"], 1000)
         self.assertEqual(audit["payload"]["source_facts"]["quantity"], 3)
         self.assertEqual(audit["payload"]["result"]["assigned_landed_cost_cents"], 1000)
         self.assertEqual(audit["payload"]["result"]["per_unit_cost"]["remainder_units"], 1)
         confirmation = next(event for event in ready["events"] if event["event_type"] == "AUTHORITATIVE_CONFIRMATION")
-        self.assertEqual(confirmation["payload"]["calculation_version"], "inbound-acquisition-v1")
+        self.assertEqual(confirmation["payload"]["calculation_version"], "inbound-acquisition-v2")
         self.assertEqual(confirmation["payload"]["automatic_allocation_event_id"], audit["event_id"])
         self.assertTrue(confirmation["payload"]["operator_confirmed_acquisition"])
         self.assertEqual(ready["projection"]["batch_ids"], [])
@@ -367,19 +373,135 @@ class Phase2ServiceTest(Phase2Fixture):
 
     def test_phase2_contract_keeps_later_features_out_of_scope(self):
         contract = foundation_contract()
-        self.assertEqual(contract["phase"], "INBOUND_2_PHASE_3_PRODUCT_CATALOG_UPC")
+        self.assertEqual(contract["phase"], "INBOUND_2_PHASE_6_DOWNSTREAM_INTAKE_BRIDGE")
         self.assertEqual(contract["wizard_steps"], ["ACQUIRE", "PRODUCTS", "REVIEW"])
         self.assertIn("SOURCE", contract["legacy_persisted_wizard_steps"])
         self.assertIn("CREDIT_DEBIT_CARD", contract["payment_methods"])
         self.assertEqual(contract["decision_levels"], ["AUTOMATIC", "AUTOMATIC_VISIBLE", "NEEDS_ATTENTION"])
-        self.assertEqual(contract["calculation_version"], "inbound-acquisition-v1")
+        self.assertEqual(contract["calculation_version"], "inbound-acquisition-v2")
         boundaries = contract["phase_2_boundaries"]
         self.assertTrue(boundaries["operator_workflow_replaced"])
         self.assertTrue(boundaries["legacy_batch_workflow_available"])
         self.assertTrue(boundaries["upc_catalog"])
-        self.assertFalse(boundaries["documents_or_extraction"])
+        self.assertTrue(boundaries["documents_or_extraction"])
+        self.assertTrue(boundaries["source_documents"])
+        self.assertFalse(boundaries["receipt_extraction"])
         self.assertFalse(boundaries["sam"])
-        self.assertFalse(boundaries["batch_projection"])
+        self.assertTrue(boundaries["batch_projection"])
+
+
+class AcquisitionRemovalHotfixTest(Phase2Fixture):
+    def _ready(self, request_prefix="REMOVE-READY"):
+        result = create_acquisition(
+            self.db,
+            {
+                "request_id": f"{request_prefix}-CREATE",
+                "source_scope": "DOMESTIC",
+                "merchant_name": "Removal Fixture Shop",
+                "purchased_on": "2026-08-15",
+                "payment_method": "CASH",
+                "purchase_subtotal_cents": 1000,
+                "final_usd_paid_cents": 1000,
+            },
+        )
+        result = add_acquisition_line(
+            self.db,
+            result["acquisition"]["id"],
+            {
+                "request_id": f"{request_prefix}-LINE",
+                "expected_revision": result["acquisition"]["revision"],
+                "product_class": "SEALED_PRODUCT",
+                "game": "One Piece",
+                "product_name": "Removal Fixture Box",
+                "quantity": 1,
+                "quantity_certainty": "KNOWN",
+            },
+        )
+        return confirm_acquisition(
+            self.db,
+            result["acquisition"]["id"],
+            {
+                "request_id": f"{request_prefix}-CONFIRM",
+                "expected_revision": result["acquisition"]["revision"],
+                "confirm_authoritative_financial_facts": True,
+                "confirm_reconciliation": True,
+            },
+        )
+
+    def test_incomplete_draft_moves_to_recycle_and_restores_with_history(self):
+        result = self.create()
+        acquisition_id = result["acquisition"]["id"]
+        recycled = recycle_draft_acquisition(
+            self.db,
+            acquisition_id,
+            {
+                "request_id": "REMOVE-DRAFT-RECYCLE",
+                "expected_revision": result["acquisition"]["revision"],
+                "reason_code": "DUPLICATE_ENTRY",
+                "notes": "Duplicate receiving attempt",
+            },
+        )
+        self.assertEqual(recycled["acquisition"]["state"], "CANCELED")
+        self.assertIsNotNone(recycled["acquisition"]["recycled_at"])
+        self.assertFalse(any(item["id"] == acquisition_id for item in list_acquisitions(self.db)))
+        self.assertEqual([item["id"] for item in list_recycled_acquisitions(self.db)], [acquisition_id])
+        tombstone = next(event for event in recycled["events"] if event["request_id"] == "REMOVE-DRAFT-RECYCLE")
+        self.assertEqual(tombstone["payload"]["disposition"], "RECYCLED_DRAFT")
+        self.assertFalse(tombstone["payload"]["hard_deleted"])
+
+        restored = restore_recycled_acquisition(
+            self.db,
+            acquisition_id,
+            {
+                "request_id": "REMOVE-DRAFT-RESTORE",
+                "expected_revision": recycled["acquisition"]["revision"],
+            },
+        )
+        self.assertEqual(restored["acquisition"]["state"], "ACQUISITION_INCOMPLETE")
+        self.assertIsNone(restored["acquisition"]["recycled_at"])
+        self.assertEqual(len(restored["events"]), 3)
+
+    def test_ready_acquisition_cancels_but_preserves_authoritative_facts(self):
+        ready = self._ready()
+        canceled = cancel_acquisition(
+            self.db,
+            ready["acquisition"]["id"],
+            {
+                "request_id": "REMOVE-READY-CANCEL",
+                "expected_revision": ready["acquisition"]["revision"],
+                "reason_code": "ORDER_CANCELED",
+                "notes": "Supplier voided the confirmed order before intake",
+            },
+        )
+        self.assertEqual(canceled["acquisition"]["state"], "CANCELED")
+        self.assertEqual(canceled["acquisition"]["final_usd_paid_cents"], 1000)
+        self.assertTrue(canceled["acquisition"]["financial_facts_confirmed"])
+        self.assertIsNone(canceled["acquisition"]["recycled_at"])
+        self.assertEqual(len(canceled["lines"]), 1)
+
+    def test_downstream_batch_blocks_recycle_and_cancel(self):
+        ready = self._ready("REMOVE-PROTECTED")
+        line_id = ready["lines"][0]["id"]
+        self.db.execute(
+            """INSERT INTO batches
+               (id,batch_code,created_at,game,set_code,acquisition_type,total_cost,acquisition_line_id)
+               VALUES (901,'PROTECTED-ACQ-BATCH','2026-08-15','One Piece','OP16','Sealed Product',10.00,?)""",
+            (line_id,),
+        )
+        payload = acquisition_payload(self.db, ready["acquisition"]["id"])
+        self.assertTrue(payload["removal"]["protected_history"])
+        self.assertEqual(payload["removal"]["downstream_counts"]["batches"], 1)
+        with self.assertRaisesRegex(ValueError, "correction or reversal"):
+            cancel_acquisition(
+                self.db,
+                ready["acquisition"]["id"],
+                {
+                    "request_id": "REMOVE-PROTECTED-CANCEL",
+                    "expected_revision": ready["acquisition"]["revision"],
+                    "reason_code": "ORDER_CANCELED",
+                    "notes": "Should be blocked",
+                },
+            )
 
 
 if __name__ == "__main__":

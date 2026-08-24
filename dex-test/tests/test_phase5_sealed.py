@@ -146,6 +146,15 @@ class Phase5MigrationTest(unittest.TestCase):
                 "0007_v22_phase2_manual_acquisition_wizard",
                 "0008_v22_phase2_ux_revision",
                 "0009_v22_phase3_product_catalog_upc",
+                "0010_v22_phase4_source_documents",
+                "0011_v22_phase5_receipt_intelligence",
+                "0012_v22_prephase_ux_safety_hotfix",
+                "0013_v22_phase6_downstream_intake_bridge",
+                "0014_v22_phase7_sam_recognition",
+                "0015_v22_rc3_hf1_mixed_purchase_reconciliation",
+                "0016_v23_inventory_intelligence_phase1_receipt_semantics",
+                "0017_v24_sam_phase1_family_printing",
+                "0018_v24_jarvis_economics_sam_phase2",
             ),
         )
         units = db.execute("SELECT unit_sequence,basis_cents,status,rip_session_id FROM sealed_units ORDER BY unit_sequence").fetchall()
@@ -329,7 +338,7 @@ class Phase5UiPackagingContractTest(unittest.TestCase):
         self.assertIn("Corrected / adjusted", javascript)
         self.assertIn("openSealedOrderDetails", javascript)
         self.assertIn("undo-sealed-order", javascript)
-        self.assertIn("v2.2-test-inbound-phase3-product-catalog-upc", html)
+        self.assertIn("v2.2-test-inbound-phase6-intake-bridge", html)
         self.assertIn("dex_sealed.py", dockerfile)
         self.assertIn("import dex_migrations, dex_economics, dex_legacy_economics, dex_acquisition, dex_rip, dex_sealed", dockerfile)
 

@@ -273,7 +273,7 @@ class Phase7CContractTest(unittest.TestCase):
         app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn('data-view="economics"', index)
-        self.assertIn("v2.2-test-inbound-phase3-product-catalog-upc", index)
+        self.assertIn("v2.2-test-inbound-phase6-intake-bridge", index)
         self.assertIn("Operational Economics", javascript)
         self.assertIn('/api/portfolio/economics', javascript)
         self.assertIn('/api/export/portfolio-economics.csv', javascript)

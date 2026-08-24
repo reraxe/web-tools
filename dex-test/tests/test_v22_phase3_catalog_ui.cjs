@@ -58,7 +58,7 @@ assert(recognized.includes("keyboard-emulating barcode scanner"));
 assert(recognized.includes("Catalog identified · Automatic + Visible"));
 assert(recognized.includes("OP16 Booster Box") && recognized.includes("012345678905"));
 assert(recognized.includes("Search catalog or continue with manual entry"));
-assert(recognized.includes("Take Photo · Coming Soon") && recognized.includes("Upload Receipt · Coming Soon"));
+assert(recognized.includes("Take Photo") && recognized.includes("Upload") && recognized.includes("No receipt currently attached"));
 
 vm.runInContext("state.pendingUnknownProduct = { identifier: { raw_identifier: '036000291452', identifier_type: 'UPC_A' }, mode: null }", context);
 const unknown = vm.runInContext("upcScannerPanel()", context);

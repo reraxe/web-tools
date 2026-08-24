@@ -508,7 +508,7 @@ class Phase4UiAndPackagingContractTest(unittest.TestCase):
         self.assertIn('${b.status === "OPEN" ? cardIngestForm(b) : ""}', javascript)
         self.assertIn("require an exact `$0.00` difference", (ROOT / "PATCH_PLAN_ACQUISITION_RIP_BATCH.md").read_text(encoding="utf-8"))
         self.assertIn("Array.isArray(rips?.sessions)", javascript)
-        self.assertIn("v2.2-test-inbound-phase3-product-catalog-upc", html)
+        self.assertIn("v2.2-test-inbound-phase6-intake-bridge", html)
         self.assertIn('grid-template-columns: 16px minmax(0, 1fr)', (ROOT / "static" / "styles.css").read_text(encoding="utf-8"))
         self.assertIn("#confirm-rip-finalization .checkbox-label + .checkbox-label", (ROOT / "static" / "styles.css").read_text(encoding="utf-8"))
 

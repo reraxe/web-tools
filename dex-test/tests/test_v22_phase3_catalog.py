@@ -120,7 +120,7 @@ class CatalogMigrationTest(unittest.TestCase):
                VALUES ('ACQ-OLD','ACQ-OLD-1','OLD','2026-08-15','2026-08-15')"""
         )
         before = tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone())
-        self.assertEqual(apply_migrations(db), ("0009_v22_phase3_product_catalog_upc",))
+        self.assertEqual(apply_migrations(db), ("0009_v22_phase3_product_catalog_upc", "0010_v22_phase4_source_documents", "0011_v22_phase5_receipt_intelligence", "0012_v22_prephase_ux_safety_hotfix", "0013_v22_phase6_downstream_intake_bridge", "0014_v22_phase7_sam_recognition", "0015_v22_rc3_hf1_mixed_purchase_reconciliation", "0016_v23_inventory_intelligence_phase1_receipt_semantics", "0017_v24_sam_phase1_family_printing", "0018_v24_jarvis_economics_sam_phase2"))
         self.assertEqual(tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone()), before)
         self.assertEqual(db.execute("SELECT COUNT(*) FROM catalog_products").fetchone()[0], 0)
         self.assertEqual(db.execute("SELECT COUNT(*) FROM product_identifiers").fetchone()[0], 0)

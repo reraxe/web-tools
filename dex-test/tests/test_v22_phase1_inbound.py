@@ -79,7 +79,7 @@ class InboundPhase1MigrationTest(unittest.TestCase):
         before = tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone())
         self.assertEqual(
             apply_migrations(db),
-            ("0006_v22_phase1_inbound_acquisitions", "0007_v22_phase2_manual_acquisition_wizard", "0008_v22_phase2_ux_revision", "0009_v22_phase3_product_catalog_upc"),
+                ("0006_v22_phase1_inbound_acquisitions", "0007_v22_phase2_manual_acquisition_wizard", "0008_v22_phase2_ux_revision", "0009_v22_phase3_product_catalog_upc", "0010_v22_phase4_source_documents", "0011_v22_phase5_receipt_intelligence", "0012_v22_prephase_ux_safety_hotfix", "0013_v22_phase6_downstream_intake_bridge", "0014_v22_phase7_sam_recognition", "0015_v22_rc3_hf1_mixed_purchase_reconciliation", "0016_v23_inventory_intelligence_phase1_receipt_semantics", "0017_v24_sam_phase1_family_printing", "0018_v24_jarvis_economics_sam_phase2"),
         )
         self.assertEqual(tuple(db.execute("SELECT id,batch_code,total_cost FROM batches").fetchone()), before)
         self.assertEqual(db.execute("SELECT COUNT(*) FROM acquisitions").fetchone()[0], 0)
@@ -323,19 +323,51 @@ class InboundPhase1ApiTest(unittest.TestCase):
         self.assertTrue(contract["phase_2_boundaries"]["operator_workflow_replaced"])
         self.assertTrue(contract["phase_2_boundaries"]["legacy_batch_workflow_available"])
 
+    def test_draft_recycle_list_and_restore_api_preserve_tombstone(self):
+        _, created = self.request(
+            "/api/acquisitions", "POST", {"request_id": "API-REMOVE-CREATE", "merchant_name": "Recycle API Shop"}
+        )
+        acquisition_id = created["acquisition"]["id"]
+        _, recycled = self.request(
+            f"/api/acquisitions/{acquisition_id}/recycle",
+            "POST",
+            {
+                "request_id": "API-REMOVE-RECYCLE",
+                "expected_revision": created["acquisition"]["revision"],
+                "reason_code": "TEST_OR_TRAINING_ENTRY",
+                "notes": "Disposable API regression",
+            },
+        )
+        self.assertEqual(recycled["acquisition"]["state"], "CANCELED")
+        _, active = self.request("/api/acquisitions")
+        self.assertEqual(active["acquisitions"], [])
+        _, recycle = self.request("/api/recycle?q=Recycle%20API")
+        self.assertEqual([item["id"] for item in recycle["acquisitions"]], [acquisition_id])
+        self.assertEqual(recycle["cards"], [])
+        _, restored = self.request(
+            f"/api/acquisitions/{acquisition_id}/restore",
+            "POST",
+            {
+                "request_id": "API-REMOVE-RESTORE",
+                "expected_revision": recycled["acquisition"]["revision"],
+            },
+        )
+        self.assertEqual(restored["acquisition"]["state"], "ACQUISITION_INCOMPLETE")
+        self.assertEqual(len(restored["events"]), 3)
+
 
 class InboundPhase1PackagingTest(unittest.TestCase):
     def test_runtime_package_and_version_contract(self):
         root = Path(__file__).parents[1]
         dockerfile = (root / "Dockerfile").read_text(encoding="utf-8")
         index = (root / "static" / "index.html").read_text(encoding="utf-8")
-        self.assertEqual((root / "VERSION").read_text(encoding="utf-8").strip(), "v2.2-test")
+        self.assertEqual((root / "VERSION").read_text(encoding="utf-8").strip(), "v2.4-test")
         self.assertIn("COPY dex_inbound.py ./", dockerfile)
         self.assertIn('RUN python -c "import dex_inbound"', dockerfile)
         self.assertIn("COPY dex_catalog.py ./", dockerfile)
         self.assertIn('RUN python -c "import dex_catalog"', dockerfile)
-        self.assertIn("v2.2-test-inbound-phase3-product-catalog-upc", index)
-        self.assertEqual(DEFAULT_MIGRATIONS[-1].migration_id, "0009_v22_phase3_product_catalog_upc")
+        self.assertIn("v2.2-test-inbound-phase6-intake-bridge", index)
+        self.assertEqual(DEFAULT_MIGRATIONS[-1].migration_id, "0018_v24_jarvis_economics_sam_phase2")
 
 
 if __name__ == "__main__":

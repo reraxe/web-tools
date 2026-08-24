@@ -88,7 +88,7 @@ const products = vm.runInContext("wizardProductsScreen()", context);
 assert(products.includes("OP16 Packs") && products.includes("Pokemon • Journey Together"));
 assert(products.includes("Pack format") && products.includes("Add another product only if needed"));
 assert(products.includes("Payment method") && products.includes("Credit / Debit Card"));
-assert(products.includes("Take Photo · Coming Soon") && products.includes("Upload Receipt · Coming Soon"));
+assert(products.includes("Take Photo") && products.includes("Upload") && products.includes("No receipt currently attached"));
 assert(products.includes("DEX will reconcile product-line costs on Review"));
 assert(!products.includes("Assigned landed cost") && !products.includes("Allocation method") && !products.includes("Confirm line allocation"));
 assert(products.includes('class="form-grid international-fields" hidden'));
@@ -120,7 +120,7 @@ const extremeReview = vm.runInContext("wizardReviewScreen()", context);
 assert(extremeReview.includes("Purchase needs attention") && extremeReview.includes("Material at $5 OR 2%"));
 assert(extremeReview.includes("severe 50%+ difference") && extremeReview.includes("Re-enter final USD paid"));
 assert(extremeReview.includes("Standardized reason") && extremeReview.includes("Explanation (required)"));
-assert(extremeReview.includes('<details class="attention-resolution"><summary>') && !extremeReview.includes('attention-resolution" open'));
+assert(extremeReview.includes('<details class="attention-resolution" data-disclosure-key=') && !extremeReview.includes('attention-resolution" open'));
 assert(extremeReview.includes("Manual allocation exception") && extremeReview.includes("Assigned landed cost") && extremeReview.includes("acquisition-allocation-form"));
 
 // Missing cost remains Unknown; explicit zero gets a dedicated operator confirmation.

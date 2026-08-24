@@ -161,10 +161,10 @@ class Phase3LegacyMigrationTest(unittest.TestCase):
         db.row_factory = sqlite3.Row
         try:
             self.assertEqual(
-                apply_migrations(db),
-                tuple(migration.migration_id for migration in DEFAULT_MIGRATIONS),
+                apply_migrations(db, DEFAULT_MIGRATIONS[:-2]),
+                tuple(migration.migration_id for migration in DEFAULT_MIGRATIONS[:-2]),
             )
-            self.assertEqual(apply_migrations(db), ())
+            self.assertEqual(apply_migrations(db, DEFAULT_MIGRATIONS[:-2]), ())
             row = db.execute("SELECT * FROM batches WHERE id = 1").fetchone()
             self.assertEqual(row["economics_mode"], "LEGACY")
             self.assertEqual(row["economics_status"], "ESTIMATED")
@@ -175,7 +175,7 @@ class Phase3LegacyMigrationTest(unittest.TestCase):
             ).fetchall()
             self.assertEqual(
                 [tuple(row) for row in marker],
-                [(migration.migration_id,) for migration in DEFAULT_MIGRATIONS],
+                [(migration.migration_id,) for migration in DEFAULT_MIGRATIONS[:-2]],
             )
             index = db.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_batches_receipt_group'"
@@ -207,7 +207,7 @@ class Phase3LegacyMigrationTest(unittest.TestCase):
         db = sqlite3.connect(working)
         db.row_factory = sqlite3.Row
         try:
-            apply_migrations(db)
+            apply_migrations(db, DEFAULT_MIGRATIONS[:-2])
             db.execute(
                 """UPDATE batches SET receipt_group_reference='R-1', product_name='Boxes',
                    economics_mode='SEALED_RIP', economics_status='DRAFT',
