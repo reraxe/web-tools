@@ -1,1 +1,10 @@
 qrcode[pil]>=7.4,<9
+Pillow>=10,<13
+pypdf>=5,<7
+reportlab>=4,<5
+numpy==2.5.2
+opencv-python==4.14.0.94
+opencv-python-headless==4.14.0.94
+rapidocr==3.9.2
+onnxruntime-gpu==1.29.0
+RapidFuzz==3.14.5

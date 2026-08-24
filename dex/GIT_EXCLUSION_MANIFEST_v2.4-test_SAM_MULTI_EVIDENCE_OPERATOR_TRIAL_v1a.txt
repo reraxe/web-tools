@@ -1,0 +1,41 @@
+# Never upload these paths or artifact classes.
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.pyc
+*.pyo
+__pycache__/
+.pytest_cache/
+.git/
+.venv/
+.acceptance-runtime/
+.acceptance-runtime-seeded/
+data/
+storage*/
+scanner-inbox/
+source-database/
+source-documents/
+receipts/
+physical-scans/
+staged-blind/
+ground_truth.csv
+benchmark-private/
+private-results/
+reference-images/
+*.env
+.env*
+*.pem
+*.key
+*password*
+*token*
+*secret*
+DEX_SAM_MULTI_EVIDENCE_OPERATOR_TRIAL_DATA_v1*/
+DEX_SAM_MULTI_EVIDENCE_OPERATOR_TRIAL_v1*/operator_trial/
+
+# External/private data remain operator-controlled and outside Git:
+# - physical trial scans and operator truth
+# - One Piece reference image library
+# - live or copied DEX databases/inventory images
+# - scanner inbox and source documents
+# - benchmark results containing private paths
