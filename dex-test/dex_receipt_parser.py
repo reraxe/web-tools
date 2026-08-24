@@ -413,13 +413,16 @@ def parse_receipt_pages(pages: list[tuple[int, str]]) -> dict:
         if semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\b(?:credit|debit)(?:\s+card)?\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.9, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bmaster\s*card\b|\bmc\b", line, re.I):
-            candidates["payment_method"] = _candidate("payment_method", "MASTERCARD", "TEXT", 0.94, page, location)
+            # The printed card brand remains visible in the non-authoritative
+            # source-line evidence.  Acquisition facts intentionally use the
+            # established broad payment-method enum.
+            candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bvisa\b", line, re.I):
-            candidates["payment_method"] = _candidate("payment_method", "VISA", "TEXT", 0.94, page, location)
+            candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\b(?:amex|american express)\b", line, re.I):
-            candidates["payment_method"] = _candidate("payment_method", "AMEX", "TEXT", 0.94, page, location)
+            candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bdiscover\b", line, re.I):
-            candidates["payment_method"] = _candidate("payment_method", "DISCOVER", "TEXT", 0.94, page, location)
+            candidates["payment_method"] = _candidate("payment_method", "CREDIT_DEBIT_CARD", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bapple\s+pay\b", line, re.I):
             candidates["payment_method"] = _candidate("payment_method", "APPLE_PAY", "TEXT", 0.94, page, location)
         elif semantic_class == "TENDER_PAYMENT_METHOD" and re.search(r"\bgoogle\s+pay\b", line, re.I):

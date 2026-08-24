@@ -1,27 +1,26 @@
-# Operator Deployment Instructions — Separate Approval Required
+# Operator Deployment Instructions — DEX v2.4-test
 
-Candidate: `DEX v2.3-test Inventory Intelligence Phase 1 Remediation 4`.
+Candidate: `DEX-v2.4-test-WOLFF-SAM-Phase2-development-baseline-20260822`.
 
-Immutable image tag: `192.168.2.92:5000/apps/dex:v2.3-test-inventory-intelligence-phase1-remediation4`.
+Immutable image tag: `192.168.2.92:5000/apps/dex:v2.4-test-wolff-sam-phase2-20260822`.
 
-1. Preserve the currently running Remediation 3 image/tag as the rollback point, then open the accepted `DEX_v2.3-test_INVENTORY_INTELLIGENCE_PHASE1_REMEDIATION4_DEPLOY` package.
-2. Select everything inside it and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
-3. Record the resulting GitHub commit SHA.
-4. Obtain that exact commit in a disposable checkout or download.
-5. Compare it with the accepted DEPLOY package using the accepted `DEPLOY_SHA256SUMS.txt` ledger. Require zero missing or mismatched release files. At minimum verify `app.py`, `static/index.html`, `static/app.js`, `static/styles.css`, and `Dockerfile`.
-6. **Stop. Do not trigger Jenkins if any file is missing or different.** Correct the GitHub upload and repeat the comparison.
-7. Confirm the immutable image tag above.
-8. Use the normal Jenkins **Build Now** action.
-9. Confirm the build and registry push succeed, and record the immutable image tag and image digest where available.
-10. Update the Portainer stack to the new immutable image tag.
-11. Update the stack and verify `/api/health` reports `v2.3-test`.
-12. Verify the visible sidebar also reports `v2.3-test`.
-13. Compare deployed runtime hashes for `/app/app.py`, `/app/static/index.html`, `/app/static/app.js`, and `/app/static/styles.css` with the accepted DEPLOY ledger. Verify existing inventory and Inbound data load and receipt review shows current versus historical assertions correctly.
+1. Record the currently running image tag and digest and verify a current data/storage backup.
+2. Open `DEX_v2.4-test_WOLFF_SAM_PHASE2_20260822_DEPLOY`.
+3. Select everything inside it and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
+4. Record the resulting GitHub commit SHA.
+5. Obtain that exact commit in a disposable checkout or download.
+6. Compare it with the accepted package using `DEPLOY_SHA256SUMS.txt`. Require zero missing or mismatched files. At minimum verify `app.py`, `static/index.html`, `static/app.js`, `static/styles.css`, and `Dockerfile`.
+7. **Do not trigger Jenkins if any file is missing or different.** Correct the upload and repeat the comparison.
+8. In Jenkins, select **Build Now**.
+9. Require every Dockerfile import check, Tesseract check, complete receipt-orchestration smoke, and health smoke to pass.
+10. Confirm the immutable registry tag above exists and record its digest. The checked-in Jenkinsfile does not itself show a registry push, so stop if the normal workflow did not publish the exact tag.
+11. In Portainer, change only the DEX service image to the immutable tag and update the stack. Keep existing ports, volumes, container name, environment, and storage unchanged.
+12. Verify `/api/health` returns HTTP 200 and `v2.4-test`; verify the visible sidebar also reports `v2.4-test`.
+13. Compare deployed hashes for `/app/app.py`, `/app/static/index.html`, `/app/static/app.js`, and `/app/static/styles.css` with the accepted ledger.
+14. Verify existing inventory and SQLite integrity, then record the build commit, image digest, health result, deployed hashes, and backup reference.
 
-`Dockerfile` is a GitHub/build-context verification item and may not exist inside `/app` at runtime. A backend/frontend version mismatch is a **deployment-integrity failure**; do not initially dismiss it as browser cache.
+`Dockerfile` is a pre-build GitHub/build-context verification item and may not exist in `/app`. A backend/frontend version mismatch is a **deployment-integrity failure**, not a browser-cache assumption.
 
-If verification fails, redeploy the preserved Remediation 3 image. Do not delete or restore production storage.
+Rollback first by restoring the exact pre-cutover image tag/digest while leaving storage untouched. Restore storage only for a verified data-level problem after separate operator approval; preserve the current storage first and never manually delete migrations or authoritative records.
 
-Known metadata note: the frozen Dockerfile's OCI version label still names Remediation 3. Use the exact immutable Remediation 4 image tag above and record its digest; runtime identity remains `v2.3-test`.
-
-No deployment was performed while creating this package.
+No production deployment was performed while preparing this package.

@@ -2,11 +2,23 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current development candidate: **Dex v2.3-test — Inventory Intelligence Phase 1 Remediation 3**
+Current isolated development candidate: **DEX v2.4-test — WOLFF Simplified Economics + SAM Phase 2 Evidence Intelligence**
+
+Frozen receipt baseline: **DEX v2.3-test Inventory Intelligence Phase 1 Remediation 5**. This SAM lane does not modify its receipt parsing, semantic policy, allocation, or packaging artifacts.
 
 Accepted predecessor: **Dex v2.3-test — Inventory Intelligence Phase 1 Remediation 2**. The Remediation 3 workspace is an isolated local candidate. It adds an authoritative backend eligibility gate that prevents automatic one-product 100% allocation while receipt financial semantics or arithmetic remain unresolved, plus a matching operator-visible blocked state. It does not change receipt parsing classifications, allocation formulas, accounting policy, schema, SAM, inventory authority, or marketplace behavior. No Remediation 3 FULL/DEPLOY package has been produced.
 
 Known-good restore baseline: **Dex v2.2-test RC3 HF3 ZERO ENTRY**. Its source/package hashes and behavior remain unchanged.
+
+## SAM Phase 1 authority boundary
+
+SAM now reports card family and exact commercial printing independently. Existing conservative automatic rules may establish family identity only. Exact printing is operator-only in this phase and requires a separately documented printing plus an explicit Confirm or Correct action; otherwise it remains Unresolved or Conflicting. Existing free-text `variant`, rarity/treatment, language, and finish-like values remain legacy recorded data and are not backfilled into normalized printing authority.
+
+## WOLFF simplified economics and SAM Phase 2
+
+**WOLFF — Working On Levelling Financial Flows** is the operator-facing name for read-only item, sale, and aggregate economics derived from existing acquisition, finalized basis, sale, post-sale-event, and recorded market facts. Every value is labeled Recorded, Derived, Estimated, or Unresolved. Missing fees, postage, basis, or valuation remain Unknown; they are never silently treated as zero, and incomplete records are excluded from precise aggregates with visible coverage. Internal JARVIS engineering contracts, API routes, calculation identifiers, and provenance remain unchanged. WOLFF stores no calculated dashboard totals and does not alter acquisition or sale history.
+
+SAM Phase 2 evaluates every documented same-family commercial printing using independently inspectable artwork, marker, treatment, reference-quality, and conflict evidence. Confident negative evidence may exclude a candidate; hidden or inconclusive evidence remains Unresolved. Surviving candidates are ranked and explained in Human Review. This is suggestion intelligence only: exact commercial printing still requires an explicit operator confirmation, and JARVIS/market value can prioritize review but can never affect identity confidence or authority.
 
 ## Release policy
 
@@ -44,6 +56,8 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 - `dex_documents.py`: provider-neutral private source-document storage, validation, SHA-256 verification, retry/tombstone behavior, and metadata services.
 - `dex_catalog.py`: v2.2-test commercial-product catalog, barcode normalization/validation, scan aggregation, learned mappings, and append-only mapping corrections.
 - `dex_sam.py`: v2.2-test Phase 7 provider-neutral One Piece metadata cache, incremental local reference index, conservative recognition, review queues, idempotency, and durable evidence/history.
+- `dex_sam_identity.py`: v2.4-test normalized card-family/commercial-printing identity, positive-evidence evaluation, and append-only field-level authority history.
+- `dex_jarvis_economics.py`: v2.4-test read-only simplified item/sale economics, missing-input status/provenance, and coverage-aware aggregate summaries.
 - `dex_migrations.py`: transactional, versioned SQLite migrations and migration ledger.
 - `dex_legacy_economics.py`: read-only Phase 2 legacy economics estimates.
 - `Dockerfile`: production image build.
@@ -159,7 +173,7 @@ The persistent folders are:
 
 The SQLite database is stored at `storage/dex.db` on the host through the `/data` container volume. Rebuilding or replacing the image does not remove inventory data.
 
-When upgrading an older Dex database, Dex keeps the existing SAM and Phase 3–7C compatibility behavior. v2.2-test adds migrations `0006` through `0014`. Migration `0014_v22_phase7_sam_recognition` adds empty metadata-cache, reference-index, recognition, candidate, and decision ledgers plus nullable card recognition fields. It does not backfill or alter historical identities, batches, inventory, or economics. Always test against a disposable Phase 7C database copy before an operator-approved deployment; see [`MIGRATION_NOTES_v2.2-test.md`](MIGRATION_NOTES_v2.2-test.md).
+When upgrading an older Dex database, Dex keeps the existing SAM and Phase 3–7C compatibility behavior. v2.4-test migration `0017` separates family from commercial-printing authority. Migration `0018_v24_jarvis_economics_sam_phase2` adds only explicit sale-input presence evidence and append-only SAM printing observations; it performs no data backfill and stores no calculated economics. Always test against a disposable database copy before any future operator-approved deployment; see [`MIGRATION_NOTES_v2.4-test_JARVIS_SAM_PHASE2.md`](MIGRATION_NOTES_v2.4-test_JARVIS_SAM_PHASE2.md).
 
 ### SAM source database
 
@@ -210,7 +224,7 @@ Back up the entire `storage/` folder using the server's normal backup system. It
 python -m unittest discover -s tests -v
 ```
 
-The 175-test Python suite covers all prior behavior plus transactional Phase 7 migration rollback, provider normalization/failure fallback, metadata provenance, incremental and duplicate-aware indexing, conservative confidence/variant handling, SAMPLE/rotation/crop tolerance, strict OCR normalization, bounded deterministic OCR consensus, staged early exit and full disagreement escalation, unreadable/unavailable OCR fallback, OCR/visual conflict and missing-reference blocking, variant protection, review decisions/history, retry protection, queue counts, provenance/economics boundaries, and a 5,000-reference performance case. Thirteen frontend contract/regression files cover the SAM review/correction success and rejection paths plus every prior guided-wizard, receipt/catalog/document, intake, batch, Sales, viewport, and backend-only economics path; the visual browser suite also renders desktop and mobile without console errors.
+The 299-test Python suite covers all prior behavior plus JARVIS/WOLFF missing-data/provenance/freshness/ROI/aggregate boundaries, zero-coverage versus authoritative-zero presentation inputs, exact-cent multi-item economics, transactional migration 0018, Phase 2 printing evidence and authority adversaries, cross-subsystem separation, legacy-identity conflict visibility, partial/sold-out states, and the established receipt, acquisition, allocation, sealed, post-sale, portfolio, SAM, OCR, Challenger, and performance cases. Twenty-six frontend contract/regression files cover the WOLFF inventory/card/sale surfaces, SAM candidate evidence explanations and provenance, exact-printing authority boundary, logical Unknown/zero/stale states, and every prior guided-wizard, receipt/catalog/document, intake, batch, Sales, viewport, and backend-only economics path.
 
 The immutable v2.1 Phase 7C restore point and accepted v2.2 phase checkpoints remain preserved separately. The current consolidated handoff is [`RELEASE_CHECKPOINT_v2.2-test_RC2_POST_SAM.md`](RELEASE_CHECKPOINT_v2.2-test_RC2_POST_SAM.md). RC2 is a post-SAM hardening candidate only; production approval remains blocked on the documented Pass 4, physical barcode-scanner, deployment-host Docker-build, and broader operator stress gates.
 # RC3 Operator Trial checkpoint

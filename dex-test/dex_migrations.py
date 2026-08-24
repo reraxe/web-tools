@@ -1291,6 +1291,275 @@ def _v22_phase7_sam_recognition(connection: sqlite3.Connection) -> None:
     )
 
 
+def _v24_sam_phase1_family_printing(connection: sqlite3.Connection) -> None:
+    """Separate stable card-family truth from exact commercial-printing truth.
+
+    The migration is deliberately additive. Existing card identity text is left
+    untouched and receives no inferred family or printing foreign key.
+    """
+
+    certainty = (
+        "CHECK (certainty IN ('AUTHORITATIVE','OPERATOR_CONFIRMED',"
+        "'HIGH_CONFIDENCE_SUGGESTION','UNRESOLVED','CONFLICTING','LEGACY_RECORDED'))"
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_card_families (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_uuid TEXT NOT NULL UNIQUE,
+            game TEXT NOT NULL,
+            family_key TEXT NOT NULL,
+            normalized_set_code TEXT NOT NULL DEFAULT '',
+            card_number TEXT NOT NULL DEFAULT '',
+            canonical_name TEXT NOT NULL DEFAULT '',
+            normalized_name TEXT NOT NULL DEFAULT '',
+            external_descriptors TEXT NOT NULL DEFAULT '{}',
+            active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(game, family_key)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_commercial_printings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printing_uuid TEXT NOT NULL UNIQUE,
+            family_id INTEGER NOT NULL REFERENCES sam_card_families(id),
+            printing_key TEXT NOT NULL,
+            artwork_identity TEXT NOT NULL DEFAULT '',
+            variant_label TEXT NOT NULL DEFAULT '',
+            rarity_treatment TEXT NOT NULL DEFAULT '',
+            finish TEXT NOT NULL DEFAULT '',
+            language TEXT NOT NULL DEFAULT 'Unknown',
+            special_designation TEXT NOT NULL DEFAULT '',
+            stamp_marking TEXT NOT NULL DEFAULT '',
+            promo_release TEXT NOT NULL DEFAULT '',
+            operator_description TEXT NOT NULL DEFAULT '',
+            catalog_source TEXT NOT NULL DEFAULT '',
+            evidence_requirements TEXT NOT NULL DEFAULT '{}',
+            authority_state TEXT NOT NULL DEFAULT 'DESCRIPTIVE'
+                CHECK (authority_state IN ('DESCRIPTIVE','OPERATOR_CONFIRMED','INACTIVE')),
+            active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(family_id, printing_key)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_printing_external_ids (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            printing_id INTEGER NOT NULL REFERENCES sam_commercial_printings(id),
+            provider TEXT NOT NULL,
+            external_id TEXT NOT NULL,
+            descriptive_metadata TEXT NOT NULL DEFAULT '{}',
+            authority_granted INTEGER NOT NULL DEFAULT 0 CHECK (authority_granted=0),
+            created_at TEXT NOT NULL,
+            UNIQUE(provider, external_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_reference_asset_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference_id INTEGER NOT NULL UNIQUE REFERENCES sam_reference_records(id),
+            family_id INTEGER NOT NULL REFERENCES sam_card_families(id),
+            printing_id INTEGER REFERENCES sam_commercial_printings(id),
+            asset_scope TEXT NOT NULL CHECK (asset_scope IN ('FAMILY','PRINTING')),
+            certainty TEXT NOT NULL DEFAULT 'HIGH_CONFIDENCE_SUGGESTION'
+                CHECK (certainty IN ('AUTHORITATIVE','OPERATOR_CONFIRMED',
+                    'HIGH_CONFIDENCE_SUGGESTION','UNRESOLVED','CONFLICTING','LEGACY_RECORDED')),
+            provenance TEXT NOT NULL DEFAULT 'LOCAL_REFERENCE_DESCRIPTION',
+            evidence TEXT NOT NULL DEFAULT '{}',
+            linked_at TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        f"""
+        CREATE TABLE sam_identity_assertions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            assertion_uuid TEXT NOT NULL UNIQUE,
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            job_id INTEGER REFERENCES sam_recognition_jobs(id),
+            legacy_decision_id INTEGER REFERENCES sam_recognition_decisions(id),
+            field_scope TEXT NOT NULL
+                CHECK (field_scope IN ('FAMILY','PRINTING','LANGUAGE','FINISH','REFERENCE_ASSET')),
+            family_id INTEGER REFERENCES sam_card_families(id),
+            printing_id INTEGER REFERENCES sam_commercial_printings(id),
+            reference_id INTEGER REFERENCES sam_reference_records(id),
+            proposed_value TEXT NOT NULL DEFAULT '',
+            certainty TEXT NOT NULL {certainty},
+            numeric_confidence REAL,
+            authority_granted INTEGER NOT NULL DEFAULT 0 CHECK (authority_granted IN (0,1)),
+            actor TEXT NOT NULL CHECK (actor IN ('SYSTEM','OPERATOR','LEGACY')),
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            evidence TEXT NOT NULL DEFAULT '{{}}',
+            supersedes_assertion_id INTEGER REFERENCES sam_identity_assertions(id),
+            created_at TEXT NOT NULL,
+            CHECK (field_scope!='PRINTING' OR authority_granted=0 OR
+                   (actor='OPERATOR' AND certainty='OPERATOR_CONFIRMED'))
+        )
+        """
+    )
+    connection.execute(
+        f"""
+        CREATE TABLE sam_identity_decision_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            job_id INTEGER REFERENCES sam_recognition_jobs(id),
+            card_id INTEGER NOT NULL REFERENCES cards(id),
+            event_type TEXT NOT NULL CHECK (event_type IN (
+                'FAMILY_AUTO_APPLIED','FAMILY_CONFIRMED','FAMILY_CORRECTED',
+                'PRINTING_CONFIRMED','PRINTING_CORRECTED','PRINTING_LEFT_UNRESOLVED',
+                'PRINTING_CONFLICT','REFERENCE_ATTACHED','MANUAL_IDENTITY_EDIT')),
+            family_id INTEGER REFERENCES sam_card_families(id),
+            printing_id INTEGER REFERENCES sam_commercial_printings(id),
+            reference_id INTEGER REFERENCES sam_reference_records(id),
+            prior_family_id INTEGER REFERENCES sam_card_families(id),
+            prior_printing_id INTEGER REFERENCES sam_commercial_printings(id),
+            certainty TEXT NOT NULL {certainty},
+            actor TEXT NOT NULL CHECK (actor IN ('SYSTEM','OPERATOR','LEGACY')),
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            evidence TEXT NOT NULL DEFAULT '{{}}',
+            CHECK (event_type NOT IN ('PRINTING_CONFIRMED','PRINTING_CORRECTED') OR
+                   (actor='OPERATOR' AND certainty='OPERATOR_CONFIRMED'))
+        )
+        """
+    )
+
+    card_columns = {row[1] for row in connection.execute("PRAGMA table_info(cards)")}
+    for name, definition in (
+        ("sam_family_id", "INTEGER REFERENCES sam_card_families(id)"),
+        ("sam_printing_id", "INTEGER REFERENCES sam_commercial_printings(id)"),
+        ("sam_family_certainty", "TEXT NOT NULL DEFAULT 'UNRESOLVED'"),
+        ("sam_printing_certainty", "TEXT NOT NULL DEFAULT 'UNRESOLVED'"),
+        ("sam_language_certainty", "TEXT NOT NULL DEFAULT 'LEGACY_RECORDED'"),
+        ("sam_finish_certainty", "TEXT NOT NULL DEFAULT 'LEGACY_RECORDED'"),
+        ("sam_legacy_identity_provenance", "TEXT NOT NULL DEFAULT 'LEGACY_RECORDED'"),
+    ):
+        if name not in card_columns:
+            connection.execute(f"ALTER TABLE cards ADD COLUMN {name} {definition}")
+
+    job_columns = {row[1] for row in connection.execute("PRAGMA table_info(sam_recognition_jobs)")}
+    for name, definition in (
+        ("family_id", "INTEGER REFERENCES sam_card_families(id)"),
+        ("family_confidence", "REAL NOT NULL DEFAULT 0"),
+        ("family_certainty", "TEXT NOT NULL DEFAULT 'UNRESOLVED'"),
+        ("printing_id", "INTEGER REFERENCES sam_commercial_printings(id)"),
+        ("printing_confidence", "REAL NOT NULL DEFAULT 0"),
+        ("printing_certainty", "TEXT NOT NULL DEFAULT 'UNRESOLVED'"),
+        ("printing_unresolved_reason", "TEXT NOT NULL DEFAULT ''"),
+        ("printing_evidence", "TEXT NOT NULL DEFAULT '{}'"),
+    ):
+        if name not in job_columns:
+            connection.execute(f"ALTER TABLE sam_recognition_jobs ADD COLUMN {name} {definition}")
+
+    connection.execute("CREATE INDEX idx_sam_families_number ON sam_card_families(game, card_number, active)")
+    connection.execute("CREATE INDEX idx_sam_printings_family ON sam_commercial_printings(family_id, active, id)")
+    connection.execute("CREATE INDEX idx_sam_reference_family ON sam_reference_asset_links(family_id, printing_id)")
+    connection.execute("CREATE INDEX idx_sam_assertions_card ON sam_identity_assertions(card_id, created_at, id)")
+    connection.execute("CREATE INDEX idx_sam_identity_events_card ON sam_identity_decision_events(card_id, recorded_at, id)")
+    connection.execute(
+        "CREATE TRIGGER sam_identity_assertions_no_update BEFORE UPDATE ON sam_identity_assertions "
+        "BEGIN SELECT RAISE(ABORT, 'SAM identity assertions are append-only'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER sam_identity_assertions_no_delete BEFORE DELETE ON sam_identity_assertions "
+        "BEGIN SELECT RAISE(ABORT, 'SAM identity assertions are append-only'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER sam_identity_events_no_update BEFORE UPDATE ON sam_identity_decision_events "
+        "BEGIN SELECT RAISE(ABORT, 'SAM identity decisions are append-only'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER sam_identity_events_no_delete BEFORE DELETE ON sam_identity_decision_events "
+        "BEGIN SELECT RAISE(ABORT, 'SAM identity decisions are append-only'); END"
+    )
+
+
+def _v24_jarvis_economics_sam_phase2(connection: sqlite3.Connection) -> None:
+    """Add evidence completeness and append-only printing observations.
+
+    JARVIS calculations remain read-only and are never stored as dashboard
+    totals.  The sale evidence row records whether a zero fee/postage value was
+    explicitly supplied; it does not change the sale itself.  SAM observations
+    are evidence only and cannot grant commercial-printing authority.
+    """
+
+    connection.execute(
+        """
+        CREATE TABLE jarvis_sale_input_evidence (
+            order_id INTEGER PRIMARY KEY REFERENCES sale_orders(id),
+            merchandise_proceeds_known INTEGER
+                CHECK (merchandise_proceeds_known IS NULL OR merchandise_proceeds_known IN (0,1)),
+            shipping_collected_known INTEGER
+                CHECK (shipping_collected_known IS NULL OR shipping_collected_known IN (0,1)),
+            marketplace_fees_known INTEGER
+                CHECK (marketplace_fees_known IS NULL OR marketplace_fees_known IN (0,1)),
+            actual_shipping_cost_known INTEGER
+                CHECK (actual_shipping_cost_known IS NULL OR actual_shipping_cost_known IN (0,1)),
+            captured_at TEXT NOT NULL,
+            provenance TEXT NOT NULL DEFAULT 'SALE_ENTRY_PRESENCE_FLAGS'
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE sam_printing_evidence_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observation_uuid TEXT NOT NULL UNIQUE,
+            job_id INTEGER NOT NULL REFERENCES sam_recognition_jobs(id),
+            family_id INTEGER NOT NULL REFERENCES sam_card_families(id),
+            printing_id INTEGER REFERENCES sam_commercial_printings(id),
+            reference_id INTEGER REFERENCES sam_reference_records(id),
+            evidence_type TEXT NOT NULL,
+            observed_state TEXT NOT NULL
+                CHECK (observed_state IN ('PRESENT','ABSENT_CONFIDENT','UNRESOLVED')),
+            numeric_confidence REAL
+                CHECK (numeric_confidence IS NULL OR
+                       (numeric_confidence >= 0 AND numeric_confidence <= 1)),
+            source_kind TEXT NOT NULL CHECK (source_kind IN (
+                'SYSTEM_VISUAL','SYSTEM_OCR','REFERENCE_METADATA',
+                'CHALLENGER_SHADOW','OPERATOR'
+            )),
+            explanation TEXT NOT NULL DEFAULT '',
+            evidence TEXT NOT NULL DEFAULT '{}',
+            observed_at TEXT NOT NULL,
+            CHECK (source_kind!='CHALLENGER_SHADOW' OR observed_state!='PRESENT'
+                   OR numeric_confidence IS NOT NULL)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_printing_observations_job "
+        "ON sam_printing_evidence_observations(job_id, printing_id, evidence_type, id)"
+    )
+    connection.execute(
+        "CREATE INDEX idx_sam_printing_observations_family "
+        "ON sam_printing_evidence_observations(family_id, printing_id, observed_at, id)"
+    )
+    connection.execute(
+        "CREATE TRIGGER sam_printing_observations_no_update "
+        "BEFORE UPDATE ON sam_printing_evidence_observations "
+        "BEGIN SELECT RAISE(ABORT, 'SAM printing evidence is append-only'); END"
+    )
+    connection.execute(
+        "CREATE TRIGGER sam_printing_observations_no_delete "
+        "BEFORE DELETE ON sam_printing_evidence_observations "
+        "BEGIN SELECT RAISE(ABORT, 'SAM printing evidence is append-only'); END"
+    )
+
+
 def _v22_rc3_hf1_mixed_purchase_reconciliation(connection: sqlite3.Connection) -> None:
     """Add an explicit, nullable noninventory partition to acquisition facts.
 
@@ -1492,6 +1761,16 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         "0016_v23_inventory_intelligence_phase1_receipt_semantics",
         "add non-authoritative receipt semantic evidence, confidence, and correction history",
         _v23_inventory_intelligence_phase1_receipt_semantics,
+    ),
+    Migration(
+        "0017_v24_sam_phase1_family_printing",
+        "separate SAM card-family authority from commercial-printing authority and evidence",
+        _v24_sam_phase1_family_printing,
+    ),
+    Migration(
+        "0018_v24_jarvis_economics_sam_phase2",
+        "add JARVIS sale input completeness and append-only SAM printing evidence observations",
+        _v24_jarvis_economics_sam_phase2,
     ),
 )
 

@@ -1,20 +1,23 @@
-# Remediation 4 DEPLOY Verification
+# DEX v2.4-test DEPLOY verification
 
-Result: **ACCEPT**
+Artifact: `DEX_v2.4-test_WOLFF_SAM_PHASE2_20260822_DEPLOY`  
+Source: frozen `DEX-v2.4-test-WOLFF-SAM-Phase2-development-baseline-20260822`
 
-This folder is root-shaped: `app.py`, `Dockerfile`, runtime modules, `static/`, migrations, tests, and required documentation are directly at its root. It contains no nested DEPLOY package.
+- Frozen fingerprint reproduced: **PASS** (`3c22c2aa997315e4874e466fc8a99c788cd58f89e9bc7f3f88aeb5f86040d32a`).
+- DEPLOY root shape: **PASS**; `app.py`, `Dockerfile`, all runtime siblings, `static/`, `tests/`, and required scripts are directly beneath the artifact root.
+- Nested DEPLOY directory: **NONE**.
+- Runtime/source hashes versus the tested FULL_CHECKPOINT: **0 mismatches**.
+- Python from actual DEPLOY contents: **299/299 passed**, plus 124 subtests.
+- Frontend from actual DEPLOY contents: **26/26 passed**.
+- JavaScript syntax: **PASS**.
+- Runtime imports: **PASS**.
+- Isolated startup: **HTTP 200**, version `v2.4-test`.
+- SQLite integrity: **ok**; foreign-key violations: **0**.
+- Migrations: **0001–0018**.
+- Startup-created inventory facts: **NONE**.
+- Prohibited/private artifacts: **0**.
+- Vision Intake POC files: **0**.
+- Docker build: **PENDING OPERATOR/JENKINS HOST** because Docker is unavailable in the local packaging environment. The in-Docker Tesseract and complete receipt-orchestration smoke must pass before cutover.
+- Production deployment: **NOT PERFORMED**.
 
-Final acceptance was run from this folder:
-
-- 229/229 Python tests passed.
-- 23/23 frontend tests passed; JavaScript syntax passed.
-- Runtime imports passed.
-- Isolated `/api/health` returned HTTP 200 and `v2.3-test`.
-- Migrations 0001–0016 were present and ordered; no 0017; SQLite integrity was `ok`.
-- Fantasy Bay active-state, one-review-item, merchant freshness, superseded-history isolation, Remediation 3 allocation safety, valid single-product allocation, and Mom and Pop `POLICY_REQUIRED` gates passed.
-- Remediation 3 → 4 diff contained seven explained paths and no unexplained drift.
-- Prohibited/private-artifact, secret, machine-path, and package-integrity scans passed.
-
-Use `DEPLOY_SHA256SUMS.txt` to verify the upload and deployed runtime. No deployment was performed during packaging.
-
-Known metadata note: the frozen Dockerfile's OCI version label still names Remediation 3. This was preserved under the exact-freeze instruction. The operator must use the new immutable Remediation 4 image tag recorded in `OPERATOR_DEPLOY_INSTRUCTIONS.md`; runtime identity remains `v2.3-test`.
+The deploy ledger is `DEPLOY_SHA256SUMS.txt`. After GitHub upload, verify the exact commit against that accepted ledger before triggering Jenkins.

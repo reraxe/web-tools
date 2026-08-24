@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="Dex" \
       org.opencontainers.image.description="Digital Encyclopedia Xchange TCG inventory" \
-      org.opencontainers.image.version="v2.3-test-inventory-intelligence-phase1-remediation3"
+      org.opencontainers.image.version="v2.4-test-jarvis-sam-phase2"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -38,7 +38,10 @@ COPY dex_receipts.py ./
 COPY dex_receipt_ocr.py dex_receipt_parser.py dex_receipt_semantics.py ./
 COPY dex_intake_bridge.py ./
 COPY dex_sam.py ./
+COPY dex_sam_identity.py ./
 COPY dex_sam_challenger.py ./
+COPY dex_jarvis_economics.py ./
+COPY scripts/docker_receipt_orchestration_smoke.py ./scripts/docker_receipt_orchestration_smoke.py
 COPY static ./static
 
 RUN python -c "import dex_migrations, dex_economics, dex_legacy_economics, dex_acquisition, dex_rip, dex_sealed, dex_batch_economics"
@@ -53,7 +56,10 @@ RUN python -c "import dex_receipt_ocr, dex_receipt_parser; assert dex_receipt_oc
 RUN python -c "import dex_receipt_semantics"
 RUN python -c "import dex_intake_bridge"
 RUN python -c "import dex_sam"
+RUN python -c "import dex_sam_identity"
 RUN python -c "import dex_sam_challenger"
+RUN python -c "import dex_jarvis_economics"
+RUN python scripts/docker_receipt_orchestration_smoke.py
 
 RUN useradd --uid 10001 --create-home dex \
     && mkdir -p /data /scanner-inbox /source-database \

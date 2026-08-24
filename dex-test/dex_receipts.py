@@ -22,6 +22,7 @@ from pypdf import PdfReader
 
 from dex_catalog import normalize_identifier
 from dex_documents import DocumentStore, read_document
+from dex_inbound import PAYMENT_METHODS
 from dex_receipt_ocr import (
     ReceiptOcrFailed,
     ReceiptOcrUnavailable,
@@ -87,6 +88,10 @@ class ExtractionError(ValueError):
 
 class UnsupportedExtractionFormat(ExtractionError):
     code = "FORMAT_PROVIDER_UNAVAILABLE"
+
+
+class CandidateApplicationError(ExtractionError):
+    code = "CANDIDATE_APPLICATION_FAILED"
 
 
 class ReceiptExtractor(ABC):
@@ -434,9 +439,14 @@ def queue_extraction(db: sqlite3.Connection, document_id: int, payload: Mapping,
         matching_ms = (time.perf_counter() - matching_started) * 1000
         if payload.get("auto_apply", True):
             current = _acquisition(db, acquisition_id)
-            apply_proposed_facts(db, acquisition_id, {
-                "request_id": f"{request_id}:auto-apply", "expected_revision": current["revision"], "high_confidence_only": True,
-            })
+            try:
+                apply_proposed_facts(db, acquisition_id, {
+                    "request_id": f"{request_id}:auto-apply", "expected_revision": current["revision"], "high_confidence_only": True,
+                })
+            except (sqlite3.IntegrityError, sqlite3.DataError) as exc:
+                raise CandidateApplicationError(
+                    "Receipt candidates could not be applied safely"
+                ) from exc
             current = _acquisition(db, acquisition_id)
             try:
                 generate_allocation_proposal(db, acquisition_id, {
@@ -765,6 +775,22 @@ def apply_proposed_facts(db: sqlite3.Connection, acquisition_id: int, payload: M
             continue
         candidate = max(eligible, key=lambda item: (float(item["confidence"]), int(item["id"])))
         value = _coerce_candidate(candidate)
+        if field == "payment_method":
+            value = str(value).strip().upper()
+            if value not in PAYMENT_METHODS:
+                db.execute(
+                    "UPDATE receipt_candidate_facts SET disposition='REJECTED',updated_at=? WHERE id=?",
+                    (now, int(candidate["id"])),
+                )
+                _event(
+                    db, acquisition_id, f"{request_id}:unsupported-payment:{candidate['id']}",
+                    "RECEIPT_CANDIDATE_REJECTED", candidate_id=int(candidate["id"]),
+                    reason_code="UNSUPPORTED_PAYMENT_METHOD",
+                    notes="Unsupported payment-method evidence was kept non-authoritative",
+                    payload={"field_name": "payment_method", "authoritative": False},
+                )
+                conflicts.append(field)
+                continue
         # USD is DEX's accounting currency. A receipt's inferred USD marker is not
         # useful as an "original foreign currency" fact for a domestic purchase.
         if field == "original_currency" and str(value).upper() == "USD" and acquisition.get("source_scope") != "INTERNATIONAL":

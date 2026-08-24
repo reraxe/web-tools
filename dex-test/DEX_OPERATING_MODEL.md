@@ -1,6 +1,6 @@
 # Dex Operating Model
 
-Last updated: 2026-08-15
+Last updated: 2026-08-22
 
 ## Big Picture
 
@@ -34,14 +34,15 @@ Rule:
 
 - Dex does not guess silently. If data is uncertain, it marks the card for review.
 
-### SAM: Sniff And Match
+### SAM: Search And Match
 
 SAM automates inbound identity work.
 
 Responsibilities:
 
 - compare scanned cards to the local source database
-- fill card number, name, set, rarity, color, and card type when confident
+- establish card-family identity when conservative authority rules pass
+- keep exact commercial-printing identity independent and unresolved unless positively evidenced and operator confirmed
 - keep low-confidence matches in Needs Review
 - reduce typing during batch intake
 - preserve the physical SKU assigned by Dex
@@ -55,10 +56,32 @@ Inputs:
 
 Outputs:
 
-- suggested card identity
-- confidence score
+- separate family and printing suggestions
+- field-level confidence/certainty
 - match source
 - review status
+
+Rule:
+
+- High family confidence never implies exact-printing confidence. In SAM Phase 1, automatic authority can apply only to family identity under the unchanged conservative rules. Printing authority is operator-only; catalog/provider metadata remains descriptive.
+
+SAM Phase 2 may rank and explain same-family commercial-printing candidates using positive, negative, unresolved, contradictory, and reference-quality evidence. It may eliminate a candidate only when the defining evidence is confidently absent. It still cannot write exact-printing truth; only an explicit operator Confirm or Correct action grants that authority.
+
+### JARVIS: Simplified Economics
+
+JARVIS answers what an item cost, its recorded current value, and what was made or lost using existing DEX source facts.
+
+Responsibilities:
+
+- derive card/item cost basis from authoritative finalized allocations
+- derive effective sale proceeds and realized P/L from immutable sale and post-sale facts
+- expose remaining value, unrealized gain/loss, and ROI only when required inputs exist
+- label every input/result as recorded, derived, estimated, or unresolved
+- exclude unresolved/estimated facts from precise aggregate totals with visible coverage
+
+Rule:
+
+- JARVIS never rewrites acquisition, allocation, inventory, sale, or market facts. Missing values remain Unknown. Market value never changes historical basis, and economics never influences SAM identity.
 
 ### Janna: Market Watch
 

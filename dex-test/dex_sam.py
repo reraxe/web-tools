@@ -24,6 +24,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 
+from dex_sam_identity import (
+    ensure_reference_identity,
+    evaluate_printing_candidates,
+    family_printing_candidates,
+    identity_history,
+    identity_payload,
+    printing_evidence_observations,
+    record_assertion,
+    record_event,
+    record_printing_evidence_observations,
+    reference_identity,
+)
+
 
 ENGINE_VERSION = "dex-sam-one-piece-v1"
 RULES_VERSION = "sam-conservative-2026-08-15-v1"
@@ -530,6 +543,7 @@ def index_reference_library(
             unchanged += 1
             if not existing["active"]:
                 db.execute("UPDATE sam_reference_records SET active=1 WHERE id=?", (existing["id"],))
+            ensure_reference_identity(db, existing)
             continue
         duplicate = db.execute(
             "SELECT id FROM sam_reference_records WHERE sha256=? AND active=1 AND source_reference!=? ORDER BY id LIMIT 1",
@@ -569,7 +583,7 @@ def index_reference_library(
             )
             changed += 1
         else:
-            db.execute(
+            cursor = db.execute(
                 """INSERT INTO sam_reference_records
                      (reference_uuid,game,card_number,set_code,card_name,rarity,card_type,color,
                       language,variant,printing,source_filename,source_reference,width,height,
@@ -579,6 +593,13 @@ def index_reference_library(
                 (str(uuid.uuid4()), *values),
             )
             indexed += 1
+            existing = db.execute(
+                "SELECT * FROM sam_reference_records WHERE id=?", (int(cursor.lastrowid),)
+            ).fetchone()
+        refreshed_reference = db.execute(
+            "SELECT * FROM sam_reference_records WHERE id=?", (existing["id"],)
+        ).fetchone()
+        ensure_reference_identity(db, refreshed_reference)
         duplicates += 1 if duplicate else 0
     active_rows = db.execute(
         "SELECT id,source_reference FROM sam_reference_records WHERE game='One Piece' AND active=1"
@@ -641,6 +662,15 @@ def _reference_dict(row: sqlite3.Row | None) -> dict | None:
     return result
 
 
+def _reference_with_identity(db: sqlite3.Connection, row: sqlite3.Row | None) -> dict | None:
+    result = _reference_dict(row)
+    if not result:
+        return result
+    identity = reference_identity(db, int(result["id"])) or {}
+    result.update(identity)
+    return result
+
+
 def reference_path(db: sqlite3.Connection, reference_id: int, root: Path) -> tuple[dict, Path]:
     row = db.execute("SELECT * FROM sam_reference_records WHERE id=? AND active=1", (reference_id,)).fetchone()
     if not row:
@@ -680,7 +710,7 @@ def search_references(db: sqlite3.Connection, filters: dict) -> dict:
         (*params, limit),
     ).fetchall()
     return {
-        "game": "One Piece", "references": [_reference_dict(row) for row in rows],
+        "game": "One Piece", "references": [_reference_with_identity(db, row) for row in rows],
         "query_duration_ms": round((time.perf_counter() - started) * 1000, 2),
         "one_piece_only": True,
     }
@@ -1046,23 +1076,64 @@ def _apply_identity(
     state: str,
     confidence: float,
     job_id: int,
+    request_id: str = "",
+    legacy_decision_id: int | None = None,
 ) -> None:
+    """Apply family identity only; exact printing remains independent."""
+
+    linked = ensure_reference_identity(db, reference)
+    if not linked:
+        raise ValueError("Selected reference does not establish a card family")
+    family_id = int(linked["family"]["id"])
     source_card_id = _source_card_for_reference(db, reference)
     name = reference["card_name"] or ("" if card["name"] == "Needs identification" else card["name"])
+    certainty = "AUTHORITATIVE" if state == "AUTO_MATCHED" else "OPERATOR_CONFIRMED"
     db.execute(
-        """UPDATE cards SET card_number=?,name=?,set_name=?,rarity=?,color=?,variant=?,
-                  status=?,source_card_id=?,match_confidence=?,match_source=?,match_reviewed=1,
-                  matched_at=?,sam_recognition_state=?,sam_recognition_job_id=?,updated_at=?
+        """UPDATE cards SET card_number=?,name=?,set_name=?,color=?,
+                   status=?,source_card_id=?,match_confidence=?,match_source=?,match_reviewed=1,
+                   matched_at=?,sam_recognition_state=?,sam_recognition_job_id=?,
+                   sam_family_id=?,sam_family_certainty=?,updated_at=?
            WHERE id=?""",
         (
             reference["card_number"], name or "Needs identification",
-            reference["set_code"] or card["set_name"], reference["rarity"] or card["rarity"],
-            reference["color"] or card["color"],
-            reference["variant"] if reference["variant"] != "Unknown" else card["variant"],
+            reference["set_code"] or card["set_name"], reference["color"] or card["color"],
             "IN_STOCK" if reference["card_number"] and name else card["status"],
             source_card_id, confidence, "SAM Auto" if state == "AUTO_MATCHED" else "SAM Operator",
-            utcnow(), state, job_id, utcnow(), card["id"],
+            utcnow(), state, job_id, family_id, certainty, utcnow(), card["id"],
         ),
+    )
+    event_type = (
+        "FAMILY_AUTO_APPLIED" if state == "AUTO_MATCHED" else
+        "FAMILY_CORRECTED" if state == "OPERATOR_CORRECTED" else "FAMILY_CONFIRMED"
+    )
+    event_request = request_id or f"SAM-FAMILY-{event_type}-{job_id}"
+    supersedes_assertion_id = None
+    if state == "OPERATOR_CORRECTED":
+        prior_assertion = db.execute(
+            """SELECT id FROM sam_identity_assertions
+               WHERE card_id=? AND field_scope='FAMILY' AND authority_granted=1
+               ORDER BY id DESC LIMIT 1""",
+            (card["id"],),
+        ).fetchone()
+        supersedes_assertion_id = int(prior_assertion["id"]) if prior_assertion else None
+    record_event(
+        db, request_id=event_request, job_id=job_id, card_id=int(card["id"]),
+        event_type=event_type, family_id=family_id, reference_id=int(reference["id"]),
+        prior_family_id=card["sam_family_id"], prior_printing_id=card["sam_printing_id"],
+        certainty=certainty, actor="SYSTEM" if state == "AUTO_MATCHED" else "OPERATOR",
+        reason_code="ESTABLISHED_SAM_FAMILY_AUTHORITY",
+        evidence={"engine_version": ENGINE_VERSION, "rules_version": RULES_VERSION,
+                  "printing_authority_granted": False},
+    )
+    record_assertion(
+        db, card_id=int(card["id"]), job_id=job_id, legacy_decision_id=legacy_decision_id,
+        field_scope="FAMILY", family_id=family_id, reference_id=int(reference["id"]),
+        proposed_value=reference["card_number"], certainty=certainty,
+        confidence=confidence, authority_granted=True,
+        actor="SYSTEM" if state == "AUTO_MATCHED" else "OPERATOR",
+        reason_code="FAMILY_IDENTITY_APPLIED",
+        evidence={"variant_unchanged": True, "printing_id": None},
+        supersedes_assertion_id=supersedes_assertion_id,
     )
 
 
@@ -1092,6 +1163,7 @@ def recognition_result(db: sqlite3.Connection, job_id_or_uuid: int | str) -> dic
     candidate_payloads = []
     for row in candidates:
         item = _reference_dict(row) or {}
+        item.update(reference_identity(db, int(row["id"])) or {})
         item.update({
             "rank": row["rank"], "confidence": row["confidence"],
             "card_number_score": row["card_number_score"], "visual_score": row["visual_score"],
@@ -1102,21 +1174,35 @@ def recognition_result(db: sqlite3.Connection, job_id_or_uuid: int | str) -> dic
     decisions = [dict(row) for row in db.execute(
         "SELECT * FROM sam_recognition_decisions WHERE job_id=? ORDER BY id", (job["id"],)
     ).fetchall()]
-    card = db.execute("SELECT sku,front_image,sam_recognition_state FROM cards WHERE id=?", (job["card_id"],)).fetchone()
-    return {
+    identity_decisions = []
+    for row in db.execute(
+        "SELECT * FROM sam_identity_decision_events WHERE job_id=? ORDER BY id", (job["id"],)
+    ).fetchall():
+        item = dict(row)
+        item["evidence"] = _loads(item.get("evidence"), {})
+        identity_decisions.append(item)
+    card = db.execute("SELECT * FROM cards WHERE id=?", (job["card_id"],)).fetchone()
+    result = {
         "job": {**dict(job), "scan_quality": _loads(job["scan_quality"], {}),
-                "exception_codes": _loads(job["exception_codes"], []),
-                "evidence": _loads(job["evidence"], {})},
+                 "exception_codes": _loads(job["exception_codes"], []),
+                 "evidence": _loads(job["evidence"], {}),
+                 "printing_evidence": _loads(job["printing_evidence"], {})},
         "sku": card["sku"],
         "scan_image_url": f"/media/{card['front_image']}" if card["front_image"] else "",
         "effective_state": card["sam_recognition_state"] or job["recognition_state"],
         "top_candidate": candidate_payloads[0] if candidate_payloads else None,
         "alternate_candidates": candidate_payloads[1:4], "candidates": candidate_payloads,
-        "decisions": decisions, "current_revision": int(job["revision"]) + len(decisions),
+        "decisions": decisions, "identity_decisions": identity_decisions,
+        "current_revision": int(job["revision"]) + len(decisions) + len(identity_decisions),
         "authoritative": (card["sam_recognition_state"] or job["recognition_state"]) in
                          ("AUTO_MATCHED", "OPERATOR_CONFIRMED", "OPERATOR_CORRECTED"),
         "calculation_boundary": "IDENTITY_ONLY_NO_ECONOMICS",
+        "printing_evidence_observations": printing_evidence_observations(db, int(job["id"])),
     }
+    separated = identity_payload(db, int(job["id"]), candidate_payloads)
+    result.update(separated)
+    result["authoritative"] = separated["family"]["authoritative"]
+    return result
 
 
 def submit_recognition(
@@ -1230,6 +1316,38 @@ def submit_recognition(
     else:
         state = "UNIDENTIFIED"
         exceptions.append("NO_REFERENCE_MATCH")
+    identity_candidates: list[dict] = []
+    for item in scored[:5]:
+        linked = ensure_reference_identity(db, item[4]) or {}
+        reference_item = _reference_dict(item[4]) or {}
+        reference_item.update(reference_identity(db, int(item[4]["id"])) or {})
+        reference_item.update({
+            "confidence": item[0], "card_number_score": item[1],
+            "visual_score": item[2], "context_score": item[3],
+        })
+        identity_candidates.append(reference_item)
+    best_identity = identity_candidates[0] if identity_candidates else {}
+    family_id = int(best_identity.get("family_id") or 0) or None
+    family_certainty = (
+        "CONFLICTING" if ocr_visual_conflict else
+        "AUTHORITATIVE" if state == "AUTO_MATCHED" else
+        "HIGH_CONFIDENCE_SUGGESTION" if best else "UNRESOLVED"
+    )
+    # Printing evidence may use every visually scored reference from the
+    # recognized family.  The five-item identity list remains a presentation
+    # concern and must not flatten or truncate the printing candidate pool.
+    printing_visual_candidates = [
+        {"id": int(item[4]["id"]), "visual_score": item[2]}
+        for item in scored
+    ]
+    printing_candidates = family_printing_candidates(
+        db, family_id, printing_visual_candidates, quality
+    )
+    printing_evaluation = evaluate_printing_candidates(
+        printing_candidates or identity_candidates, family_id, {}
+    )
+    printing_candidate = printing_evaluation.get("candidate") or {}
+    printing_id = int(printing_candidate.get("printing_id") or 0) or None
     now = utcnow()
     job_uuid = f"SAM-JOB-{uuid.uuid4()}"
     evidence = {
@@ -1253,21 +1371,27 @@ def submit_recognition(
         "provider_cache": provider_provenance,
         "provider_metadata_available": bool(provider_meta),
         "sample_watermark_policy": "IGNORED_AS_REFERENCE_ARTIFACT",
+        "family_printing_separation": "FAMILY_AUTHORITY_NEVER_IMPLIES_PRINTING_AUTHORITY",
         "recognition_duration_ms": round((time.perf_counter() - started) * 1000, 2),
     }
     cursor = db.execute(
         """INSERT INTO sam_recognition_jobs
              (job_uuid,request_id,recognition_key,card_id,batch_id,rip_session_id,
               acquisition_line_id,game,status,engine_version,rules_version,scan_sha256,
-              raw_ocr_candidate,normalized_card_number,card_number_confidence,confidence,
-              recognition_state,scan_quality,exception_codes,evidence,submitted_at,completed_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               raw_ocr_candidate,normalized_card_number,card_number_confidence,confidence,
+               recognition_state,scan_quality,exception_codes,evidence,submitted_at,completed_at,
+               family_id,family_confidence,family_certainty,printing_id,printing_confidence,
+               printing_certainty,printing_unresolved_reason,printing_evidence)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             job_uuid, request_id, recognition_key, card_id, batch["id"], card["rip_session_id"],
             batch["acquisition_line_id"], "One Piece", "COMPLETED", ENGINE_VERSION,
             RULES_VERSION, scan_sha, raw_number, normalized_number, number_confidence,
             best[0] if best else 0.0, state, _json(quality), _json(sorted(set(exceptions))),
-            _json(evidence), now, now,
+            _json(evidence), now, now, family_id, best[0] if best else 0.0,
+            family_certainty, printing_id, float(printing_evaluation.get("confidence") or 0),
+            printing_evaluation["certainty"], printing_evaluation["unresolved_reason"],
+            _json(printing_evaluation),
         ),
     )
     job_id = int(cursor.lastrowid)
@@ -1279,6 +1403,9 @@ def submit_recognition(
             (job_id, rank, item[4]["id"], item[0], item[1], item[2], item[3],
              _json({"narrowing": narrowing, "sample_watermark_ignored": True})),
         )
+    record_printing_evidence_observations(
+        db, job_id=job_id, family_id=family_id, candidates=printing_candidates
+    )
     if best:
         db.execute("UPDATE sam_recognition_jobs SET top_reference_id=? WHERE id=?", (best[4]["id"], job_id))
     identity_applied = False
@@ -1291,6 +1418,27 @@ def submit_recognition(
             "UPDATE cards SET sam_recognition_state=?,sam_recognition_job_id=?,updated_at=? WHERE id=?",
             (state, job_id, now, card_id),
         )
+        if family_id:
+            record_assertion(
+                db, card_id=card_id, job_id=job_id, field_scope="FAMILY",
+                family_id=family_id, reference_id=int(best[4]["id"]) if best else None,
+                proposed_value=best[4]["card_number"] if best else "",
+                certainty=family_certainty, confidence=best[0] if best else 0,
+                authority_granted=False, actor="SYSTEM",
+                reason_code="SAM_FAMILY_SUGGESTION",
+                evidence={"printing_authority_granted": False},
+            )
+    record_assertion(
+        db, card_id=card_id, job_id=job_id, field_scope="PRINTING",
+        family_id=family_id, printing_id=printing_id,
+        reference_id=int(best[4]["id"]) if best else None,
+        proposed_value=printing_candidate.get("variant_label", ""),
+        certainty=printing_evaluation["certainty"],
+        confidence=float(printing_evaluation.get("confidence") or 0),
+        authority_granted=False, actor="SYSTEM",
+        reason_code=printing_evaluation["unresolved_reason"] or "PRINTING_SUGGESTION_ONLY",
+        evidence=printing_evaluation,
+    )
     result = recognition_result(db, job_id)
     result["replayed"] = False
     result["identity_applied"] = identity_applied
@@ -1313,7 +1461,8 @@ def review_queue(db: sqlite3.Connection, *, batch_id: int | None = None) -> dict
         where = "WHERE j.batch_id=?"
         params.append(batch_id)
     rows = db.execute(
-        f"""SELECT j.*,c.sku,c.front_image,c.sam_recognition_state,b.batch_code
+        f"""SELECT j.*,c.sku,c.front_image,c.sam_recognition_state,c.variant,
+                   c.market_average,b.batch_code
             FROM sam_recognition_jobs j
             JOIN cards c ON c.id=j.card_id
             JOIN batches b ON b.id=j.batch_id
@@ -1327,12 +1476,41 @@ def review_queue(db: sqlite3.Connection, *, batch_id: int | None = None) -> dict
     for row in rows:
         state = row["sam_recognition_state"] or row["recognition_state"]
         lane = "MATCHED" if state in ("AUTO_MATCHED", "OPERATOR_CONFIRMED", "OPERATOR_CORRECTED") else state
+        printing_evidence = _loads(row["printing_evidence"], {})
+        competing = printing_evidence.get("competing_printings") or []
+        priority_reasons = []
+        priority_score = 0
+        if row["printing_certainty"] == "CONFLICTING":
+            priority_score += 40
+            priority_reasons.append("CONFLICTING_PRINTING_EVIDENCE")
+        if row["printing_certainty"] == "HIGH_CONFIDENCE_SUGGESTION":
+            priority_score += 30
+            priority_reasons.append("PRINTING_SUGGESTION_AWAITS_OPERATOR")
+        if len(competing) > 1:
+            priority_score += 20
+            priority_reasons.append("MULTIPLE_SAME_FAMILY_PRINTINGS")
+        legacy_variant = clean(row["variant"], 120).upper()
+        suggested_variant = clean((printing_evidence.get("candidate") or {}).get("variant_label"), 120).upper()
+        if legacy_variant not in ("", "STANDARD", "UNKNOWN") and suggested_variant and legacy_variant != suggested_variant:
+            priority_score += 15
+            priority_reasons.append("LEGACY_VARIANT_EVIDENCE_MISMATCH")
+        if row["market_average"] is not None and float(row["market_average"]) >= 20:
+            priority_score += 10
+            priority_reasons.append("VALUE_REVIEW_PRIORITY_ONLY")
         lanes[lane].append({
             "job_uuid": row["job_uuid"], "sku": row["sku"], "batch_code": row["batch_code"],
             "state": state, "confidence": row["confidence"],
             "scan_image_url": f"/media/{row['front_image']}" if row["front_image"] else "",
             "exception_codes": _loads(row["exception_codes"], []),
+            "printing_certainty": row["printing_certainty"],
+            "printing_confidence": row["printing_confidence"],
+            "printing_candidate_count": len(competing),
+            "review_priority_score": priority_score,
+            "review_priority_reasons": priority_reasons,
+            "economics_value_used_for_identity": False,
         })
+    for items in lanes.values():
+        items.sort(key=lambda item: (-item["review_priority_score"], item["job_uuid"]))
     return {
         "counts": {key: len(value) for key, value in lanes.items()},
         "lanes": lanes, "scanning_blocked": False, "game": "One Piece",
@@ -1346,6 +1524,10 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
     prior = db.execute(
         "SELECT job_id FROM sam_recognition_decisions WHERE request_id=?", (request_id,)
     ).fetchone()
+    if not prior:
+        prior = db.execute(
+            "SELECT job_id FROM sam_identity_decision_events WHERE request_id=?", (request_id,)
+        ).fetchone()
     if prior:
         result = recognition_result(db, prior["job_id"])
         result["replayed"] = True
@@ -1355,26 +1537,34 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
         raise ValueError("Recognition job not found")
     current_revision = int(job["revision"]) + int(db.execute(
         "SELECT COUNT(*) FROM sam_recognition_decisions WHERE job_id=?", (job["id"],)
+    ).fetchone()[0]) + int(db.execute(
+        "SELECT COUNT(*) FROM sam_identity_decision_events WHERE job_id=?", (job["id"],)
     ).fetchone()[0])
     expected = int(payload.get("expected_revision") or 0)
     if expected != current_revision:
         raise ValueError("Recognition changed; refresh before recording this decision")
     action = clean(payload.get("action"), 40).upper()
     selected_id = payload.get("reference_id")
-    if action == "CONFIRM":
+    family_actions = {"CONFIRM", "CONFIRM_FAMILY", "CORRECT", "CORRECT_FAMILY", "LEAVE_UNIDENTIFIED"}
+    printing_actions = {
+        "CONFIRM_PRINTING", "CORRECT_PRINTING", "LEAVE_PRINTING_UNRESOLVED", "MARK_PRINTING_CONFLICT"
+    }
+    if action in ("CONFIRM", "CONFIRM_FAMILY"):
         decision_type = "OPERATOR_CONFIRMED"
         selected_id = selected_id or job["top_reference_id"]
         if selected_id and int(selected_id) != int(job["top_reference_id"] or 0):
             raise ValueError("Use the correction action when selecting a different identity")
-    elif action == "CORRECT":
+    elif action in ("CORRECT", "CORRECT_FAMILY"):
         decision_type = "OPERATOR_CORRECTED"
         if not selected_id:
             raise ValueError("Select the correct reference")
     elif action == "LEAVE_UNIDENTIFIED":
         decision_type = "LEFT_UNIDENTIFIED"
         selected_id = None
+    elif action in printing_actions:
+        decision_type = action
     else:
-        raise ValueError("Choose Confirm Match, Find Match correction, or Leave Unidentified")
+        raise ValueError("Choose a supported family or printing decision")
     reference = None
     if selected_id:
         reference = db.execute(
@@ -1385,30 +1575,111 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
             raise ValueError("Selected reference is unavailable")
     reason = clean(payload.get("reason_code"), 80)
     notes = clean(payload.get("notes"), 1000)
-    if decision_type == "OPERATOR_CORRECTED" and (not reason or not notes):
+    if decision_type in ("OPERATOR_CORRECTED", "CORRECT_PRINTING") and (not reason or not notes):
         raise ValueError("A correction reason and note are required")
     now = utcnow()
-    db.execute(
-        """INSERT INTO sam_recognition_decisions
-             (decision_uuid,request_id,job_id,card_id,decision_type,original_top_reference_id,
-              selected_reference_id,expected_revision,effective_at,recorded_at,reason_code,notes,evidence)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            f"SAM-DEC-{uuid.uuid4()}", request_id, job["id"], job["card_id"], decision_type,
-            job["top_reference_id"], selected_id, expected, clean(payload.get("effective_at"), 40) or now,
-            now, reason, notes, _json({"original_suggestion_preserved": True}),
-        ),
-    )
     card = db.execute("SELECT * FROM cards WHERE id=?", (job["card_id"],)).fetchone()
-    if reference:
-        _apply_identity(
-            db, card, reference, state=decision_type,
-            confidence=float(job["confidence"]), job_id=job["id"],
+    if action in family_actions:
+        cursor = db.execute(
+            """INSERT INTO sam_recognition_decisions
+                 (decision_uuid,request_id,job_id,card_id,decision_type,original_top_reference_id,
+                  selected_reference_id,expected_revision,effective_at,recorded_at,reason_code,notes,evidence)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                f"SAM-DEC-{uuid.uuid4()}", request_id, job["id"], job["card_id"], decision_type,
+                job["top_reference_id"], selected_id, expected, clean(payload.get("effective_at"), 40) or now,
+                now, reason, notes,
+                _json({"original_suggestion_preserved": True, "printing_authority_granted": False}),
+            ),
         )
+        if reference:
+            _apply_identity(
+                db, card, reference, state=decision_type,
+                confidence=float(job["confidence"]), job_id=job["id"],
+                request_id=request_id, legacy_decision_id=int(cursor.lastrowid),
+            )
+        else:
+            db.execute(
+                "UPDATE cards SET sam_recognition_state='UNIDENTIFIED',sam_recognition_job_id=?,updated_at=? WHERE id=?",
+                (job["id"], now, job["card_id"]),
+            )
     else:
-        db.execute(
-            "UPDATE cards SET sam_recognition_state='UNIDENTIFIED',sam_recognition_job_id=?,updated_at=? WHERE id=?",
-            (job["id"], now, job["card_id"]),
+        family_id = int(card["sam_family_id"] or 0) or None
+        if not family_id or card["sam_family_certainty"] not in ("AUTHORITATIVE", "OPERATOR_CONFIRMED"):
+            raise ValueError("Confirm the card family before deciding an exact printing")
+        printing_id = int(payload.get("printing_id") or 0) or None
+        if not printing_id and reference:
+            linked = ensure_reference_identity(db, reference) or {}
+            printing_id = int((linked.get("printing") or {}).get("id") or 0) or None
+        printing = None
+        if printing_id:
+            printing = db.execute(
+                "SELECT * FROM sam_commercial_printings WHERE id=? AND family_id=? AND active=1",
+                (printing_id, family_id),
+            ).fetchone()
+            if not printing:
+                raise ValueError("Selected printing does not belong to the confirmed card family")
+        prior_printing_id = card["sam_printing_id"]
+        if action in ("CONFIRM_PRINTING", "CORRECT_PRINTING"):
+            if not printing:
+                raise ValueError("Select a documented commercial printing")
+            db.execute(
+                "UPDATE cards SET sam_printing_id=?,sam_printing_certainty='OPERATOR_CONFIRMED',updated_at=? WHERE id=?",
+                (printing_id, now, job["card_id"]),
+            )
+            db.execute(
+                "UPDATE sam_commercial_printings SET authority_state='OPERATOR_CONFIRMED',updated_at=? WHERE id=?",
+                (now, printing_id),
+            )
+            event_type = "PRINTING_CORRECTED" if action == "CORRECT_PRINTING" else "PRINTING_CONFIRMED"
+            certainty = "OPERATOR_CONFIRMED"
+            authority_granted = True
+            reason_code = reason or "OPERATOR_CONFIRMED_EXACT_PRINTING"
+        else:
+            if not prior_printing_id:
+                certainty = "CONFLICTING" if action == "MARK_PRINTING_CONFLICT" else "UNRESOLVED"
+                db.execute(
+                    "UPDATE cards SET sam_printing_id=NULL,sam_printing_certainty=?,updated_at=? WHERE id=?",
+                    (certainty, now, job["card_id"]),
+                )
+            else:
+                certainty = card["sam_printing_certainty"]
+            event_type = "PRINTING_CONFLICT" if action == "MARK_PRINTING_CONFLICT" else "PRINTING_LEFT_UNRESOLVED"
+            authority_granted = False
+            reason_code = reason or (
+                "OPERATOR_MARKED_PRINTING_CONFLICT" if action == "MARK_PRINTING_CONFLICT"
+                else "OPERATOR_LEFT_PRINTING_UNRESOLVED"
+            )
+        event_id = record_event(
+            db, request_id=request_id, job_id=int(job["id"]), card_id=int(job["card_id"]),
+            event_type=event_type, family_id=family_id,
+            printing_id=printing_id if authority_granted else None,
+            reference_id=int(reference["id"]) if reference else None,
+            prior_family_id=family_id, prior_printing_id=prior_printing_id,
+            certainty=certainty, actor="OPERATOR", reason_code=reason_code, notes=notes,
+            evidence={"operator_only_printing_authority": True,
+                      "original_suggestion_preserved": True,
+                      "legacy_variant_unchanged": True},
+            effective_at=clean(payload.get("effective_at"), 40),
+        )
+        supersedes_assertion_id = None
+        if action == "CORRECT_PRINTING":
+            prior_assertion = db.execute(
+                """SELECT id FROM sam_identity_assertions
+                   WHERE card_id=? AND field_scope='PRINTING' AND authority_granted=1
+                   ORDER BY id DESC LIMIT 1""",
+                (job["card_id"],),
+            ).fetchone()
+            supersedes_assertion_id = int(prior_assertion["id"]) if prior_assertion else None
+        record_assertion(
+            db, card_id=int(job["card_id"]), job_id=int(job["id"]), field_scope="PRINTING",
+            family_id=family_id, printing_id=printing_id if authority_granted else None,
+            reference_id=int(reference["id"]) if reference else None,
+            proposed_value=printing["variant_label"] if printing else "",
+            certainty=certainty, confidence=float(job["printing_confidence"] or 0),
+            authority_granted=authority_granted, actor="OPERATOR", reason_code=reason_code,
+            notes=notes, evidence={"decision_event_id": event_id, "legacy_variant_unchanged": True},
+            supersedes_assertion_id=supersedes_assertion_id,
         )
     result = recognition_result(db, job["id"])
     result["replayed"] = False

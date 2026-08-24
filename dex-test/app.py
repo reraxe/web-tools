@@ -87,6 +87,12 @@ from dex_portfolio_economics import (
     portfolio_economics_payload,
 )
 from dex_legacy_economics import estimate_legacy_batch, open_readonly_database
+from dex_jarvis_economics import (
+    aggregate_economics_payload as jarvis_aggregate_economics_payload,
+    capture_sale_input_evidence,
+    card_economics_payload as jarvis_card_economics_payload,
+    sale_economics_payload as jarvis_sale_economics_payload,
+)
 from dex_inbound import (
     acquisition_payload as inbound_acquisition_payload,
     add_acquisition_line,
@@ -168,6 +174,7 @@ from dex_sam_challenger import (
     load_shadow_comparison as load_sam_challenger_comparison,
     shadow_recognition_for_job as sam_challenger_shadow_for_job,
 )
+from dex_sam_identity import ensure_family, record_assertion, record_event
 
 
 ROOT = Path(__file__).resolve().parent
@@ -193,7 +200,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.3-test"
+APP_VERSION = "v2.4-test"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -668,22 +675,45 @@ def apply_source_match(db: sqlite3.Connection, card: sqlite3.Row, source: sqlite
     current_name = card["name"] if card["name"] != "Needs identification" else ""
     name = source["name"] or current_name or "Needs identification"
     set_name = source["set_name"] or card["set_name"]
-    rarity = source["rarity"] or card["rarity"]
     color = source["color"] or card["color"]
     status = "IN_STOCK" if name != "Needs identification" and source["card_number"] else card["status"]
+    family = ensure_family(
+        db, game=source["game"], set_code=source["set_code"],
+        card_number=source["card_number"], name=name,
+        external_descriptors={"source": "LEGACY_SOURCE_CARD", "authority": False},
+    )
+    if not family:
+        raise ValueError("Source match does not establish a card family")
     db.execute(
         """
         UPDATE cards SET
-            card_number = ?, name = ?, set_name = ?, rarity = ?, color = ?,
+            card_number = ?, name = ?, set_name = ?, color = ?,
             status = ?, source_card_id = ?, match_confidence = ?, match_source = ?,
-            match_reviewed = ?, matched_at = ?, updated_at = ?
+            match_reviewed = ?, matched_at = ?, sam_family_id = ?,
+            sam_family_certainty = 'AUTHORITATIVE', updated_at = ?
         WHERE id = ?
         """,
         (
-            source["card_number"], name, set_name, rarity, color, status,
+            source["card_number"], name, set_name, color, status,
             source["id"], confidence, match_source, 1 if confidence >= SAM_MATCH_THRESHOLD else 0,
-            now, now, card["id"],
+            now, family["id"], now, card["id"],
         ),
+    )
+    request_id = f"LEGACY-SAM-FAMILY-{uuid.uuid4()}"
+    record_event(
+        db, request_id=request_id, card_id=int(card["id"]), event_type="FAMILY_AUTO_APPLIED",
+        family_id=int(family["id"]), prior_family_id=card["sam_family_id"],
+        prior_printing_id=card["sam_printing_id"], certainty="AUTHORITATIVE", actor="SYSTEM",
+        reason_code="LEGACY_SAM_FAMILY_MATCH",
+        evidence={"match_source": match_source, "confidence": confidence,
+                  "printing_authority_granted": False, "rarity_unchanged": True,
+                  "variant_unchanged": True},
+    )
+    record_assertion(
+        db, card_id=int(card["id"]), field_scope="FAMILY", family_id=int(family["id"]),
+        proposed_value=source["card_number"], certainty="AUTHORITATIVE", confidence=confidence,
+        authority_granted=True, actor="SYSTEM", reason_code="LEGACY_SAM_FAMILY_MATCH",
+        evidence={"match_source": match_source, "printing_authority_granted": False},
     )
     return dict(db.execute("SELECT * FROM cards WHERE id = ?", (card["id"],)).fetchone())
 
@@ -1665,6 +1695,30 @@ class DexHandler(BaseHTTPRequestHandler):
                 with open_readonly_database(DB_PATH) as db:
                     result = portfolio_economics_payload(db)
                 self.send_json(result)
+            elif path == "/api/jarvis/economics/summary":
+                with open_readonly_database(DB_PATH) as db:
+                    result = jarvis_aggregate_economics_payload(db)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/jarvis/economics/cards/[A-Z0-9-]+", path):
+                sku = unquote(path.rsplit("/", 1)[-1])
+                try:
+                    with open_readonly_database(DB_PATH) as db:
+                        result = jarvis_card_economics_payload(db, sku)
+                except ValueError:
+                    self.send_error_json("Card economics not found", 404)
+                else:
+                    self.send_json(result)
+            elif re.fullmatch(r"/api/jarvis/economics/sales/\d+", path):
+                order_id = int(path.rsplit("/", 1)[-1])
+                try:
+                    with open_readonly_database(DB_PATH) as db:
+                        result = jarvis_sale_economics_payload(db, order_id)
+                except ValueError:
+                    self.send_error_json("Sale economics not found", 404)
+                else:
+                    self.send_json(result)
+            elif path.startswith("/api/jarvis/economics/"):
+                self.send_error_json("JARVIS economics endpoint not found", 404)
             elif path == "/api/inbound/foundation":
                 self.send_json(inbound_foundation_contract())
             elif path == "/api/document-providers/status":
@@ -2509,6 +2563,7 @@ class DexHandler(BaseHTTPRequestHandler):
                 with DB_LOCK, connect() as db:
                     db.execute("BEGIN IMMEDIATE")
                     result = create_sealed_sale(db, payload, business_today(db).isoformat())
+                    capture_sale_input_evidence(db, int(result["id"]), payload, order_type="SEALED")
                 self.send_json(result, 201)
             elif re.fullmatch(r"/api/sealed-sales/\d+/undo", path):
                 order_id = int(path.split("/")[3])
@@ -2934,6 +2989,7 @@ class DexHandler(BaseHTTPRequestHandler):
                         ),
                     )
                     order_id = cursor.lastrowid
+                    capture_sale_input_evidence(db, int(order_id), payload, order_type="CARD")
                     per_item = round(subtotal / len(cards), 2)
                     for card in cards:
                         db.execute(
@@ -3080,20 +3136,82 @@ class DexHandler(BaseHTTPRequestHandler):
             if any(field in updates for field in ("market_low", "market_average", "market_high")):
                 updates["market_updated_at"] = utcnow()
             updates["updated_at"] = utcnow()
-            assignments = ", ".join(f"{key} = ?" for key in updates)
             with connect() as db:
                 previous = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
                 if not previous:
                     self.send_error_json("Card not found", 404)
                     return
+                family_edited = any(field in updates for field in ("card_number", "name", "set_name"))
+                printing_text_edited = any(field in updates for field in ("variant", "rarity"))
+                family = None
+                if family_edited:
+                    family_game = db.execute(
+                        "SELECT game FROM batches WHERE id=?", (previous["batch_id"],)
+                    ).fetchone()
+                    family = ensure_family(
+                        db, game=family_game["game"] if family_game else "Unknown",
+                        set_code=updates.get("set_name", previous["set_name"]),
+                        card_number=updates.get("card_number", previous["card_number"]),
+                        name=updates.get("name", previous["name"]),
+                        external_descriptors={"source": "DIRECT_CARD_EDITOR", "authority": False},
+                    )
+                    if family:
+                        updates["sam_family_id"] = int(family["id"])
+                        updates["sam_family_certainty"] = "OPERATOR_CONFIRMED"
+                if printing_text_edited:
+                    updates["sam_legacy_identity_provenance"] = "OPERATOR_CONFIRMED"
                 undo_fields = {
                     key: previous[key] for key in updates
                     if key not in ("updated_at", "market_updated_at") and key in previous.keys()
                 }
+                assignments = ", ".join(f"{key} = ?" for key in updates)
                 db.execute(
                     f"UPDATE cards SET {assignments} WHERE sku = ?",
                     [*updates.values(), sku],
                 )
+                if family:
+                    manual_request = f"MANUAL-FAMILY-{uuid.uuid4()}"
+                    event_id = record_event(
+                        db, request_id=manual_request, card_id=int(previous["id"]),
+                        event_type="MANUAL_IDENTITY_EDIT", family_id=int(family["id"]),
+                        prior_family_id=previous["sam_family_id"],
+                        prior_printing_id=previous["sam_printing_id"],
+                        certainty="OPERATOR_CONFIRMED", actor="OPERATOR",
+                        reason_code="DIRECT_CARD_FAMILY_EDIT",
+                        evidence={"printing_authority_granted": False},
+                    )
+                    record_assertion(
+                        db, card_id=int(previous["id"]), field_scope="FAMILY",
+                        family_id=int(family["id"]),
+                        proposed_value=updates.get("card_number", previous["card_number"]),
+                        certainty="OPERATOR_CONFIRMED", authority_granted=True, actor="OPERATOR",
+                        reason_code="DIRECT_CARD_FAMILY_EDIT",
+                        evidence={"decision_event_id": event_id, "printing_authority_granted": False},
+                    )
+                if printing_text_edited:
+                    manual_request = f"MANUAL-PRINTING-TEXT-{uuid.uuid4()}"
+                    event_id = record_event(
+                        db, request_id=manual_request, card_id=int(previous["id"]),
+                        event_type="MANUAL_IDENTITY_EDIT",
+                        family_id=int(family["id"]) if family else previous["sam_family_id"],
+                        prior_family_id=previous["sam_family_id"],
+                        prior_printing_id=previous["sam_printing_id"],
+                        certainty="OPERATOR_CONFIRMED", actor="OPERATOR",
+                        reason_code="DIRECT_LEGACY_PRINTING_TEXT_EDIT",
+                        evidence={"commercial_printing_authority_granted": False,
+                                  "variant": updates.get("variant", previous["variant"]),
+                                  "rarity": updates.get("rarity", previous["rarity"])},
+                    )
+                    record_assertion(
+                        db, card_id=int(previous["id"]), field_scope="PRINTING",
+                        family_id=int(family["id"]) if family else previous["sam_family_id"],
+                        proposed_value=updates.get("variant", previous["variant"]),
+                        certainty="OPERATOR_CONFIRMED", authority_granted=False, actor="OPERATOR",
+                        reason_code="DIRECT_LEGACY_PRINTING_TEXT_EDIT",
+                        evidence={"decision_event_id": event_id,
+                                  "commercial_printing_id": None,
+                                  "legacy_text_only": True},
+                    )
                 log_action(db, "CARD_UPDATE", f"Updated {sku}", {"sku": sku, "before": undo_fields})
                 row = db.execute("SELECT * FROM cards WHERE sku = ?", (sku,)).fetchone()
             if not row:

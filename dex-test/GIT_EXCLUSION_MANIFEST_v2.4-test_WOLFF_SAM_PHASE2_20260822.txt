@@ -1,0 +1,8 @@
+# Exclude from GitHub and deployment
+
+- `DEX_SAM_VISION_INTAKE_POC/` and every external Vision Intake, dense-retrieval, DINOv2, FAISS, learned-geometry, corpus, benchmark, or training artifact
+- `*.db`, `*.sqlite`, `*.sqlite3`, database journals/WAL files, and all production or disposable storage
+- physical card scans, reference images/libraries, scanner inboxes, receipt/source-document files, ground truth, blind stages, and private validation results
+- `.env*`, passwords, tokens, API secrets, credentials, private keys, and machine-specific configuration
+- `__pycache__/`, `.pytest_cache/`, `*.pyc`, `*.pyo`, caches, logs, coverage output, and generated runtime output
+- the outer `DEX_v2.4-test_WOLFF_SAM_PHASE2_20260822_DEPLOY/` folder itself; upload only its contents
