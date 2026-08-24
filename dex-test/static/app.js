@@ -36,6 +36,7 @@ const state = {
   sealedSalePreview: null,
   samSource: null,
   samReview: null,
+  samReviewEconomics: null,
   samReviewSelection: null,
   samReferenceResults: [],
   samCorrectionDraft: { reason_code: "OPERATOR_IDENTIFICATION_CORRECTION", notes: "" },
@@ -59,6 +60,7 @@ const state = {
   disclosureStates: new Map(),
   acquisitionWorkingForms: new Map(),
   intakeRoutingPreview: null,
+  jarvisEconomics: null,
 };
 
 const BULK_IMPORT_CHUNK_SIZE = 8;
@@ -184,6 +186,69 @@ function formatMoney(value, fallback = "—") {
 
 function formatCents(value, fallback = "Unknown") {
   return value === null || value === undefined ? fallback : moneyFormat.format(Number(value) / 100);
+}
+
+function jarvisCoveredCents(value, coveredCount, totalCount, fallback = "Unknown") {
+  if (Number(totalCount || 0) > 0 && Number(coveredCount || 0) === 0) return fallback;
+  return formatCents(value, fallback);
+}
+
+function jarvisStatusBadge(status) {
+  const value = String(status || "UNRESOLVED").toUpperCase();
+  const color = value === "COMPLETE" ? "green" : value === "ESTIMATED" ? "blue" : value === "PARTIAL" ? "amber" : "coral";
+  return `<span class="badge ${color}">${escapeHtml(titleCase(value))}</span>`;
+}
+
+function jarvisFact(label, fact, options = {}) {
+  const stateName = String(fact?.state || "UNRESOLVED").toUpperCase();
+  const value = fact?.value_cents == null ? "Unknown" : formatCents(fact.value_cents);
+  const explanation = fact?.reason ? titleCase(fact.reason) : stateName === "ESTIMATED" ? "Estimate only" : "";
+  return `<div class="jarvis-fact ${stateName.toLowerCase()}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong><small>${escapeHtml(titleCase(stateName))}${explanation ? ` · ${escapeHtml(explanation)}` : ""}${fact?.freshness?.label ? ` · ${escapeHtml(fact.freshness.label)}` : fact?.observed_at ? ` · ${escapeHtml(formatDate(fact.observed_at))}` : ""}</small></div>`;
+}
+
+function jarvisRoi(label, value) {
+  const text = value?.percent == null ? "Unknown" : `${Number(value.percent).toFixed(2)}%`;
+  return `<div class="jarvis-fact ${String(value?.state || "UNRESOLVED").toLowerCase()}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(text)}</strong><small>${escapeHtml(titleCase(value?.reason || value?.state || "UNRESOLVED"))}</small></div>`;
+}
+
+function jarvisProvenance(label, facts) {
+  const rows = Object.entries(facts || {}).filter(([, fact]) => fact && fact.source_record).map(([name, fact]) => `<div><dt>${escapeHtml(titleCase(name))}</dt><dd><strong>${escapeHtml(fact.source_record)}</strong><span>${escapeHtml(fact.source_field || "Source field unavailable")}</span><small>${fact.observed_at ? `Observed ${escapeHtml(formatDate(fact.observed_at))}` : "Observation time not recorded"} · ${escapeHtml(titleCase(fact.state || "UNRESOLVED"))}</small></dd></div>`).join("");
+  return rows ? `<details class="jarvis-provenance"><summary>${escapeHtml(label)}</summary><dl>${rows}</dl></details>` : "";
+}
+
+function jarvisInventorySummary(report) {
+  if (!report) return "";
+  const inventory = report.remaining_inventory || {};
+  const realized = report.realized || {};
+  const warnings = (report.warnings || []).map((warning) => `<li>${escapeHtml(warning)}</li>`).join("");
+  return `<section class="jarvis-economics-panel compact" aria-labelledby="jarvis-inventory-title"><header><div><span title="Working On Levelling Financial Flows">WOLFF simplified economics</span><h2 id="jarvis-inventory-title">Known facts, visibly bounded</h2></div>${jarvisStatusBadge(report.economics_status)}</header><div class="jarvis-summary-grid"><div><span>Known remaining basis</span><strong>${jarvisCoveredCents(inventory.total_remaining_cost_basis_cents, inventory.authoritative_basis_count, inventory.item_count)}</strong><small>${escapeHtml(inventory.coverage_label || "Coverage unknown")}</small></div><div><span>Known market reference value</span><strong>${formatCents(inventory.total_current_inventory_value_cents)}</strong><small>${inventory.market_valued_count || 0}/${inventory.item_count || 0} items valued · ${escapeHtml(inventory.valuation_freshness?.label || "Freshness Unknown")}</small></div><div><span>Known unrealized difference</span><strong>${formatCents(inventory.total_unrealized_gain_loss_cents)}</strong><small>Only paired authoritative basis and market facts</small></div><div><span>Known realized P/L</span><strong>${formatCents(realized.total_realized_profit_loss_cents)}</strong><small>${escapeHtml(realized.coverage_label || "Coverage unknown")}</small></div></div>${warnings ? `<ul class="jarvis-warnings">${warnings}</ul>` : ""}<footer>Calculation ${escapeHtml(report.calculation_version)} · calculated from source facts; totals are not stored.</footer></section>`;
+}
+
+function jarvisCardPanel(report) {
+  if (!report) return "";
+  const warnings = (report.warnings || []).map((warning) => `<li>${escapeHtml(titleCase(warning))}</li>`).join("");
+  const sold = report.sale ? `<div class="jarvis-related-sale"><h4>Realized sale economics</h4><div class="jarvis-fact-grid">${jarvisFact("Gross sale proceeds", report.sale.gross_sale_proceeds)}${jarvisFact("Net proceeds", report.sale.net_proceeds)}${jarvisFact("Realized profit / loss", report.sale.realized_profit_loss)}${jarvisRoi("Realized ROI", report.sale.realized_roi)}</div></div>` : "";
+  const provenance = jarvisProvenance("Economics provenance", {
+    acquisition_cost: report.acquisition_cost,
+    allocated_basis: report.allocated_acquisition_cost,
+    market_value: report.current_market_reference_value,
+    sale_proceeds: report.sale?.gross_sale_proceeds,
+    sold_basis: report.sale?.cost_basis_of_goods_sold,
+  });
+  return `<section class="jarvis-economics-panel" aria-labelledby="jarvis-card-title"><header><div><span title="Working On Levelling Financial Flows">WOLFF simplified economics</span><h3 id="jarvis-card-title">Item economics</h3></div>${jarvisStatusBadge(report.economics_status)}</header><div class="jarvis-fact-grid">${jarvisFact("Parent acquisition cost", report.acquisition_cost)}${jarvisFact("Allocated acquisition cost", report.allocated_acquisition_cost)}${jarvisFact("Current market reference", report.current_market_reference_value)}${jarvisFact("Current inventory value", report.current_inventory_value)}${jarvisFact("Unrealized gain / loss", report.unrealized_gain_loss)}${jarvisRoi("Unrealized ROI", report.unrealized_roi)}</div>${sold}${warnings ? `<ul class="jarvis-warnings">${warnings}</ul>` : ""}${provenance}<footer>Unknown inputs stay Unknown. Estimated basis is excluded from authoritative totals. Calculation ${escapeHtml(report.calculation_version)}.</footer></section>`;
+}
+
+function jarvisSalePanel(report) {
+  if (!report) return "";
+  const warnings = (report.warnings || []).map((warning) => `<li>${escapeHtml(titleCase(warning))}</li>`).join("");
+  const provenance = jarvisProvenance("Sale economics provenance", {
+    merchandise: report.gross_merchandise_proceeds,
+    shipping_collected: report.shipping_charged_to_buyer,
+    marketplace_fees: report.marketplace_fees,
+    actual_postage: report.actual_shipping_cost,
+    sold_basis: report.cost_basis_of_goods_sold,
+  });
+  return `<section class="jarvis-economics-panel" aria-labelledby="jarvis-sale-title"><header><div><span title="Working On Levelling Financial Flows">WOLFF simplified economics</span><h3 id="jarvis-sale-title">Sale economics</h3></div>${jarvisStatusBadge(report.economics_status)}</header><div class="jarvis-fact-grid">${jarvisFact("Merchandise proceeds", report.gross_merchandise_proceeds)}${jarvisFact("Shipping charged to buyer", report.shipping_charged_to_buyer)}${jarvisFact("Gross sale proceeds", report.gross_sale_proceeds)}${jarvisFact("Marketplace fees", report.marketplace_fees)}${jarvisFact("Actual shipping cost", report.actual_shipping_cost)}${jarvisFact("Cost basis of goods sold", report.cost_basis_of_goods_sold)}${jarvisFact("Net proceeds", report.net_proceeds)}${jarvisFact("Realized profit / loss", report.realized_profit_loss)}${jarvisRoi("Realized ROI", report.realized_roi)}</div>${warnings ? `<ul class="jarvis-warnings">${warnings}</ul>` : ""}${provenance}<footer>Payment fees, packaging, and other direct costs remain separately unresolved when not recorded. Calculation ${escapeHtml(report.calculation_version)}.</footer></section>`;
 }
 
 function formatPercent(value, fallback = "Unknown") {
@@ -431,8 +496,12 @@ function inventoryTable(groups) {
 async function renderInventory() {
   loading();
   try {
-    await loadDashboard();
-    app.innerHTML = `<div class="view-stack">${summaryStrip()}${inventoryToolbar()}<div id="inventory-results"><div class="skeleton"></div></div></div>`;
+    const [, jarvis] = await Promise.all([
+      loadDashboard(),
+      api("/api/jarvis/economics/summary").catch(() => null),
+    ]);
+    state.jarvisEconomics = jarvis;
+    app.innerHTML = `<div class="view-stack">${summaryStrip()}${jarvisInventorySummary(jarvis)}${inventoryToolbar()}<div id="inventory-results"><div class="skeleton"></div></div></div>`;
     refreshIcons();
     if (state.inventoryPreset) {
       const preset = state.inventoryPreset;
@@ -2578,13 +2647,13 @@ async function bulkEditCards(event) {
   } catch (error) { toast(error.message, "error"); }
 }
 
-function editCardForm(card) {
+function editCardForm(card, economics = null) {
   const sourceImage = card.source_full_image_url || card.source_small_image_url;
   const sourceBlock = card.source_card_id ? `<div class="source-reference"><div>${sourceImage ? `<img src="${sourceImage}" alt="">` : icon("image")}</div><section><span>Matched Source</span><strong>${escapeHtml(card.source_card_number || card.card_number)}</strong><small>${escapeHtml(card.source_name || card.name)}${card.match_confidence ? ` · ${confidenceLabel(card.match_confidence)} confidence` : ""}</small></section></div>` : `<div class="source-reference empty">${icon("sparkles")}<section><span>SAM</span><strong>No source match yet</strong><small>Use SAM Match to compare this scan with the local source database.</small></section></div>`;
   const evidence = (side) => card[`${side}_image`] ? `<a href="/media/${encodeURI(card[`${side}_image`])}" target="_blank" rel="noopener"><img src="/media/${encodeURI(card[`${side}_image`])}" alt="${titleCase(side)} scan for ${escapeHtml(card.sku)}"><span>${titleCase(side)} · Open Full Resolution</span></a>` : `<div class="missing-evidence">${icon("image-off")}<span>No ${titleCase(side)} Image</span></div>`;
   const correctionCard = state.activeBatch?.corrections?.cards?.find((item) => item.sku === card.sku);
   const dispositionAction = correctionCard && correctionCard.rip_status === "FINALIZED" && card.status !== "SOLD" && !correctionCard.active_tombstone ? `<button type="button" class="button danger" data-action="dispose-card" data-sku="${escapeHtml(card.sku)}">${icon("history")}Audited disposition</button>` : "";
-  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="card-evidence">${evidence("front")}${evidence("back")}</div><div class="evidence-actions"><button type="button" class="button secondary" data-action="swap-images" data-sku="${escapeHtml(card.sku)}">${icon("arrow-left-right")}Swap Front/Back</button><button type="button" class="button secondary" data-action="sam-match-card" data-sku="${escapeHtml(card.sku)}">${icon("sparkles")}SAM Match</button></div>${sourceBlock}<div class="form-grid">
+  return `<form id="edit-card-form" data-sku="${escapeHtml(card.sku)}"><div class="card-evidence">${evidence("front")}${evidence("back")}</div><div class="evidence-actions"><button type="button" class="button secondary" data-action="swap-images" data-sku="${escapeHtml(card.sku)}">${icon("arrow-left-right")}Swap Front/Back</button><button type="button" class="button secondary" data-action="sam-match-card" data-sku="${escapeHtml(card.sku)}">${icon("sparkles")}SAM Match</button></div>${sourceBlock}${jarvisCardPanel(economics)}<div class="form-grid">
     <label>SKU<div class="input-action"><input value="${escapeHtml(card.sku)}" disabled><button type="button" class="icon-button" title="Copy SKU" data-action="copy-sku" data-sku="${escapeHtml(card.sku)}">${icon("copy")}</button></div></label>
     <label>Status<select name="status">${["IN_STOCK","REVIEW","HOLD","SOLD"].map((v) => `<option value="${v}" ${card.status === v ? "selected" : ""}>${v === "IN_STOCK" ? "In Stock" : v === "REVIEW" ? "Needs Review" : titleCase(v)}</option>`).join("")}</select></label>
     <label>Card Number<input name="card_number" value="${escapeHtml(card.card_number)}"></label>
@@ -2602,8 +2671,11 @@ function editCardForm(card) {
 
 async function openEditCard(sku) {
   try {
-    const card = await api(`/api/cards/${encodeURIComponent(sku)}`);
-    openModal(card.name, `${card.sku} · ${card.game} · ${card.set_code}`, editCardForm(card));
+    const [card, economics] = await Promise.all([
+      api(`/api/cards/${encodeURIComponent(sku)}`),
+      api(`/api/jarvis/economics/cards/${encodeURIComponent(sku)}`).catch(() => null),
+    ]);
+    openModal(card.name, `${card.sku} · ${card.game} · ${card.set_code}`, editCardForm(card, economics));
     document.querySelector("#edit-card-form").addEventListener("submit", saveCard);
   } catch (error) { toast(error.message, "error"); }
 }
@@ -2706,7 +2778,7 @@ function samStateLabel(value) {
 }
 
 function samQueueLane(title, items, tone) {
-  return `<section class="sam-review-lane ${tone}"><header><h3>${escapeHtml(title)}</h3><span>${items.length}</span></header><div>${items.length ? items.map((item) => `<article data-viewport-key="sam-job-${escapeHtml(item.job_uuid)}">${item.scan_image_url ? `<img src="${item.scan_image_url}" alt="Scanned ${escapeHtml(item.sku)}">` : `<span class="sam-image-placeholder">${icon("image-off")}</span>`}<div><strong>${escapeHtml(item.sku)}</strong><small>${escapeHtml(item.batch_code)} · ${samStateLabel(item.state)}</small><span>${Math.round(Number(item.confidence || 0) * 100)}% confidence${(item.exception_codes || []).length ? ` · ${escapeHtml(item.exception_codes.join(", "))}` : ""}</span></div><button class="button secondary" data-action="open-sam-review" data-id="${escapeHtml(item.job_uuid)}">${icon("scan-search")}Review</button></article>`).join("") : `<p>No cards in this lane.</p>`}</div></section>`;
+  return `<section class="sam-review-lane ${tone}"><header><h3>${escapeHtml(title)}</h3><span>${items.length}</span></header><div>${items.length ? items.map((item) => `<article data-viewport-key="sam-job-${escapeHtml(item.job_uuid)}">${item.scan_image_url ? `<img src="${item.scan_image_url}" alt="Scanned ${escapeHtml(item.sku)}">` : `<span class="sam-image-placeholder">${icon("image-off")}</span>`}<div><strong>${escapeHtml(item.sku)}</strong><small>${escapeHtml(item.batch_code)} · ${samStateLabel(item.state)}</small><span>${Math.round(Number(item.confidence || 0) * 100)}% family confidence${(item.exception_codes || []).length ? ` · ${escapeHtml(item.exception_codes.join(", "))}` : ""}</span>${item.review_priority_reasons?.length ? `<small class="sam-priority">Review priority: ${escapeHtml(item.review_priority_reasons.map(titleCase).join(" · "))}</small>` : ""}</div><button class="button secondary" data-action="open-sam-review" data-id="${escapeHtml(item.job_uuid)}">${icon("scan-search")}Review</button></article>`).join("") : `<p>No cards in this lane.</p>`}</div></section>`;
 }
 
 function samChallengerShadowPanel(report) {
@@ -2810,13 +2882,50 @@ function renderSamReviewModal() {
         : "Card number unreadable. Visual recognition remains available.";
   const numberDebug = `<details class="sam-number-debug"><summary>OCR details</summary><dl><div><dt>Raw OCR</dt><dd>${escapeHtml(numberEvidence.raw || "No valid text")}</dd></div><div><dt>Method</dt><dd>${escapeHtml(numberEvidence.method_version || "Not available")}</dd></div><div><dt>Region</dt><dd>${escapeHtml(numberEvidence.region_name || "Not available")}</dd></div><div><dt>Path</dt><dd>${escapeHtml(numberEvidence.execution_path === "FAST_PATH" ? "Fast path" : numberEvidence.execution_path === "ESCALATED_PATH" ? "Escalated path" : "Not available")}${numberEvidence.attempts ? ` · ${Number(numberEvidence.attempts)} OCR attempt${Number(numberEvidence.attempts) === 1 ? "" : "s"}` : ""}</dd></div><div><dt>Confidence</dt><dd>${Math.round(Number(numberEvidence.confidence || 0) * 100)}%${numberEvidence.consensus_support ? ` · ${numberEvidence.consensus_support}/${numberEvidence.valid_candidate_attempts || numberEvidence.consensus_support} valid reads agreed` : ""}</dd></div><div><dt>Timing</dt><dd>${Number(numberEvidence.preprocessing_ms || 0).toFixed(2)} ms preprocessing · ${Number(numberEvidence.execution_ms || 0).toFixed(2)} ms OCR</dd></div></dl></details>`;
   const cardNumberEvidence = `<section class="sam-number-evidence ${numberEvidenceClass}" aria-label="Card number evidence"><span>Card number</span><strong>${escapeHtml(numberEvidence.normalized || "Unreadable")}${numberAgreement === "AGREES_WITH_VISUAL_TOP" ? " ✓" : ""}</strong><p>${numberEvidenceMessage}</p>${numberDebug}</section>`;
-  const correcting = selected && result.top_candidate && Number(selected.id) !== Number(result.top_candidate.id);
+  const family = result.family || {};
+  const printing = result.printing || {};
+  const languageIdentity = result.language || {};
+  const finishIdentity = result.finish || {};
+  const inventoryIdentity = result.inventory || {};
+  const economics = state.samReviewEconomics;
+  const selectedFamilyId = Number(selected?.family_id || 0);
+  const selectedPrintingId = Number(selected?.commercial_printing_id || 0);
+  const familyCorrecting = Boolean(
+    selected && result.top_candidate && Number(selected.id) !== Number(result.top_candidate.id)
+    && (!selectedFamilyId || !Number(result.top_candidate.family_id || 0) || Number(result.top_candidate.family_id || 0) !== selectedFamilyId)
+  );
+  const printingCorrecting = Boolean(printing.authoritative && selectedPrintingId && Number(printing.printing_id || 0) !== selectedPrintingId);
+  const correcting = familyCorrecting || printingCorrecting;
   const correctionDraft = state.samCorrectionDraft || {};
   const correctionFields = correcting ? `<section class="sam-correction-fields" aria-labelledby="sam-correction-heading"><div><h3 id="sam-correction-heading">Correction details required</h3><p>Record why the selected identity replaces SAM's original suggestion. Both values are preserved in recognition history.</p></div><div class="sam-correction-grid"><label>Correction reason<select id="sam-correction-reason" required><option value="OPERATOR_IDENTIFICATION_CORRECTION" ${correctionDraft.reason_code === "OPERATOR_IDENTIFICATION_CORRECTION" ? "selected" : ""}>Wrong card identity</option><option value="VARIANT_OR_PRINTING_CORRECTION" ${correctionDraft.reason_code === "VARIANT_OR_PRINTING_CORRECTION" ? "selected" : ""}>Wrong variant or printing</option><option value="REFERENCE_METADATA_CORRECTION" ${correctionDraft.reason_code === "REFERENCE_METADATA_CORRECTION" ? "selected" : ""}>Reference metadata issue</option><option value="OTHER" ${correctionDraft.reason_code === "OTHER" ? "selected" : ""}>Other</option></select></label><label>Operator note<textarea id="sam-correction-notes" required placeholder="Explain why OP16-035 is the correct identity.">${escapeHtml(correctionDraft.notes || "")}</textarea></label></div><p id="sam-correction-error" class="sam-correction-error" role="alert" ${state.samCorrectionError ? "" : "hidden"}>${escapeHtml(state.samCorrectionError)}</p></section>` : "";
-  const authorityAction = correcting
-    ? `<button type="button" class="button primary" data-action="correct-sam-match" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected.id}" ${state.samDecisionPending ? "disabled aria-busy=\"true\"" : ""}>${icon("square-pen")}Confirm Correction</button>`
-    : `<button class="button primary" data-action="confirm-sam-match" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected?.id || ""}" ${selected ? "" : "disabled"}>${icon("circle-check")}Confirm Match</button>`;
-  openModal("SAM Human Review", `${result.sku} · ${samStateLabel(result.effective_state)} · identity only`, `<div class="sam-review-modal"><div class="sam-side-by-side"><article class="sam-scan-card"><span>Physical scan</span>${result.scan_image_url ? `<img src="${result.scan_image_url}" alt="Physical scan ${escapeHtml(result.sku)}">` : `<div>${icon("image-off")}No front scan</div>`}<strong>${escapeHtml(result.sku)}</strong></article><div><span>${correcting ? "Operator-selected reference" : "SAM best candidate"}</span>${samReferenceCard(selected)}</div></div>${cardNumberEvidence}<div class="sam-evidence"><strong>${Math.round(Number(job.confidence || 0) * 100)}% · ${escapeHtml(samStateLabel(job.recognition_state))}</strong><p>${escapeHtml(job.evidence?.candidate_narrowing || "No candidate narrowing")} · ${job.evidence?.candidates_scored || 0} candidate(s) compared · engine ${escapeHtml(job.engine_version)}</p><div>${exceptions || `<span class="badge green">No exception flags</span>`}</div><small>Metadata: ${escapeHtml(selected?.metadata_provider || job.evidence?.provider_cache?.provider || "Local reference / Unknown provider")} · SAMPLE watermark ignored as a reference artifact.</small></div>${alternates ? `<details open><summary>Alternate candidates</summary><div class="sam-alternates">${alternates}</div></details>` : ""}<details class="sam-find-match" ${state.samReferenceResults.length ? "open" : ""}><summary>Find Match</summary><form id="sam-reference-search-form"><label>Card number, name, or set<input name="q" autocomplete="off" placeholder="OP16-032 or card name"></label><button class="button secondary">${icon("search")}Search local references</button></form><div class="sam-search-results">${searchRows}</div></details>${correctionFields}<div class="sam-review-actions">${authorityAction}<button class="button tertiary" data-action="leave-sam-unidentified" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}">Leave Unidentified</button></div><p class="help-text">SAM assigns identity only. Acquisition cost, basis, rip economics, and sales economics are unchanged.</p></div>`);
+  const familyAction = familyCorrecting
+    ? `<button type="button" class="button primary" title="Confirm Correction" data-action="correct-sam-family" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected?.id || ""}">${icon("square-pen")}Correct Family</button>`
+    : family.authoritative
+      ? `<button type="button" class="button success" disabled>${icon("circle-check")}Family confirmed</button>`
+      : `<button type="button" class="button primary" aria-label="Confirm Match by confirming card family" data-action="confirm-sam-family" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected?.id || ""}" ${selected ? "" : "disabled"}>${icon("circle-check")}Confirm Family</button>`;
+  const printingAction = selectedPrintingId
+    ? printingCorrecting
+      ? `<button type="button" class="button secondary" data-action="correct-sam-printing" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected?.id || ""}" data-printing-id="${selectedPrintingId}">${icon("square-pen")}Correct Printing</button>`
+      : printing.authoritative && Number(printing.printing_id) === selectedPrintingId
+        ? `<button type="button" class="button success" disabled>${icon("circle-check")}Printing confirmed</button>`
+        : `<button type="button" class="button secondary" data-action="confirm-sam-printing" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}" data-reference-id="${selected?.id || ""}" data-printing-id="${selectedPrintingId}">${icon("circle-check")}Confirm Printing</button>`
+    : `<button type="button" class="button secondary" disabled>Printing not documented</button>`;
+  const markerEvidence = (printing.positive_evidence?.marker_evidence || []).map((item) => `<li><strong>${escapeHtml(titleCase(item.marker))}</strong><span class="sam-marker-state ${String(item.state || "UNRESOLVED").toLowerCase()}">${escapeHtml(titleCase(item.state))}</span><small>${escapeHtml(item.explanation || item.source_kind || "Evidence explanation unavailable")}</small></li>`).join("");
+  const printingEvidenceRows = (printing.competing_same_family_printings || []).map((item) => {
+    const observations = (item.marker_evidence || item.evidence_observations || []).map((evidence) => `<li><strong>${escapeHtml(titleCase(evidence.marker || evidence.evidence_type))}</strong><span class="sam-marker-state ${String(evidence.state || "UNRESOLVED").toLowerCase()}">${escapeHtml(titleCase(evidence.state || "UNRESOLVED"))}</span><small>${escapeHtml(evidence.explanation || evidence.source_kind || "No additional explanation")}</small></li>`).join("");
+    const disposition = item.excluded_by_negative_evidence ? "Excluded by negative evidence" : item.positive_evidence_complete ? "Positive evidence complete" : "Plausible · evidence unresolved";
+    return `<article class="sam-printing-evidence-card ${item.excluded_by_negative_evidence ? "excluded" : ""}"><header><div><strong>#${item.rank || "—"} · ${escapeHtml(item.variant_label || item.artwork_identity || `Printing ${item.printing_id}`)}</strong><small>${Math.round(Number(item.confidence || 0) * 100)}% quality-adjusted visual evidence</small></div><span class="badge ${item.excluded_by_negative_evidence ? "coral" : item.positive_evidence_complete ? "green" : "amber"}">${escapeHtml(disposition)}</span></header><p>${escapeHtml(item.explanation || "Evidence unresolved")}</p>${item.quality_warnings?.length ? `<small>Reference quality: ${escapeHtml(item.quality_warnings.map(titleCase).join(" · "))}</small>` : ""}${observations ? `<ul class="sam-marker-evidence">${observations}</ul>` : ""}</article>`;
+  }).join("");
+  const assertions = (result.history?.assertions || []).map((item) => `<li><strong>${escapeHtml(titleCase(item.field_scope))} · ${escapeHtml(titleCase(item.certainty))}</strong><span>${escapeHtml(item.actor)} · ${escapeHtml(item.assertion_uuid)}</span><small>${escapeHtml(item.reason_code || "No reason code")} · ${escapeHtml(formatDate(item.created_at))}${item.supersedes_assertion_id ? ` · supersedes assertion #${Number(item.supersedes_assertion_id)}` : ""}</small></li>`).join("");
+  const observations = (result.printing_evidence_observations || []).map((item) => `<li><strong>${escapeHtml(titleCase(item.evidence_type))} · ${escapeHtml(titleCase(item.observed_state))}</strong><span>${escapeHtml(item.source_kind)}${item.reference_id ? ` · reference #${Number(item.reference_id)}` : " · no authoritative reference link"}</span><small>${escapeHtml(item.explanation || "No explanation recorded")} · ${escapeHtml(item.evidence?.evidence_version || "Evidence version unknown")} · ${escapeHtml(formatDate(item.observed_at))}</small></li>`).join("");
+  const provenance = `<details class="sam-provenance"><summary>Identity provenance and append-only history</summary><p>Engine ${escapeHtml(job.engine_version || "Unknown")} · job ${escapeHtml(job.job_uuid)} · ${escapeHtml(formatDate(job.completed_at || job.submitted_at || job.created_at))}</p><h4>Assertions</h4><ul>${assertions || "<li>No identity assertions recorded.</li>"}</ul><h4>Printing observations</h4><ul>${observations || "<li>No printing observations recorded.</li>"}</ul></details>`;
+  const identityPanels = `<div class="sam-identity-panels"><section class="sam-identity-panel"><span>Family identity</span><h3>${escapeHtml(family.card_number || selected?.card_number || "Unresolved")} · ${escapeHtml(family.canonical_name || selected?.card_name || "Unknown")}</h3><p>${Math.round(Number(family.confidence || 0) * 100)}% family confidence</p><strong class="sam-certainty">${escapeHtml(titleCase(family.certainty || "UNRESOLVED"))}${family.authoritative ? " · Inventory truth" : " · Suggestion"}</strong></section><section class="sam-identity-panel ${printing.authoritative ? "confirmed" : "unresolved"}"><span>Exact commercial printing</span><h3>${escapeHtml(printing.variant_label || printing.artwork_identity || "Unresolved")}</h3><p>${Math.round(Number(printing.confidence || 0) * 100)}% printing confidence</p><strong class="sam-certainty">${escapeHtml(titleCase(printing.certainty || "UNRESOLVED"))}${printing.authoritative ? " · Operator confirmed" : " · Not inventory truth"}</strong><p>Language: ${escapeHtml(languageIdentity.value || "Unknown")} · ${escapeHtml(titleCase(languageIdentity.certainty || "UNRESOLVED"))}<br>Finish: ${escapeHtml(finishIdentity.value || "Unknown")} · ${escapeHtml(titleCase(finishIdentity.certainty || "UNRESOLVED"))}</p><p>${escapeHtml(printing.unresolved_reason ? titleCase(printing.unresolved_reason) : "Positive printing evidence recorded")}</p>${markerEvidence ? `<ul class="sam-marker-evidence">${markerEvidence}</ul>` : ""}</section></div>${printingEvidenceRows ? `<details class="sam-printing-evidence" ${printing.certainty === "CONFLICTING" ? "open" : ""}><summary>Printing evidence intelligence · ${(printing.competing_same_family_printings || []).length} same-family candidate(s)</summary><p>Each commercial printing is evaluated independently. Missing evidence remains unresolved; confident negative evidence can exclude but never select a printing.</p><div>${printingEvidenceRows}</div></details>` : ""}<section class="sam-inventory-identity"><strong>Existing inventory value</strong><span>Legacy variant: ${escapeHtml(inventoryIdentity.legacy_variant || "None")} · provenance ${escapeHtml(titleCase(inventoryIdentity.legacy_variant_provenance || "LEGACY_RECORDED"))}</span><small>Legacy text is preserved but is not a confirmed commercial printing.</small></section>`;
+  const economicsContext = economics ? `<section class="sam-economics-context"><header><strong>Economics context · display only</strong><span>Never used for identity confidence</span></header>${jarvisCardPanel(economics)}</section>` : `<p class="sam-economics-unavailable">Economics context unavailable. Identity review remains usable and independent.</p>`;
+  openModal("SAM Human Review", `${result.sku} · family and printing review`, `<div class="sam-review-modal"><div class="sam-side-by-side"><article class="sam-scan-card"><span>Physical scan</span>${result.scan_image_url ? `<img src="${result.scan_image_url}" alt="Physical scan ${escapeHtml(result.sku)}">` : `<div>${icon("image-off")}No front scan</div>`}<strong>${escapeHtml(result.sku)}</strong></article><div><span>${correcting ? "Operator-selected reference" : "SAM best candidate"}</span>${samReferenceCard(selected)}</div></div>${identityPanels}${economicsContext}${cardNumberEvidence}<div class="sam-evidence"><strong>${Math.round(Number(job.confidence || 0) * 100)}% overall ranking score · ${escapeHtml(samStateLabel(job.recognition_state))}</strong><p>${escapeHtml(job.evidence?.candidate_narrowing || "No candidate narrowing")} · ${job.evidence?.candidates_scored || 0} candidate(s) compared · engine ${escapeHtml(job.engine_version)}</p><div>${exceptions || `<span class="badge green">No exception flags</span>`}</div><small>Metadata: ${escapeHtml(selected?.metadata_provider || job.evidence?.provider_cache?.provider || "Local reference / Unknown provider")} · descriptive only; it cannot grant printing authority.</small></div>${provenance}${alternates ? `<details open><summary>Reference assets and alternate candidates</summary><div class="sam-alternates">${alternates}</div></details>` : ""}<details class="sam-find-match" ${state.samReferenceResults.length ? "open" : ""}><summary>Find Match</summary><form id="sam-reference-search-form"><label>Card number, name, or set<input name="q" autocomplete="off" placeholder="OP16-032 or card name"></label><button class="button secondary">${icon("search")}Search local references</button></form><div class="sam-search-results">${searchRows}</div></details>${correctionFields}<div class="sam-review-actions family-actions"><strong>Family</strong>${familyAction}<button class="button tertiary" data-action="leave-sam-unidentified" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}">Leave Unidentified</button></div><div class="sam-review-actions printing-actions"><strong>Printing</strong>${printingAction}<button class="button tertiary" data-action="leave-sam-printing-unresolved" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}">Leave Printing Unresolved</button><button class="button tertiary" data-action="mark-sam-printing-conflict" data-id="${escapeHtml(job.job_uuid)}" data-revision="${result.current_revision}">Mark Conflict</button></div><p class="help-text">SAM assigns identity only. Family may be confirmed without resolving printing. Phase 2 system evidence remains suggestion-only; exact printing is operator-only. Acquisition cost, basis, rip economics, sales economics, and market value never influence recognition confidence or authority.</p></div>`);
+  const legacyConflicts = (inventoryIdentity.legacy_conflicts || []).map((item) => `<li><strong>${escapeHtml(titleCase(item.field || "legacy value"))} conflict:</strong> recorded ${escapeHtml(item.legacy_value || "Unknown")} · printing suggestion ${escapeHtml(item.proposed_value || "Unknown")}</li>`).join("");
+  if (legacyConflicts) {
+    document.querySelector(".sam-inventory-identity")?.insertAdjacentHTML("beforeend", `<div class="warning sam-legacy-conflict"><strong>Legacy identity conflict</strong><ul>${legacyConflicts}</ul><small>The recorded legacy value is preserved. The printing suggestion does not overwrite it.</small></div>`);
+  }
   document.querySelector("#sam-reference-search-form")?.addEventListener("submit", searchSamReferences);
   document.querySelector("#sam-correction-reason")?.addEventListener("change", (event) => { state.samCorrectionDraft.reason_code = event.currentTarget.value; });
   document.querySelector("#sam-correction-notes")?.addEventListener("input", (event) => { state.samCorrectionDraft.notes = event.currentTarget.value; });
@@ -2825,6 +2934,7 @@ function renderSamReviewModal() {
 async function openSamReview(jobUuid) {
   try {
     state.samReview = await api(`/api/sam/recognitions/${encodeURIComponent(jobUuid)}`);
+    state.samReviewEconomics = await api(`/api/jarvis/economics/cards/${encodeURIComponent(state.samReview.sku)}`).catch(() => null);
     state.samReviewSelection = state.samReview.top_candidate;
     state.samReferenceResults = [];
     state.samCorrectionDraft = { reason_code: "OPERATOR_IDENTIFICATION_CORRECTION", notes: "" };
@@ -2860,11 +2970,12 @@ function showSamCorrectionError(message) {
   }
 }
 
-async function decideSam(jobUuid, action, revision, referenceId = "") {
+async function decideSam(jobUuid, action, revision, referenceId = "", printingId = "") {
   if (state.samDecisionPending) return;
   const payload = { request_id: requestId(`SAM-${action}`), action, expected_revision: Number(revision) };
   if (referenceId) payload.reference_id = Number(referenceId);
-  if (action === "CORRECT") {
+  if (printingId) payload.printing_id = Number(printingId);
+  if (action === "CORRECT" || action === "CORRECT_FAMILY" || action === "CORRECT_PRINTING") {
     const reason = document.querySelector("#sam-correction-reason")?.value?.trim() || "";
     const notes = document.querySelector("#sam-correction-notes")?.value?.trim() || "";
     state.samCorrectionDraft = { reason_code: reason, notes };
@@ -2878,18 +2989,26 @@ async function decideSam(jobUuid, action, revision, referenceId = "") {
     payload.notes = notes;
   }
   const selectedNumber = state.samReviewSelection?.card_number || "the selected identity";
-  const actionButton = document.querySelector(`[data-action="${action === "CORRECT" ? "correct-sam-match" : action === "CONFIRM" ? "confirm-sam-match" : "leave-sam-unidentified"}"]`);
+  const actionSelectors = { CORRECT: "correct-sam-match", CORRECT_FAMILY: "correct-sam-family", CONFIRM: "confirm-sam-match", CONFIRM_FAMILY: "confirm-sam-family", CONFIRM_PRINTING: "confirm-sam-printing", CORRECT_PRINTING: "correct-sam-printing", LEAVE_PRINTING_UNRESOLVED: "leave-sam-printing-unresolved", MARK_PRINTING_CONFLICT: "mark-sam-printing-conflict", LEAVE_UNIDENTIFIED: "leave-sam-unidentified" };
+  const actionButton = document.querySelector(`[data-action="${actionSelectors[action] || ""}"]`);
   state.samDecisionPending = true;
   if (actionButton) { actionButton.disabled = true; actionButton.setAttribute("aria-busy", "true"); }
   try {
     state.samReview = await api(`/api/sam/recognitions/${encodeURIComponent(jobUuid)}/decision`, { method: "POST", body: JSON.stringify(payload) });
-    toast(action === "LEAVE_UNIDENTIFIED" ? "Scan left unidentified; no identity was guessed." : action === "CORRECT" ? `Correction saved. ${selectedNumber} is now the authoritative identity; SAM's original suggestion remains in history.` : "Match confirmed. The original SAM suggestion remains in history.");
+    const successMessage = action === "LEAVE_UNIDENTIFIED" ? "Scan left unidentified; no identity was guessed."
+      : action === "LEAVE_PRINTING_UNRESOLVED" ? "Family preserved; exact printing remains unresolved."
+      : action === "MARK_PRINTING_CONFLICT" ? "Printing conflict recorded; no exact printing was forced."
+      : action === "CONFIRM_PRINTING" || action === "CORRECT_PRINTING" ? "Exact printing decision saved with append-only provenance."
+      : action === "CORRECT" || action === "CORRECT_FAMILY" ? `Correction saved. ${selectedNumber} is now the authoritative identity; SAM's original suggestion remains in history. Exact printing remains independent.`
+      : "Family confirmed. Exact printing remains independent.";
+    toast(successMessage);
     closeModal();
     await loadDashboard();
     await renderSAM();
   } catch (error) {
-    const message = `${action === "CORRECT" ? "Correction" : "Decision"} not saved: ${error.message}`;
-    if (action === "CORRECT") showSamCorrectionError(message);
+    const isCorrection = action === "CORRECT" || action === "CORRECT_FAMILY" || action === "CORRECT_PRINTING";
+    const message = `${isCorrection ? "Correction" : "Decision"} not saved: ${error.message}`;
+    if (isCorrection) showSamCorrectionError(message);
     toast(message, "error");
   } finally {
     state.samDecisionPending = false;
@@ -3146,7 +3265,10 @@ function postSaleEntryLabel(entry) {
 
 async function openSaleOrderDetails(orderId) {
   try {
-    const order = await api(`/api/sales/${encodeURIComponent(orderId)}`);
+    const [order, jarvis] = await Promise.all([
+      api(`/api/sales/${encodeURIComponent(orderId)}`),
+      api(`/api/jarvis/economics/sales/${encodeURIComponent(orderId)}`).catch(() => null),
+    ]);
     const original = order.financials.original;
     const effective = order.financials.effective;
     const itemRows = (order.items || []).map((item) => `<tr><td><code>${escapeHtml(item.identifier)}</code><small>${escapeHtml(item.item_type.replace("_", " "))} · internal item #${item.sale_item_id}</small></td><td>${escapeHtml(item.batch_code)}</td><td>${formatCents(item.basis_cents)}</td><td>${item.returned ? `<span class="badge ${item.return_outcome === "DAMAGED_EXCLUDED" ? "coral" : "amber"}">${escapeHtml(titleCase(item.return_outcome))}</span>` : `<span class="badge neutral">Sold</span>`}</td></tr>`).join("");
@@ -3156,7 +3278,7 @@ async function openSaleOrderDetails(orderId) {
       : `<div class="sealed-order-status active"><strong>Completed ${escapeHtml(titleCase(order.order_type))} order</strong><span>Original sale facts preserved</span></div>`;
     const undoAction = order.order_type === "SEALED" && order.undo_eligible ? `<button class="button danger" data-action="undo-sealed-order" data-id="${order.id}">${icon("undo-2")}Undo sealed sale</button>` : "";
     const actions = order.post_sale_eligible ? `<div class="post-sale-actions"><button class="button secondary" data-action="post-sale-form" data-kind="partial-refund" data-id="${order.id}">Partial refund</button><button class="button secondary" data-action="post-sale-form" data-kind="full-refund" data-id="${order.id}">Full refund</button><button class="button secondary" data-action="post-sale-form" data-kind="return" data-id="${order.id}">Customer return</button><button class="button secondary" data-action="post-sale-form" data-kind="chargeback" data-id="${order.id}">Chargeback</button><button class="button secondary" data-action="post-sale-form" data-kind="fee-credit" data-id="${order.id}">Fee credit</button><button class="button secondary" data-action="post-sale-form" data-kind="postage-refund" data-id="${order.id}">Postage refund</button><button class="button secondary" data-action="post-sale-form" data-kind="correction" data-id="${order.id}">Sale correction</button>${undoAction}</div>` : "";
-    openModal(`${titleCase(order.order_type)} order ${escapeHtml(order.order_number || `#${order.id}`)}`, "Original sale facts, effective operational economics, exact item identities, and append-only post-sale history.", `<div class="sealed-order-detail post-sale-detail">${status}<div class="detail-list sealed-order-metadata"><div><span>Marketplace</span><strong>${escapeHtml(order.platform)}</strong></div><div><span>Sale date</span><strong>${formatDate(order.sold_at)}</strong></div><div><span>Order number</span><strong>${escapeHtml(order.order_number || "—")}</strong></div><div><span>Calculation version</span><strong>${escapeHtml(order.calculation_version)}</strong></div></div><h3>Exact sale items</h3><div class="table-wrap"><table><thead><tr><th>Identity</th><th>Batch</th><th>Basis</th><th>Current sale state</th></tr></thead><tbody>${itemRows}</tbody></table></div><h3>Original recorded facts</h3><div class="sealed-order-economics"><div><span>Merchandise</span><strong>${formatCents(original.merchandise_cents)}</strong></div><div><span>Shipping collected</span><strong>${formatCents(original.shipping_cents)}</strong></div><div><span>Marketplace fees</span><strong>${formatCents(original.marketplace_fees_cents)}</strong></div><div><span>Actual postage</span><strong>${formatCents(original.postage_cents)}</strong></div><div class="total"><span>Original net proceeds</span><strong>${formatCents(original.net_proceeds_cents)}</strong></div></div><h3>Effective Realized Economics</h3><div class="sealed-order-economics"><div><span>Effective merchandise</span><strong>${formatCents(effective.merchandise_cents)}</strong></div><div><span>Effective shipping</span><strong>${formatCents(effective.shipping_cents)}</strong></div><div><span>Effective fees</span><strong>${formatCents(effective.marketplace_fees_cents)}</strong></div><div><span>Effective postage</span><strong>${formatCents(effective.postage_cents)}</strong></div><div><span>Chargebacks / other net</span><strong>${formatCents(effective.other_net_cents)}</strong></div><div class="total"><span>Effective net proceeds</span><strong>${formatCents(effective.net_proceeds_cents)}</strong></div><div><span>Active sold basis</span><strong>${formatCents(order.sold_basis_cents)}</strong></div><div class="total"><span>Realized P/L</span><strong>${formatCents(order.realized_profit_loss_cents)}</strong></div></div><p class="help-text">${escapeHtml(order.original_sale_immutable_notice)} Refunds and chargebacks do not restore inventory. Postage remains spent unless a postage refund event exists.</p><h3>Post-sale history</h3><ul class="post-sale-events">${eventRows}</ul>${actions}<div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Close</button></div></div>`);
+    openModal(`${titleCase(order.order_type)} order ${escapeHtml(order.order_number || `#${order.id}`)}`, "Original sale facts, effective operational economics, exact item identities, and append-only post-sale history.", `<div class="sealed-order-detail post-sale-detail">${status}<div class="detail-list sealed-order-metadata"><div><span>Marketplace</span><strong>${escapeHtml(order.platform)}</strong></div><div><span>Sale date</span><strong>${formatDate(order.sold_at)}</strong></div><div><span>Order number</span><strong>${escapeHtml(order.order_number || "—")}</strong></div><div><span>Calculation version</span><strong>${escapeHtml(order.calculation_version)}</strong></div></div>${jarvisSalePanel(jarvis)}<h3>Exact sale items</h3><div class="table-wrap"><table><thead><tr><th>Identity</th><th>Batch</th><th>Basis</th><th>Current sale state</th></tr></thead><tbody>${itemRows}</tbody></table></div><h3>Original recorded facts</h3><div class="sealed-order-economics"><div><span>Merchandise</span><strong>${formatCents(original.merchandise_cents)}</strong></div><div><span>Shipping collected</span><strong>${formatCents(original.shipping_cents)}</strong></div><div><span>Marketplace fees</span><strong>${formatCents(original.marketplace_fees_cents)}</strong></div><div><span>Actual postage</span><strong>${formatCents(original.postage_cents)}</strong></div><div class="total"><span>Original net proceeds</span><strong>${formatCents(original.net_proceeds_cents)}</strong></div></div><h3>Effective Realized Economics</h3><div class="sealed-order-economics"><div><span>Effective merchandise</span><strong>${formatCents(effective.merchandise_cents)}</strong></div><div><span>Effective shipping</span><strong>${formatCents(effective.shipping_cents)}</strong></div><div><span>Effective fees</span><strong>${formatCents(effective.marketplace_fees_cents)}</strong></div><div><span>Effective postage</span><strong>${formatCents(effective.postage_cents)}</strong></div><div><span>Chargebacks / other net</span><strong>${formatCents(effective.other_net_cents)}</strong></div><div class="total"><span>Effective net proceeds</span><strong>${formatCents(effective.net_proceeds_cents)}</strong></div><div><span>Active sold basis</span><strong>${formatCents(order.sold_basis_cents)}</strong></div><div class="total"><span>Realized P/L</span><strong>${formatCents(order.realized_profit_loss_cents)}</strong></div></div><p class="help-text">${escapeHtml(order.original_sale_immutable_notice)} Refunds and chargebacks do not restore inventory. Postage remains spent unless a postage refund event exists.</p><h3>Post-sale history</h3><ul class="post-sale-events">${eventRows}</ul>${actions}<div class="form-actions"><button type="button" class="button secondary" data-action="close-modal">Close</button></div></div>`);
   } catch (error) { toast(error.message, "error"); }
 }
 
@@ -3494,6 +3616,12 @@ document.addEventListener("click", async (event) => {
     if (action === "select-sam-reference") selectSamReference(actionEl.dataset.id);
     if (action === "confirm-sam-match") decideSam(actionEl.dataset.id, "CONFIRM", actionEl.dataset.revision, actionEl.dataset.referenceId);
     if (action === "correct-sam-match") decideSam(actionEl.dataset.id, "CORRECT", actionEl.dataset.revision, actionEl.dataset.referenceId);
+    if (action === "confirm-sam-family") decideSam(actionEl.dataset.id, "CONFIRM_FAMILY", actionEl.dataset.revision, actionEl.dataset.referenceId);
+    if (action === "correct-sam-family") decideSam(actionEl.dataset.id, "CORRECT_FAMILY", actionEl.dataset.revision, actionEl.dataset.referenceId);
+    if (action === "confirm-sam-printing") decideSam(actionEl.dataset.id, "CONFIRM_PRINTING", actionEl.dataset.revision, actionEl.dataset.referenceId, actionEl.dataset.printingId);
+    if (action === "correct-sam-printing") decideSam(actionEl.dataset.id, "CORRECT_PRINTING", actionEl.dataset.revision, actionEl.dataset.referenceId, actionEl.dataset.printingId);
+    if (action === "leave-sam-printing-unresolved") decideSam(actionEl.dataset.id, "LEAVE_PRINTING_UNRESOLVED", actionEl.dataset.revision);
+    if (action === "mark-sam-printing-conflict") decideSam(actionEl.dataset.id, "MARK_PRINTING_CONFLICT", actionEl.dataset.revision);
     if (action === "leave-sam-unidentified") decideSam(actionEl.dataset.id, "LEAVE_UNIDENTIFIED", actionEl.dataset.revision);
     if (action === "sam-match-card") samMatchCard(actionEl.dataset.sku);
     if (action === "sam-match-batch") samMatchBatch(false);
