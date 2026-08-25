@@ -1,0 +1,37 @@
+{
+  "freeze_version": "sam-multi-evidence-40-freeze-v1-20260823",
+  "status": "FROZEN_BEFORE_BENCHMARK",
+  "benchmark": {
+    "source_count": 40,
+    "source_manifest_sha256": "b149779808af46f28213a97ce0e9d99ec6ff08ce5d6f7b6348b2a89384cf8c90",
+    "ground_truth_sha256": "34be06a3afa2a8b7047d220a2aaa268a68cfc8e2b1d93436fb2c230d4c974121"
+  },
+  "catalog": {
+    "family_count": 2838,
+    "snapshot_sha256": "1fa1ed29c889519dbb06b01aa3e017fa784a920fe43d2dbe06ccd1c3d86cb4e3"
+  },
+  "sam": {
+    "core_sha256": "595d47f2c7af45277938a495b03709138309fd5a9da4881f96bf54a1140e75e0",
+    "challenger_sha256": "0c99050b0d7c5c2541790b9ceb2ed61593daa3f15f32df54c1823908cc091b58"
+  },
+  "thresholds": {
+    "minimum_ocr_token_confidence": 0.35,
+    "maximum_spatial_join_gap_in_token_heights": 1.6,
+    "minimum_vertical_token_overlap": 0.35,
+    "maximum_joined_tokens": 3,
+    "maximum_card_number_candidates": 8,
+    "name_support": 0.84,
+    "name_strong_support": 0.93,
+    "maximum_name_candidates": 8,
+    "maximum_total_candidates": 80
+  },
+  "policy": {
+    "trusted_ocr_changes": "NONE",
+    "sam_authority_changes": "NONE",
+    "printing_authority_changes": "NONE",
+    "benchmark_tuning_after_results": false,
+    "dense_retrieval": "DEFERRED",
+    "geometry_integration": "DEFERRED",
+    "exact_printing": "DEFERRED"
+  }
+}

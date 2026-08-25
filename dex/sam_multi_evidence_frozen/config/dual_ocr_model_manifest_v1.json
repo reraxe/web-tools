@@ -1,0 +1,30 @@
+{
+  "manifest_version": "rapidocr-official-model-manifest-v1-20260823",
+  "license": "Apache-2.0",
+  "recognition_authority": false,
+  "runtime": {
+    "rapidocr": "3.9.2",
+    "onnxruntime": "1.29.0",
+    "provider": "CPUExecutionProvider"
+  },
+  "package": {
+    "name": "rapidocr",
+    "version": "3.9.2",
+    "wheel_sha256": "04d6b8d151f823d930bd91910555f57bea897c0c44fa6794267b94cf9c1ef9a0",
+    "source": "https://pypi.org/project/rapidocr/3.9.2/",
+    "project": "https://github.com/RapidAI/RapidOCR",
+    "license_expression": "Apache-2.0"
+  },
+  "selected_model_file_hashes": {
+    "PP-OCRv6_det_small.onnx": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+    "PP-OCRv6_rec_small.onnx": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    "ch_ppocr_mobile_v2.0_cls_mobile.onnx": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+  },
+  "boundaries": [
+    "RapidOCR engineering and bundled model artifacts are distributed under the project's Apache-2.0 terms; model copyright remains with Baidu.",
+    "ONNX Runtime CPU is forced for deterministic local shadow execution.",
+    "No researched-project code, weights, datasets, or assets are used.",
+    "The failed PaddleOCR/PaddlePaddle runtime candidate is not selected by this manifest.",
+    "Models are OCR observation tools only and never create SAM identity authority."
+  ]
+}

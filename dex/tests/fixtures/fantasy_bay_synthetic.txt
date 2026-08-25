@@ -1,0 +1,24 @@
+| } 7A/V\TASY BAV ~~
+Fantasy Bay
+726 Broadway
+BAYONNE, NJ 07092
+08/20/2026 03:42 PM
+Receipt # FB-SYNTHETIC-002
+OP deck $16.00
+Purchase Subtotal $16.00
+UEZ (3.3125%5)} $0.53
+Total $16.53
+@ MasterCard 0000 (Contactless)
+Auth code: 000000
+AID: A0000000000000
+No CVM
+ITEMS SOLD: 1
+Thank you for shopping at Fantasy Bay
+for store credit within two weeks of the purchase date.
+Exchanges require receipt.
+Store credit only for opened returns.
+Customer copy
+www.example.invalid
+Tel: 555-0100
+********
+End of receipt

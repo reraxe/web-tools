@@ -1,0 +1,85 @@
+{
+  "authority": {
+    "automatic_family_writes": false,
+    "dex_database_access": false,
+    "exact_printing_authority": false,
+    "jana_integration": false,
+    "marketplace_writes": false,
+    "suggestion_only": true,
+    "variant_treatment_rarity_authority": false,
+    "wolff_writes": false
+  },
+  "catalog": {
+    "family_count": 2838,
+    "family_snapshot_sha256": "189b5206f9e98792681ca4c438f5345eb6219b55f0f73b7b05c1e4b21716cd23",
+    "snapshot_sha256": "1fa1ed29c889519dbb06b01aa3e017fa784a920fe43d2dbe06ccd1c3d86cb4e3"
+  },
+  "created_at": "2026-08-24T21:06:15+00:00",
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13 (main, Aug  7 2026, 02:26:41) [MSC v.1944 64 bit (AMD64)]"
+  },
+  "ocr_model_manifest_sha256": "1f70286c7f4f9f924a92a5d8e1e10a5597257ff35c3dbd8103ff2ebf6ba1511e",
+  "ocr_runtime": {
+    "onnxruntime": "1.29.0",
+    "pipeline_version": "sam-dual-localized-ocr-shadow-v1",
+    "rapidocr": "3.9.2",
+    "rapidocr_model_version": "PP-OCRv6_det_small+PP-OCRv6_rec_small",
+    "rapidocr_provider": "CPUExecutionProvider",
+    "tesseract": "tesseract v5.5.0.20241111"
+  },
+  "recognition_audit_log": {
+    "forensic_delta_append_only": true,
+    "immutable_pre_operator_result": true,
+    "operator_corrections_used_as_training_labels": false,
+    "operator_decision_is_verified_truth": false,
+    "post_batch_analysis_locked_until_batch_close": true,
+    "recognizer_behavior_changed": false,
+    "verified_truth_locked_until_batch_close": true,
+    "verified_truth_optional_and_separate": true
+  },
+  "recognizer": {
+    "candidate_generation_sha256": "a472a858599e79d8591cbf30d4d5ad78b152b3b17dea84044a4a565e415a53ed",
+    "challenger_v2_sha256": "0c99050b0d7c5c2541790b9ceb2ed61593daa3f15f32df54c1823908cc091b58",
+    "dual_ocr_sha256": "f1aa1fb5e616995666e54dff48f4d43dd713ade39973350df17ffeef177a5aaa",
+    "multi_evidence_sha256": "7c00cf0aedd614c6fe750d49896c49a3c5f241b3020a3e6a9a26b02c81e6bf85",
+    "sam_core_sha256": "595d47f2c7af45277938a495b03709138309fd5a9da4881f96bf54a1140e75e0",
+    "sam_identity_sha256": "c997f89e8be73e648ce6d0a4b6abe27bd8a62baaee41dac446f0c0f888e01872"
+  },
+  "reference_index": {
+    "asset_count": 5593,
+    "path_external": "C:\\DEX-SAM-Validation\\OnePiece\\Variant-Gauntlet\\results\\reference-index\\SAM_CHALLENGER_V2_REFERENCE_INDEX.json",
+    "sha256": "bba69bba3038067c93c8f96850e3f9d76681e4f9c5e50db2447329f85971232c"
+  },
+  "source_baseline": {
+    "accepted_result": {
+      "candidate_inclusion": "35/40",
+      "false_authority": 0,
+      "top_family": "34/40"
+    },
+    "frozen_v2_4_declared_fingerprint": "3c22c2aa997315e4874e466fc8a99c788cd58f89e9bc7f3f88aeb5f86040d32a",
+    "frozen_v2_4_identifier": "DEX-v2.4-test-WOLFF-SAM-Phase2-development-baseline-20260822",
+    "multi_evidence_freeze_version": "sam-multi-evidence-40-freeze-v1-20260823"
+  },
+  "thresholds": {
+    "maximum_card_number_candidates": 8,
+    "maximum_joined_tokens": 3,
+    "maximum_name_candidates": 8,
+    "maximum_spatial_join_gap_in_token_heights": 1.6,
+    "maximum_total_candidates": 80,
+    "minimum_ocr_token_confidence": 0.35,
+    "minimum_vertical_token_overlap": 0.35,
+    "name_strong_support": 0.93,
+    "name_support": 0.84
+  },
+  "trial_build_identifier": "SAM-MULTI-EVIDENCE-BLIND-TRIAL-v1a-AUDIT-20260824",
+  "tuning_lock": {
+    "candidate_rules": "FROZEN",
+    "catalog_interpretation": "FROZEN",
+    "crop_regions": "FROZEN",
+    "evidence_weights": "FROZEN",
+    "fusion_logic": "FROZEN",
+    "ocr_preprocessing": "FROZEN",
+    "thresholds": "FROZEN"
+  }
+}
