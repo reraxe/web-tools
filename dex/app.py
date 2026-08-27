@@ -224,7 +224,7 @@ PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.5-live"
+APP_VERSION = "v2.5.1-live"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 

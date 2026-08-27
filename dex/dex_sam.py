@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Iterable, Protocol
 
 from dex_sam_identity import (
+    ensure_family,
     ensure_reference_identity,
     evaluate_printing_candidates,
     family_printing_candidates,
@@ -699,9 +700,14 @@ def search_references(db: sqlite3.Connection, filters: dict) -> dict:
             params.append(value)
     query = clean(filters.get("q"), 120)
     if query:
-        where.append("(card_number LIKE ? OR card_name LIKE ? OR set_code LIKE ?)")
-        wildcard = f"%{query}%"
-        params.extend([wildcard, wildcard, wildcard])
+        normalized_query = normalize_card_number(query)
+        if normalized_query:
+            where.append("UPPER(card_number)=UPPER(?)")
+            params.append(normalized_query)
+        else:
+            where.append("(card_number LIKE ? OR card_name LIKE ? OR set_code LIKE ?)")
+            wildcard = f"%{query}%"
+            params.extend([wildcard, wildcard, wildcard])
     limit = min(100, max(1, int(filters.get("limit") or 30)))
     started = time.perf_counter()
     rows = db.execute(
@@ -1145,6 +1151,56 @@ def _operator_identity_exists(db: sqlite3.Connection, card_id: int) -> bool:
     ).fetchone())
 
 
+def _apply_catalog_family_identity(
+    db: sqlite3.Connection,
+    card: sqlite3.Row,
+    family_data: dict,
+    *,
+    state: str,
+    confidence: float,
+    job_id: int,
+    request_id: str,
+    legacy_decision_id: int,
+) -> None:
+    """Apply an operator-confirmed catalog family without inventing a reference image."""
+
+    number = normalize_card_number(family_data.get("card_number"))
+    name = clean(family_data.get("canonical_name"), 240)
+    set_code = clean(family_data.get("set_code"), 80).upper() or number.split("-", 1)[0]
+    family = ensure_family(
+        db, game="One Piece", set_code=set_code, card_number=number, name=name,
+        external_descriptors={"source": "FROZEN_LOCAL_ONE_PIECE_CATALOG", "reference_image_required": False},
+    )
+    if not family:
+        raise ValueError("Selected catalog family is unavailable")
+    now = utcnow()
+    db.execute(
+        """UPDATE cards SET card_number=?,name=?,set_name=?,status='IN_STOCK',
+                  match_confidence=?,match_source='SAM Operator Catalog',match_reviewed=1,
+                  matched_at=?,sam_recognition_state=?,sam_recognition_job_id=?,
+                  sam_family_id=?,sam_family_certainty='OPERATOR_CONFIRMED',updated_at=?
+           WHERE id=?""",
+        (number, name or "Needs identification", set_code, confidence, now, state, job_id,
+         int(family["id"]), now, card["id"]),
+    )
+    event_type = "FAMILY_CORRECTED" if state == "OPERATOR_CORRECTED" else "FAMILY_CONFIRMED"
+    record_event(
+        db, request_id=request_id, job_id=job_id, card_id=int(card["id"]),
+        event_type=event_type, family_id=int(family["id"]), reference_id=None,
+        prior_family_id=card["sam_family_id"], prior_printing_id=card["sam_printing_id"],
+        certainty="OPERATOR_CONFIRMED", actor="OPERATOR",
+        reason_code="OPERATOR_CONFIRMED_CATALOG_FAMILY",
+        evidence={"reference_image_available": False, "printing_authority_granted": False},
+    )
+    record_assertion(
+        db, card_id=int(card["id"]), job_id=job_id, legacy_decision_id=legacy_decision_id,
+        field_scope="FAMILY", family_id=int(family["id"]), reference_id=None,
+        proposed_value=number, certainty="OPERATOR_CONFIRMED", confidence=confidence,
+        authority_granted=True, actor="OPERATOR", reason_code="OPERATOR_CONFIRMED_CATALOG_FAMILY",
+        evidence={"reference_image_available": False, "exact_printing_unchanged": True},
+    )
+
+
 def recognition_result(db: sqlite3.Connection, job_id_or_uuid: int | str) -> dict:
     if isinstance(job_id_or_uuid, int) or str(job_id_or_uuid).isdigit():
         job = db.execute("SELECT * FROM sam_recognition_jobs WHERE id=?", (int(job_id_or_uuid),)).fetchone()
@@ -1256,6 +1312,22 @@ def submit_recognition(
         db, card_number="" if scan_ocr_evidence else normalized_number,
         set_code=set_code, bucket=scan_features.get("bucket", "")
     )
+    exact_reference_rows = db.execute(
+        """SELECT * FROM sam_reference_records
+           WHERE game='One Piece' AND active=1 AND UPPER(card_number)=UPPER(?)
+           ORDER BY id""",
+        (normalized_number,),
+    ).fetchall() if normalized_number else []
+    catalog_family = None
+    if normalized_number:
+        from dex_sam_audited import catalog_search
+
+        catalog_result = catalog_search(normalized_number, db=db, limit=5)
+        exact_families = [
+            item for item in catalog_result.get("families", [])
+            if normalize_card_number(item.get("card_number")) == normalized_number
+        ]
+        catalog_family = exact_families[0] if exact_families else None
     scored: list[tuple[float, float, float, float, sqlite3.Row]] = []
     visual_ranked: list[tuple[float, sqlite3.Row]] = []
     for reference in rows:
@@ -1286,7 +1358,7 @@ def submit_recognition(
     )
     ocr_reference_missing = bool(
         scan_ocr_evidence and normalized_number
-        and not any(row["card_number"] == normalized_number for row in rows)
+        and not exact_reference_rows
     )
     if ocr_visual_conflict:
         exceptions.append("CARD_NUMBER_OCR_CONFLICT")
@@ -1313,6 +1385,11 @@ def submit_recognition(
         state = "NEEDS_REVIEW"
         if not exceptions:
             exceptions.append("LOW_RECOGNITION_CONFIDENCE")
+    elif catalog_family and scan_ocr_evidence and normalized_number and not ocr_visual_conflict:
+        # A trusted printed-number read may nominate an exact catalog family for
+        # operator review. It does not create a reference candidate, automatic
+        # authority, or an exact-printing decision.
+        state = "NEEDS_REVIEW"
     else:
         state = "UNIDENTIFIED"
         exceptions.append("NO_REFERENCE_MATCH")
@@ -1328,10 +1405,23 @@ def submit_recognition(
         identity_candidates.append(reference_item)
     best_identity = identity_candidates[0] if identity_candidates else {}
     family_id = int(best_identity.get("family_id") or 0) or None
+    if not family_id and catalog_family:
+        catalog_record = ensure_family(
+            db,
+            game="One Piece",
+            set_code=clean(catalog_family.get("set_code"), 80).upper(),
+            card_number=normalized_number,
+            name=clean(catalog_family.get("canonical_name"), 240),
+            external_descriptors={
+                "source": "FROZEN_LOCAL_ONE_PIECE_CATALOG",
+                "reference_image_available": bool(exact_reference_rows),
+            },
+        )
+        family_id = int(catalog_record["id"]) if catalog_record else None
     family_certainty = (
         "CONFLICTING" if ocr_visual_conflict else
         "AUTHORITATIVE" if state == "AUTO_MATCHED" else
-        "HIGH_CONFIDENCE_SUGGESTION" if best else "UNRESOLVED"
+        "HIGH_CONFIDENCE_SUGGESTION" if best or catalog_family else "UNRESOLVED"
     )
     # Printing evidence may use every visually scored reference from the
     # recognized family.  The five-item identity list remains a presentation
@@ -1370,6 +1460,12 @@ def submit_recognition(
         } if visual_best else None,
         "provider_cache": provider_provenance,
         "provider_metadata_available": bool(provider_meta),
+        "catalog_family": catalog_family,
+        "exact_reference_available": bool(exact_reference_rows),
+        "exact_reference_in_candidate_pool": any(
+            row["card_number"] == normalized_number for row in rows
+        ) if normalized_number else False,
+        "family_reference_separation": "CATALOG_FAMILY_DOES_NOT_REQUIRE_REFERENCE_IMAGE",
         "sample_watermark_policy": "IGNORED_AS_REFERENCE_ARTIFACT",
         "family_printing_separation": "FAMILY_AUTHORITY_NEVER_IMPLIES_PRINTING_AUTHORITY",
         "recognition_duration_ms": round((time.perf_counter() - started) * 1000, 2),
@@ -1387,8 +1483,10 @@ def submit_recognition(
             job_uuid, request_id, recognition_key, card_id, batch["id"], card["rip_session_id"],
             batch["acquisition_line_id"], "One Piece", "COMPLETED", ENGINE_VERSION,
             RULES_VERSION, scan_sha, raw_number, normalized_number, number_confidence,
-            best[0] if best else 0.0, state, _json(quality), _json(sorted(set(exceptions))),
-            _json(evidence), now, now, family_id, best[0] if best else 0.0,
+            best[0] if best else number_confidence if catalog_family else 0.0,
+            state, _json(quality), _json(sorted(set(exceptions))),
+            _json(evidence), now, now, family_id,
+            best[0] if best else number_confidence if catalog_family else 0.0,
             family_certainty, printing_id, float(printing_evaluation.get("confidence") or 0),
             printing_evaluation["certainty"], printing_evaluation["unresolved_reason"],
             _json(printing_evaluation),
@@ -1422,11 +1520,21 @@ def submit_recognition(
             record_assertion(
                 db, card_id=card_id, job_id=job_id, field_scope="FAMILY",
                 family_id=family_id, reference_id=int(best[4]["id"]) if best else None,
-                proposed_value=best[4]["card_number"] if best else "",
-                certainty=family_certainty, confidence=best[0] if best else 0,
+                proposed_value=(
+                    best[4]["card_number"] if best else
+                    catalog_family.get("card_number", "") if catalog_family else ""
+                ),
+                certainty=family_certainty,
+                confidence=best[0] if best else number_confidence if catalog_family else 0,
                 authority_granted=False, actor="SYSTEM",
-                reason_code="SAM_FAMILY_SUGGESTION",
-                evidence={"printing_authority_granted": False},
+                reason_code=(
+                    "SAM_OCR_CATALOG_FAMILY_SUGGESTION" if catalog_family and not best
+                    else "SAM_FAMILY_SUGGESTION"
+                ),
+                evidence={
+                    "printing_authority_granted": False,
+                    "reference_image_available": bool(exact_reference_rows),
+                },
             )
     record_assertion(
         db, card_id=card_id, job_id=job_id, field_scope="PRINTING",
@@ -1545,6 +1653,7 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
         raise ValueError("Recognition changed; refresh before recording this decision")
     action = clean(payload.get("action"), 40).upper()
     selected_id = payload.get("reference_id")
+    selected_family_number = normalize_card_number(payload.get("family_card_number"))
     family_actions = {"CONFIRM", "CONFIRM_FAMILY", "CORRECT", "CORRECT_FAMILY", "LEAVE_UNIDENTIFIED"}
     printing_actions = {
         "CONFIRM_PRINTING", "CORRECT_PRINTING", "LEAVE_PRINTING_UNRESOLVED", "MARK_PRINTING_CONFLICT"
@@ -1554,10 +1663,19 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
         selected_id = selected_id or job["top_reference_id"]
         if selected_id and int(selected_id) != int(job["top_reference_id"] or 0):
             raise ValueError("Use the correction action when selecting a different identity")
+        proposed_family = db.execute(
+            "SELECT card_number FROM sam_card_families WHERE id=?",
+            (job["family_id"],),
+        ).fetchone() if job["family_id"] else None
+        if selected_family_number and (
+            not proposed_family
+            or selected_family_number != normalize_card_number(proposed_family["card_number"])
+        ):
+            raise ValueError("Use the correction action when selecting a different identity")
     elif action in ("CORRECT", "CORRECT_FAMILY"):
         decision_type = "OPERATOR_CORRECTED"
-        if not selected_id:
-            raise ValueError("Select the correct reference")
+        if not selected_id and not selected_family_number:
+            raise ValueError("Select the correct family or reference")
     elif action == "LEAVE_UNIDENTIFIED":
         decision_type = "LEFT_UNIDENTIFIED"
         selected_id = None
@@ -1573,6 +1691,18 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
         ).fetchone()
         if not reference:
             raise ValueError("Selected reference is unavailable")
+        selected_family_number = normalize_card_number(reference["card_number"])
+    selected_catalog_family = None
+    if selected_family_number:
+        from dex_sam_audited import catalog_search
+
+        catalog_result = catalog_search(selected_family_number, db=db, limit=5)
+        selected_catalog_family = next((
+            item for item in catalog_result.get("families", [])
+            if normalize_card_number(item.get("card_number")) == selected_family_number
+        ), None)
+        if not selected_catalog_family:
+            raise ValueError("Selected One Piece family is unavailable in the local catalog")
     reason = clean(payload.get("reason_code"), 80)
     notes = clean(payload.get("notes"), 1000)
     if decision_type in ("OPERATOR_CORRECTED", "CORRECT_PRINTING") and (not reason or not notes):
@@ -1589,7 +1719,12 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
                 f"SAM-DEC-{uuid.uuid4()}", request_id, job["id"], job["card_id"], decision_type,
                 job["top_reference_id"], selected_id, expected, clean(payload.get("effective_at"), 40) or now,
                 now, reason, notes,
-                _json({"original_suggestion_preserved": True, "printing_authority_granted": False}),
+                _json({
+                    "original_suggestion_preserved": True,
+                    "printing_authority_granted": False,
+                    "selected_family_card_number": selected_family_number or None,
+                    "reference_image_available": bool(reference),
+                }),
             ),
         )
         if reference:
@@ -1597,6 +1732,13 @@ def decide_recognition(db: sqlite3.Connection, job_uuid: str, payload: dict) -> 
                 db, card, reference, state=decision_type,
                 confidence=float(job["confidence"]), job_id=job["id"],
                 request_id=request_id, legacy_decision_id=int(cursor.lastrowid),
+            )
+        elif selected_catalog_family and decision_type in ("OPERATOR_CONFIRMED", "OPERATOR_CORRECTED"):
+            _apply_catalog_family_identity(
+                db, card, selected_catalog_family, state=decision_type,
+                confidence=float(job["family_confidence"] or job["confidence"] or 0),
+                job_id=int(job["id"]), request_id=request_id,
+                legacy_decision_id=int(cursor.lastrowid),
             )
         else:
             db.execute(
