@@ -1,28 +1,22 @@
-# DEX v2.4-test SAM Multi-Evidence Operator Trial v1a — Deploy Verification
+# Accepted TEST Source Verification
 
-Artifact: `DEX_v2.4-test_SAM_MULTI_EVIDENCE_OPERATOR_TRIAL_v1a_DEPLOY`  
-Runtime identity: `v2.4-test-sam-multi-evidence-operator-trial-v1a`  
-Image tag: `192.168.2.92:5000/apps/dex:v2.4-test-sam-multi-evidence-operator-trial-v1a`
+Accepted source: `v2.5-test` TCGplayer Inventory Bootstrap + Reconciliation V1  
+Source-ledger entries: `157`  
+Source-ledger SHA-256: `02a491a0f7fd5d9e8488ccc3a4c149ce020f3db03e795836376c18589e1c4f75`
 
-## Certified results
+The accepted TEST worktree was not modified during promotion. The LIVE worktree was created separately.
 
-- Root-shaped package: `app.py`, `Dockerfile`, requirements, runtime modules, `static/`, tests, scripts, migrations, and frozen audited-SAM components are directly at their Jenkins-expected paths.
-- Nested DEPLOY directory: absent.
-- Runtime/source hash mismatches against the tested integration worktree: 0.
-- Frozen audited recognizer/config: 25/25 accepted trial entries verified; accepted fingerprint `dd899b6f73891252395ae9b8d09b43906ad15c656f0a0c739bd15a916c012493`; recognizer/config changes 0.
-- Python regression: 322/322 passed.
-- Focused audited SAM integration: 23/23 passed.
-- JavaScript syntax and frontend regressions: 27/27 passed.
-- Isolated startup and `/api/health`: HTTP 200 with the expected runtime.
-- Migrations: 0001–0019; SQLite integrity `ok`; empty startup created 0 batches, 0 cards, and 0 audited results.
-- Prohibited/private artifacts, private scans/truth/reference assets/databases, secrets, and machine-local paths: 0.
+Exactly ten accepted-source files differ in LIVE, all for release identity, packaging verification, or its assertions:
 
-The Dockerfile installs/checks local Tesseract, includes the accepted trial dependencies, verifies the frozen component hashes at build time, and retains the established receipt-orchestration smoke. Docker is unavailable on the packaging workstation, so the actual image build remains the normal Jenkins-host gate. No deployment occurred.
+- `app.py`
+- `Dockerfile`
+- `DEPLOY_VERIFICATION.md`
+- `static/index.html`
+- `VERSION`
+- `tests/test_app.py`
+- `tests/test_inventory_intelligence_phase1_remediation2_ui.cjs`
+- `tests/test_inventory_intelligence_phase1_remediation1_ui.cjs`
+- `tests/test_v22_phase1_inbound.py`
+- `tests/test_v25_tcgplayer_inventory_ui.cjs`
 
-## Operator copy rule
-
-Open `DEX_v2.4-test_SAM_MULTI_EVIDENCE_OPERATOR_TRIAL_v1a_DEPLOY`, select everything **inside** it, and upload those contents directly into the GitHub `dex-test` root. Do not upload the outer DEPLOY folder.
-
-## Rollback
-
-Restore the exact WOLFF/SAM Phase 2 image tag/digest recorded before cutover. Leave storage untouched unless a separately approved, verified data rollback is required.
+All other accepted files in the source ledger match. Promotion-only files are documentation, manifests, and the disposable migration-verification helper. There is zero unexplained drift.

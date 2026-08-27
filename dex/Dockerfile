@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 LABEL org.opencontainers.image.title="Dex" \
       org.opencontainers.image.description="Digital Encyclopedia Xchange TCG inventory" \
-      org.opencontainers.image.version="v2.4-live"
+      org.opencontainers.image.version="v2.5-live"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -43,6 +43,7 @@ COPY dex_sam_challenger.py ./
 COPY dex_sam_audited.py dex_sam_audited_worker.py ./
 COPY sam_multi_evidence_frozen ./sam_multi_evidence_frozen
 COPY dex_jarvis_economics.py ./
+COPY dex_tcgplayer_inventory.py ./
 COPY scripts/docker_receipt_orchestration_smoke.py ./scripts/docker_receipt_orchestration_smoke.py
 COPY static ./static
 
@@ -62,6 +63,7 @@ RUN python -c "import dex_sam_identity"
 RUN python -c "import dex_sam_challenger"
 RUN python -c "import dex_sam_audited; assert dex_sam_audited.frozen_component_status()['available']"
 RUN python -c "import dex_jarvis_economics"
+RUN python -c "import dex_tcgplayer_inventory"
 RUN python scripts/docker_receipt_orchestration_smoke.py
 
 RUN useradd --uid 10001 --create-home dex \

@@ -2,10 +2,10 @@
 
 Baseline date: 2026-08-24  
 Known-good restore baseline: `v2.2-test RC3 HF3 ZERO ENTRY`  
-Active promotion candidate: `v2.4-live`; package only, not deployed  
-Accepted TEST source: `v2.4-test-sam-multi-evidence-operator-trial-v1a`, fingerprint `dd899b6f73891252395ae9b8d09b43906ad15c656f0a0c739bd15a916c012493`
+Accepted source baseline: `v2.4-test-sam-multi-evidence-operator-trial-v1a`; preserved unchanged  
+Active isolated development lane: `v2.5-test` TCGplayer Inventory Bootstrap + Reconciliation V1; not packaged or deployed
 
-`v2.4-live` is the one-time creation of DEX LIVE with clean business state and a permanent, separately writable storage lineage. Existing TEST storage remains the development archive. Future LIVE releases reuse the LIVE lineage and preserve inventory, acquisitions, receipts, sales, SAM audit history, WOLFF records, and future intelligence history. No normal version promotion authorizes a reset.
+The v2.5 lane adds migration 0020, an isolated quantity-pool/event model, immutable TCGplayer snapshot artifacts and rows, reconciliation observations, explicit SAM existing-vs-new-copy decisions, and a manual Staged Inventory CSV export. Existing serialized cards and every v2.4 workflow remain present; v2.5 does not convert or infer serialized-card ownership from legacy DEX records.
 
 The accepted audited multi-evidence build is integrated as a suggestion-only One Piece intake workflow. DEX freezes its original result before catalog lookup or operator action, preserves decisions and optional verified truth separately, and grants family authority only through an explicit operator confirm/correct action. Exact printing remains manual. WOLFF, receipt intelligence, established SAM, production configuration, and all earlier economics rules remain unchanged.
 
@@ -35,6 +35,7 @@ Dex is a private, single-user TCG inventory system organized as a compact monoli
 - `dex_catalog.py`: v2.2 local commercial-product catalog, validated text identifiers, request-safe scan aggregation, learned mappings, and append-only mapping corrections.
 - `dex_sam.py`: v2.2 One Piece-only recognition service with provider-neutral metadata/cache and reference interfaces, incremental local reference indexing, conservative versioned confidence rules, review queues, request idempotency, and append-only evidence/decisions.
 - `dex_sam_audited.py` and `dex_sam_audited_worker.py`: v2.4 frozen multi-evidence integration boundary, runtime component verification, suggestion-only isolated inference, post-inference catalog verification, explicit family-write gate, and append-only recognition/decision/truth/delta audit history.
+- `dex_tcgplayer_inventory.py`: v2.5 immutable channel snapshots, structured quantity pools, append-only physical quantity/reconciliation events, guarded delta exports, and aggregate operator reporting.
 - `dex_legacy_economics.py`: query-only Phase 2 estimated economics for legacy batches.
 - `static/index.html`, `static/app.js`, and `static/styles.css`: vanilla-JavaScript single-page operator interface.
 - SQLite: source of truth for batches, physical cards, source cards, sales, settings, processed scans, and activity history.

@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import uuid
+from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -35,6 +36,11 @@ ALLOWED_DECISIONS = {
 WRITE_DECISIONS = {"CONFIRMED_UNCHANGED", "CORRECTED_FAMILY", "CORRECTED_CARD_NUMBER"}
 FROZEN_ROOT = Path(__file__).resolve().parent / "sam_multi_evidence_frozen"
 WORKER_PATH = Path(__file__).resolve().parent / "dex_sam_audited_worker.py"
+PRINTED_CARD_NUMBER_RE = re.compile(
+    r"^(?:(?P<set>(?:OP|EB|ST|PRB)\d{1,3})[-_\s\u2010-\u2015]?(?P<number>\d{3}[A-Z]?)|"
+    r"(?P<promo>P)[-_\s\u2010-\u2015]?(?P<promo_number>\d{3}[A-Z]?))$",
+    re.I,
+)
 
 
 def utcnow() -> str:
@@ -327,26 +333,97 @@ def get_result(db: sqlite3.Connection, result_uuid: str) -> dict[str, Any]:
     return _result_payload(db, row)
 
 
-def catalog_search(query: str, limit: int = 30) -> dict[str, Any]:
-    payload = json.loads((FROZEN_ROOT / "config" / "one_piece_multi_evidence_catalog_v1.json").read_text(encoding="utf-8"))
-    q = _clean(query, 120).upper()
-    rows = payload.get("families") or []
+def normalize_printed_card_number(value: object) -> str:
+    text = _clean(value, 120).strip().upper()
+    match = PRINTED_CARD_NUMBER_RE.fullmatch(text)
+    if not match:
+        return ""
+    if match.group("promo"):
+        return f"P-{match.group('promo_number').upper()}"
+    return f"{match.group('set').upper()}-{match.group('number').upper()}"
+
+
+@lru_cache(maxsize=1)
+def _catalog_indexes() -> tuple[tuple[dict[str, Any], ...], dict[str, dict[str, Any]]]:
+    payload = json.loads(
+        (FROZEN_ROOT / "config" / "one_piece_multi_evidence_catalog_v1.json").read_text(encoding="utf-8")
+    )
+    rows = tuple(payload.get("families") or [])
+    by_number = {
+        normalize_printed_card_number(item.get("card_number")): item
+        for item in rows if normalize_printed_card_number(item.get("card_number"))
+    }
+    return rows, by_number
+
+
+def catalog_search(
+    query: str, limit: int = 30, db: sqlite3.Connection | None = None
+) -> dict[str, Any]:
+    raw_query = _clean(query, 120).strip()
+    q = raw_query.upper()
+    normalized = normalize_printed_card_number(raw_query)
+    rows, by_number = _catalog_indexes()
+    bounded_limit = max(1, min(int(limit), 100))
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    if normalized and normalized in by_number:
+        ranked = [(0, normalized, by_number[normalized])]
+    else:
+        for item in rows:
+            number = normalize_printed_card_number(item.get("card_number"))
+            name = _clean(item.get("canonical_name"), 240)
+            alternatives = " ".join(str(value) for value in item.get("alternative_names") or [])
+            set_code = _clean(item.get("set_code"), 80).upper() or number.split("-", 1)[0]
+            if q and q == name.upper():
+                rank = 2
+            elif q and (q in name.upper() or q in alternatives.upper()):
+                rank = 3
+            elif q and (q in set_code or q in number):
+                rank = 4
+            elif not q:
+                rank = 5
+            else:
+                continue
+            ranked.append((rank, number, item))
+        ranked.sort(key=lambda value: (value[0], value[1]))
     matches = []
-    for item in rows:
-        number = _clean(item.get("card_number"), 80).upper()
-        name = _clean(item.get("canonical_name"), 240)
-        alternatives = " ".join(str(value) for value in item.get("alternative_names") or [])
-        if not q or q in number or q in name.upper() or q in alternatives.upper():
-            matches.append({
-                "card_number": number, "canonical_name": name,
-                "set_code": item.get("set_code") or number.split("-", 1)[0],
-                "descriptive_only_until_operator_selection": True,
-            })
-        if len(matches) >= max(1, min(int(limit), 100)):
-            break
+    for match_rank, number, item in ranked[:bounded_limit]:
+        references: list[sqlite3.Row] = []
+        if db is not None:
+            references = db.execute(
+                """SELECT id FROM sam_reference_records
+                   WHERE game='One Piece' AND active=1 AND UPPER(card_number)=UPPER(?)
+                   ORDER BY id""",
+                (number,),
+            ).fetchall()
+        matches.append({
+            "card_number": number,
+            "canonical_name": _clean(item.get("canonical_name"), 240),
+            "set_code": item.get("set_code") or number.split("-", 1)[0],
+            "match_basis": "EXACT_PRINTED_CARD_NUMBER" if match_rank == 0 else (
+                "EXACT_CARD_NAME" if match_rank == 2 else
+                "PARTIAL_CARD_NAME" if match_rank == 3 else "SET_OR_PRODUCT_METADATA"
+            ),
+            "family_found": True,
+            "reference_image_found": bool(references),
+            "reference_count": len(references),
+            "representative_reference_id": int(references[0]["id"]) if references else None,
+            "descriptive_only_until_operator_selection": True,
+        })
     return {
-        "families": matches, "catalog_fingerprint": BUILD_FINGERPRINT,
-        "available_only_after_result_frozen": True, "recognition_authority": False,
+        "families": matches,
+        "search": {
+            "searched": raw_query,
+            "normalized": normalized or "NOT_A_PRINTED_CARD_NUMBER",
+            "catalog_result": "FOUND" if matches else "NOT_FOUND",
+            "reference_result": (
+                "AVAILABLE" if any(item["reference_image_found"] for item in matches)
+                else "NOT_FOUND"
+            ),
+            "status": "FAMILY_FOUND" if matches else "NO_LOCAL_FAMILY_MATCH",
+        },
+        "catalog_fingerprint": BUILD_FINGERPRINT,
+        "available_only_after_result_frozen": True,
+        "recognition_authority": False,
     }
 
 

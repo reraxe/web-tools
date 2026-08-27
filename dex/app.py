@@ -71,7 +71,7 @@ from dex_corrections import (
     reverse_event,
     transfer_basis,
 )
-from dex_migrations import apply_migrations
+from dex_migrations import CURRENT_MIGRATIONS, apply_migrations as apply_versioned_migrations
 from dex_post_sale import (
     create_chargeback,
     create_fee_credit,
@@ -184,6 +184,17 @@ from dex_sam_audited import (
     record_verified_truth as verify_sam_audited_result,
 )
 from dex_sam_identity import ensure_family, record_assertion, record_event
+from dex_tcgplayer_inventory import (
+    apply_import as apply_tcgplayer_import,
+    decide_import_row as decide_tcgplayer_import_row,
+    decide_reconciliation as decide_tcgplayer_reconciliation,
+    generate_update_csv as generate_tcgplayer_update_csv,
+    get_import as get_tcgplayer_import,
+    preview_import as preview_tcgplayer_import,
+    record_inventory_event as record_tcgplayer_inventory_event,
+    reconcile_sam_copy as reconcile_tcgplayer_sam_copy,
+    summary as tcgplayer_inventory_summary,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -204,12 +215,16 @@ SAM_CHALLENGER_REPORT_PATH = (
 DOCUMENT_STORE = get_document_store(DATA_DIR)
 RECEIPT_EXTRACTOR = get_receipt_extractor()
 SAM_METADATA_PROVIDER = default_sam_metadata_provider()
+TCGPLAYER_IMPORT_ROOT = DATA_DIR / "tcgplayer-imports"
+TCGPLAYER_ONE_PIECE_CATALOG = (
+    ROOT / "sam_multi_evidence_frozen" / "config" / "one_piece_multi_evidence_catalog_v1.json"
+)
 HOST = os.environ.get("DEX_HOST", "0.0.0.0")
 PORT = int(os.environ.get("DEX_PORT", "8080"))
 MAX_BODY = 250 * 1024 * 1024
 WATCH_INBOUND = os.environ.get("DEX_WATCH_INBOUND", "1") == "1"
 SCAN_INTERVAL = int(os.environ.get("DEX_SCAN_INTERVAL", "5"))
-APP_VERSION = "v2.4-live"
+APP_VERSION = "v2.5-live"
 DEFAULT_TIMEZONE = os.environ.get("DEX_TIMEZONE", "America/New_York")
 DEFAULT_TCG_CAPACITY = int(os.environ.get("DEX_TCG_CAPACITY", "500"))
 
@@ -240,6 +255,11 @@ ONE_PIECE_SET_NAMES = {
 CARD_NUMBER_RE = re.compile(r"\b((?:OP|EB|ST|PRB|P)\d{1,3})[-_ ]?(\d{3}[A-Z]?)\b", re.I)
 SAM_MATCH_THRESHOLD = 0.84
 DB_LOCK = threading.Lock()
+
+
+def apply_migrations(connection: sqlite3.Connection):
+    """Apply the current application lane while preserving the patchable v2.4 call boundary."""
+    return apply_versioned_migrations(connection, CURRENT_MIGRATIONS)
 
 
 def utcnow() -> str:
@@ -1688,6 +1708,16 @@ class DexHandler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 self.send_json({"status": "ok", "name": "Dex", "version": APP_VERSION, "time": utcnow()})
+            elif path == "/api/tcgplayer/inventory":
+                search = clean_text(query.get("q", [""])[0], 100)
+                with open_readonly_database(DB_PATH) as db:
+                    result = tcgplayer_inventory_summary(db, query=search)
+                self.send_json(result)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/imports/TCG-IMPORT-[0-9a-f-]+", path):
+                import_uuid = path.rsplit("/", 1)[-1]
+                with open_readonly_database(DB_PATH) as db:
+                    result = get_tcgplayer_import(db, import_uuid)
+                self.send_json(result)
             elif path == "/api/dashboard":
                 self.send_json(dashboard())
             elif path == "/api/inventory":
@@ -1864,6 +1894,13 @@ class DexHandler(BaseHTTPRequestHandler):
                 filters = {key: values[0] for key, values in query.items() if values}
                 with connect() as db:
                     result = search_sam_references(db, filters)
+                    family_result = search_sam_audited_catalog(
+                        filters.get("q") or filters.get("card_number") or "",
+                        int(filters.get("limit") or 30), db=db,
+                    )
+                    result["families"] = family_result["families"]
+                    result["search"] = family_result["search"]
+                    result["catalog_fingerprint"] = family_result["catalog_fingerprint"]
                 self.send_json(result)
             elif re.fullmatch(r"/api/sam/references/\d+/image", path):
                 reference_id = int(path.split("/")[4])
@@ -1897,7 +1934,9 @@ class DexHandler(BaseHTTPRequestHandler):
                     raise ValueError("Catalog verification opens only after an audited SAM result is frozen")
                 with connect() as db:
                     sam_audited_result(db, result_uuid)
-                result = search_sam_audited_catalog(query.get("q", [""])[0], int(query.get("limit", ["30"])[0]))
+                    result = search_sam_audited_catalog(
+                        query.get("q", [""])[0], int(query.get("limit", ["30"])[0]), db=db
+                    )
                 self.send_json(result)
             elif re.fullmatch(r"/api/sam/audited/results/SAM-AUDIT-RESULT-[0-9a-f-]+", path):
                 result_uuid = path.rsplit("/", 1)[-1]
@@ -2220,7 +2259,75 @@ class DexHandler(BaseHTTPRequestHandler):
         path = parsed.path.rstrip("/")
         try:
             payload = self.read_json()
-            if path == "/api/sam/source/rescan":
+            if path == "/api/tcgplayer/inventory/imports/preview":
+                encoded = payload.get("content_base64", "")
+                if not isinstance(encoded, str) or not encoded:
+                    raise ValueError("content_base64 is required")
+                try:
+                    content = base64.b64decode(encoded, validate=True)
+                except (ValueError, TypeError) as exc:
+                    raise ValueError("content_base64 is invalid") from exc
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = preview_tcgplayer_import(
+                        db,
+                        TCGPLAYER_IMPORT_ROOT,
+                        filename=payload.get("filename", ""),
+                        content=content,
+                        request_id=payload.get("request_id", ""),
+                        source_export_timestamp=payload.get("source_export_timestamp"),
+                        one_piece_catalog_path=TCGPLAYER_ONE_PIECE_CATALOG,
+                    )
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/imports/TCG-IMPORT-[0-9a-f-]+/apply", path):
+                import_uuid = path.split("/")[-2]
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = apply_tcgplayer_import(
+                        db, import_uuid, request_id=payload.get("request_id", "")
+                    )
+                self.send_json(result)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/imports/TCG-IMPORT-[0-9a-f-]+/rows/\d+/decision", path):
+                parts = path.split("/")
+                import_uuid = parts[-4]
+                row_id = int(parts[-2])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = decide_tcgplayer_import_row(
+                        db, import_uuid, row_id, payload,
+                        one_piece_catalog_path=TCGPLAYER_ONE_PIECE_CATALOG,
+                    )
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/reconciliations/\d+/decision", path):
+                reconciliation_id = int(path.split("/")[-2])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = decide_tcgplayer_reconciliation(db, reconciliation_id, payload)
+                self.send_json(result)
+            elif path == "/api/tcgplayer/inventory/export":
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = generate_tcgplayer_update_csv(
+                        db,
+                        request_id=payload.get("request_id", ""),
+                        confirm_destructive=payload.get("confirm_destructive") is True,
+                        reason_code=payload.get("reason_code", ""),
+                        notes=payload.get("notes", ""),
+                    )
+                self.send_json(result)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/pools/\d+/events", path):
+                pool_id = int(path.split("/")[-2])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = record_tcgplayer_inventory_event(db, pool_id, payload)
+                self.send_json(result, 201)
+            elif re.fullmatch(r"/api/tcgplayer/inventory/pools/\d+/sam-reconcile", path):
+                pool_id = int(path.split("/")[-2])
+                with DB_LOCK, connect() as db:
+                    db.execute("BEGIN IMMEDIATE")
+                    result = reconcile_tcgplayer_sam_copy(db, pool_id, payload)
+                self.send_json(result, 201)
+            elif path == "/api/sam/source/rescan":
                 with DB_LOCK, connect() as db:
                     db.execute("BEGIN IMMEDIATE")
                     result = scan_source_database(db)

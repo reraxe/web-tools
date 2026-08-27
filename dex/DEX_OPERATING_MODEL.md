@@ -16,6 +16,20 @@ The complete standing design contract, future receipt-input model, and future At
 
 ## System Roles
 
+## v2.5 TEST Inventory Truth Boundary
+
+DEX owns physical quantity. TCGplayer supplies channel observations and accepts operator-reviewed deltas; it never becomes the authority for whether a physical copy exists.
+
+- The first confirmed My Pricing snapshot creates opening quantity-pool events only for eligible rows with positive quantity.
+- A zero-quantity row is catalog/channel evidence and does not create owned inventory.
+- Later snapshots create observations and reconciliation exceptions; they cannot replace DEX-owned quantity.
+- Sales, refunds/returns, damage, corrections, and new intake change owned quantity only through append-only events with duplicate-request protection and linked reversals.
+- A SAM scan must be explicitly classified as an already bootstrapped physical copy or a genuinely new intake copy before quantity changes.
+- Marketplace updates are exported as a minimal CSV for TCGplayer Staged Inventory. `Add to Quantity` is a signed delta, never a desired total. Stale snapshots, missing required marketplace prices, and unusually destructive removals fail closed.
+- One Piece rows require an exact card-number mapping against the frozen DEX catalog. Other supported games may retain the TCGplayer commercial identifier as generic structured identity. Mapping uncertainty cannot silently create One Piece stock.
+
+No marketplace API write, reservation engine, repricing automation, JANA pricing, or WOLFF formula change is part of this phase.
+
 ### Dex: Inventory System
 
 Dex owns the source of truth for physical inventory.
@@ -282,15 +296,6 @@ Future rules can include:
 - Deferred What's New hub, roadmap, and patch notes inside Dex.
 - Janna starts as manual Market Watch posts.
 - Market Watch notes stored in Dex.
-
-### v2.4-live
-
-- First operational DEX LIVE release, promoted from the accepted `v2.4-test-sam-multi-evidence-operator-trial-v1a` source.
-- Uses one-time clean Day Zero business storage; TEST business history is not imported.
-- Retains packaged One Piece catalog knowledge, SAM infrastructure, WOLFF infrastructure, audit infrastructure, and migrations through 0019.
-- TEST and LIVE never share writable business or audit storage.
-- After Day Zero, the LIVE storage lineage is permanent across ordinary upgrades. Application rollback keeps LIVE data in place; a data reset requires separate explicit operator authorization.
-- SAM remains suggestion-only until operator confirmation/correction, and exact printing remains operator-authoritative.
 
 ### v2.5-test
 

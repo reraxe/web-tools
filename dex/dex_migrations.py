@@ -1816,6 +1816,234 @@ def _v24_sam_multi_evidence_operator_trial_v1a(connection: sqlite3.Connection) -
         raise RuntimeError("Incomplete SQL statement in audited SAM migration")
 
 
+def _v25_tcgplayer_inventory_bootstrap_v1(connection: sqlite3.Connection) -> None:
+    """Add quantity-pool inventory and append-only TCGplayer reconciliation facts.
+
+    Existing serialized cards, batches, sales, SAM identity, and WOLFF economics
+    remain untouched.  A TCGplayer snapshot is channel evidence; only an explicit
+    opening bootstrap or later inventory event changes physical owned quantity.
+    """
+
+    script = """
+        CREATE TABLE tcgplayer_import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_uuid TEXT NOT NULL UNIQUE,
+            preview_request_id TEXT NOT NULL UNIQUE,
+            source_filename TEXT NOT NULL,
+            source_sha256 TEXT NOT NULL UNIQUE,
+            source_export_timestamp TEXT NOT NULL,
+            source_timestamp_basis TEXT NOT NULL,
+            artifact_relative_path TEXT NOT NULL,
+            import_mode TEXT NOT NULL CHECK (import_mode IN ('BOOTSTRAP','RECONCILIATION')),
+            status TEXT NOT NULL CHECK (status IN ('PREVIEWED','APPLIED','REJECTED')),
+            contract_version TEXT NOT NULL,
+            headers_json TEXT NOT NULL,
+            row_count INTEGER NOT NULL CHECK (row_count >= 0),
+            positive_quantity_row_count INTEGER NOT NULL CHECK (positive_quantity_row_count >= 0),
+            zero_quantity_row_count INTEGER NOT NULL CHECK (zero_quantity_row_count >= 0),
+            source_total_quantity INTEGER NOT NULL CHECK (source_total_quantity >= 0),
+            auto_import_row_count INTEGER NOT NULL CHECK (auto_import_row_count >= 0),
+            review_import_row_count INTEGER NOT NULL CHECK (review_import_row_count >= 0),
+            do_not_import_row_count INTEGER NOT NULL CHECK (do_not_import_row_count >= 0),
+            inventory_event_watermark_id INTEGER NOT NULL DEFAULT 0 CHECK (inventory_event_watermark_id >= 0),
+            previewed_at TEXT NOT NULL,
+            applied_at TEXT
+        );
+
+        CREATE TABLE tcgplayer_snapshot_rows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_batch_id INTEGER NOT NULL REFERENCES tcgplayer_import_batches(id),
+            source_row_number INTEGER NOT NULL CHECK (source_row_number > 1),
+            tcgplayer_id TEXT NOT NULL,
+            product_line TEXT NOT NULL,
+            set_name TEXT NOT NULL DEFAULT '',
+            product_name TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL DEFAULT '',
+            card_number TEXT NOT NULL DEFAULT '',
+            rarity TEXT NOT NULL DEFAULT '',
+            condition_name TEXT NOT NULL DEFAULT '',
+            language TEXT NOT NULL DEFAULT '',
+            total_quantity INTEGER NOT NULL CHECK (total_quantity >= 0),
+            pending_quantity INTEGER CHECK (pending_quantity IS NULL OR pending_quantity >= 0),
+            source_add_to_quantity INTEGER NOT NULL DEFAULT 0,
+            market_price_cents INTEGER,
+            direct_low_cents INTEGER,
+            low_with_shipping_cents INTEGER,
+            low_price_cents INTEGER,
+            marketplace_price_cents INTEGER,
+            import_disposition TEXT NOT NULL CHECK (import_disposition IN (
+                'AUTO_IMPORT','REVIEW_IMPORT','DO_NOT_IMPORT'
+            )),
+            disposition_reason TEXT NOT NULL,
+            one_piece_family_key TEXT NOT NULL DEFAULT '',
+            raw_row_json TEXT NOT NULL,
+            UNIQUE(import_batch_id, tcgplayer_id),
+            UNIQUE(import_batch_id, source_row_number)
+        );
+
+        CREATE TABLE inventory_pools (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pool_uuid TEXT NOT NULL UNIQUE,
+            tcgplayer_id TEXT NOT NULL UNIQUE,
+            game TEXT NOT NULL,
+            product_line TEXT NOT NULL,
+            set_name TEXT NOT NULL DEFAULT '',
+            product_name TEXT NOT NULL,
+            card_number TEXT NOT NULL DEFAULT '',
+            rarity TEXT NOT NULL DEFAULT '',
+            condition_name TEXT NOT NULL DEFAULT '',
+            language TEXT NOT NULL DEFAULT '',
+            commercial_identity_source TEXT NOT NULL DEFAULT 'TCGPLAYER',
+            source_type TEXT NOT NULL DEFAULT 'TCGPLAYER_BOOTSTRAP',
+            physical_reconciliation_status TEXT NOT NULL DEFAULT 'BOOTSTRAPPED_UNRECONCILED'
+                CHECK (physical_reconciliation_status IN (
+                    'BOOTSTRAPPED_UNRECONCILED','PHYSICALLY_RECONCILED',
+                    'NEW_POST_BOOTSTRAP_INTAKE'
+                )),
+            reserved_quantity INTEGER NOT NULL DEFAULT 0 CHECK (reserved_quantity >= 0),
+            location_code TEXT NOT NULL DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE inventory_quantity_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            pool_id INTEGER NOT NULL REFERENCES inventory_pools(id),
+            import_batch_id INTEGER REFERENCES tcgplayer_import_batches(id),
+            event_type TEXT NOT NULL CHECK (event_type IN (
+                'TCGPLAYER_BOOTSTRAP','SAM_INTAKE','MANUAL_ACQUISITION',
+                'TCGPLAYER_SALE','EBAY_SALE','SHOPIFY_SALE','DIRECT_SALE',
+                'DAMAGE_WRITE_OFF','INVENTORY_CORRECTION','REFUND_RETURN','REVERSAL'
+            )),
+            quantity_delta INTEGER NOT NULL CHECK (quantity_delta != 0),
+            prior_owned_quantity INTEGER NOT NULL CHECK (prior_owned_quantity >= 0),
+            resulting_owned_quantity INTEGER NOT NULL CHECK (resulting_owned_quantity >= 0),
+            reverses_event_id INTEGER REFERENCES inventory_quantity_events(id),
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            effective_at TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE TABLE inventory_physical_reconciliation_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            pool_id INTEGER NOT NULL REFERENCES inventory_pools(id),
+            card_id INTEGER REFERENCES cards(id),
+            action TEXT NOT NULL CHECK (action IN (
+                'RECONCILE_EXISTING_COPY','ADD_AS_NEW_INTAKE'
+            )),
+            quantity INTEGER NOT NULL CHECK (quantity > 0),
+            inventory_quantity_event_id INTEGER REFERENCES inventory_quantity_events(id),
+            reason_code TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            recorded_at TEXT NOT NULL
+        );
+
+        CREATE TABLE tcgplayer_channel_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observation_uuid TEXT NOT NULL UNIQUE,
+            import_batch_id INTEGER NOT NULL REFERENCES tcgplayer_import_batches(id),
+            pool_id INTEGER NOT NULL REFERENCES inventory_pools(id),
+            observed_total_quantity INTEGER NOT NULL CHECK (observed_total_quantity >= 0),
+            observed_pending_quantity INTEGER CHECK (
+                observed_pending_quantity IS NULL OR observed_pending_quantity >= 0
+            ),
+            marketplace_price_cents INTEGER,
+            source_export_timestamp TEXT NOT NULL,
+            recorded_at TEXT NOT NULL,
+            UNIQUE(import_batch_id, pool_id)
+        );
+
+        CREATE TABLE tcgplayer_reconciliation_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reconciliation_uuid TEXT NOT NULL UNIQUE,
+            import_batch_id INTEGER NOT NULL REFERENCES tcgplayer_import_batches(id),
+            pool_id INTEGER NOT NULL REFERENCES inventory_pools(id),
+            expected_quantity INTEGER NOT NULL CHECK (expected_quantity >= 0),
+            observed_quantity INTEGER NOT NULL CHECK (observed_quantity >= 0),
+            difference INTEGER NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('OPEN','RESOLVED','SUPERSEDED')),
+            reason_code TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            resolved_at TEXT,
+            UNIQUE(import_batch_id, pool_id)
+        );
+
+        CREATE TABLE tcgplayer_inventory_audit_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_uuid TEXT NOT NULL UNIQUE,
+            request_id TEXT NOT NULL UNIQUE,
+            import_batch_id INTEGER REFERENCES tcgplayer_import_batches(id),
+            pool_id INTEGER REFERENCES inventory_pools(id),
+            event_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            recorded_at TEXT NOT NULL
+        );
+
+        CREATE INDEX idx_tcgplayer_batches_applied
+            ON tcgplayer_import_batches(status, source_export_timestamp, id);
+        CREATE INDEX idx_tcgplayer_rows_batch_disposition
+            ON tcgplayer_snapshot_rows(import_batch_id, import_disposition, total_quantity);
+        CREATE INDEX idx_inventory_pools_game_identity
+            ON inventory_pools(active, game, card_number, product_name);
+        CREATE INDEX idx_inventory_events_pool
+            ON inventory_quantity_events(pool_id, recorded_at, id);
+        CREATE INDEX idx_physical_reconciliation_pool
+            ON inventory_physical_reconciliation_events(pool_id, recorded_at, id);
+        CREATE INDEX idx_tcgplayer_observations_pool
+            ON tcgplayer_channel_observations(pool_id, source_export_timestamp, id);
+        CREATE INDEX idx_tcgplayer_reconciliation_status
+            ON tcgplayer_reconciliation_items(status, import_batch_id, pool_id);
+        CREATE INDEX idx_tcgplayer_audit_batch
+            ON tcgplayer_inventory_audit_events(import_batch_id, recorded_at, id);
+
+        CREATE TRIGGER tcgplayer_snapshot_rows_no_update
+        BEFORE UPDATE ON tcgplayer_snapshot_rows
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer snapshot rows are immutable'); END;
+        CREATE TRIGGER tcgplayer_snapshot_rows_no_delete
+        BEFORE DELETE ON tcgplayer_snapshot_rows
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer snapshot rows are durable'); END;
+        CREATE TRIGGER inventory_quantity_events_no_update
+        BEFORE UPDATE ON inventory_quantity_events
+        BEGIN SELECT RAISE(ABORT, 'Inventory quantity events are append-only'); END;
+        CREATE TRIGGER inventory_quantity_events_no_delete
+        BEFORE DELETE ON inventory_quantity_events
+        BEGIN SELECT RAISE(ABORT, 'Inventory quantity events are durable'); END;
+        CREATE TRIGGER inventory_physical_reconciliation_no_update
+        BEFORE UPDATE ON inventory_physical_reconciliation_events
+        BEGIN SELECT RAISE(ABORT, 'Physical reconciliation events are append-only'); END;
+        CREATE TRIGGER inventory_physical_reconciliation_no_delete
+        BEFORE DELETE ON inventory_physical_reconciliation_events
+        BEGIN SELECT RAISE(ABORT, 'Physical reconciliation events are durable'); END;
+        CREATE TRIGGER tcgplayer_channel_observations_no_update
+        BEFORE UPDATE ON tcgplayer_channel_observations
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer observations are immutable'); END;
+        CREATE TRIGGER tcgplayer_channel_observations_no_delete
+        BEFORE DELETE ON tcgplayer_channel_observations
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer observations are durable'); END;
+        CREATE TRIGGER tcgplayer_inventory_audit_no_update
+        BEFORE UPDATE ON tcgplayer_inventory_audit_events
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer audit events are append-only'); END;
+        CREATE TRIGGER tcgplayer_inventory_audit_no_delete
+        BEFORE DELETE ON tcgplayer_inventory_audit_events
+        BEGIN SELECT RAISE(ABORT, 'TCGplayer audit events are durable'); END;
+    """
+    statement = ""
+    for line in script.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            connection.execute(statement)
+            statement = ""
+    if statement.strip():
+        raise RuntimeError("Incomplete SQL statement in TCGplayer inventory migration")
+
+
 DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
     Migration(
         "0001_phase3_acquisition_facts",
@@ -1913,6 +2141,18 @@ DEFAULT_MIGRATIONS: tuple[Migration, ...] = (
         _v24_sam_multi_evidence_operator_trial_v1a,
     ),
 )
+
+# Preserve the accepted v2.4 migration sequence as a stable public contract for
+# historical fixtures. The v2.5 application explicitly opts into the additive
+# lane, so old phase tests and disposable migration tools do not change meaning.
+TCGPLAYER_INVENTORY_MIGRATIONS: tuple[Migration, ...] = (
+    Migration(
+        "0020_v25_tcgplayer_inventory_bootstrap_v1",
+        "add quantity-pool opening inventory, channel snapshots, and reconciliation audit history",
+        _v25_tcgplayer_inventory_bootstrap_v1,
+    ),
+)
+CURRENT_MIGRATIONS: tuple[Migration, ...] = DEFAULT_MIGRATIONS + TCGPLAYER_INVENTORY_MIGRATIONS
 
 
 def _create_ledger(connection: sqlite3.Connection) -> None:

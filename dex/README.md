@@ -2,9 +2,9 @@
 
 Dex is a private, single-user TCG inventory system for individual physical cards. It tracks inbound batches, front/back scans, unique SKUs, 2 x 1 QR labels, grouped inventory, market-price ranges, drawer locations, and multi-card outbound orders.
 
-Current operational promotion candidate: **DEX v2.4-live**, promoted without recognizer or business-rule changes from the accepted **v2.4-test SAM Multi-Evidence Audited Operator Trial v1a** source.
+Current isolated development candidate: **DEX v2.5-test — TCGplayer Inventory Bootstrap + Reconciliation V1**, built additively from the accepted v2.4-test SAM Multi-Evidence Audited Operator Trial v1a. It is not packaged or approved for deployment.
 
-`v2.4-live` establishes the first and only clean Day Zero for DEX LIVE. TEST and LIVE use separate writable business storage. After real LIVE operation begins, every normal LIVE upgrade must preserve that storage lineage and all authoritative records; a release, image change, or migration never authorizes a data reset.
+v2.5 imports an operator-supplied TCGplayer My Pricing CSV as an immutable marketplace snapshot. The first explicitly confirmed snapshot may bootstrap structured DEX quantity pools; later snapshots never overwrite DEX physical truth. They produce reconciliation exceptions and an operator-downloaded Staged Inventory CSV whose `Add to Quantity` values are deltas. DEX performs no marketplace write.
 
 Frozen receipt baseline: **DEX v2.3-test Inventory Intelligence Phase 1 Remediation 5**. This SAM lane does not modify its receipt parsing, semantic policy, allocation, or packaging artifacts.
 
@@ -66,6 +66,7 @@ Issues found during the current pilot are tracked in [`V1.1_TEST_BACKLOG.md`](V1
 - `dex_sam.py`: v2.2-test Phase 7 provider-neutral One Piece metadata cache, incremental local reference index, conservative recognition, review queues, idempotency, and durable evidence/history.
 - `dex_sam_identity.py`: v2.4-test normalized card-family/commercial-printing identity, positive-evidence evaluation, and append-only field-level authority history.
 - `dex_jarvis_economics.py`: v2.4-test read-only simplified item/sale economics, missing-input status/provenance, and coverage-aware aggregate summaries.
+- `dex_tcgplayer_inventory.py`: v2.5-test immutable CSV snapshots, quantity pools/events, physical reconciliation, stale/destructive export gates, and operator-controlled Staged Inventory CSV generation.
 - `dex_migrations.py`: transactional, versioned SQLite migrations and migration ledger.
 - `dex_legacy_economics.py`: read-only Phase 2 legacy economics estimates.
 - `Dockerfile`: production image build.
